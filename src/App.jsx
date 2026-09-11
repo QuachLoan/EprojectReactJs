@@ -19,7 +19,7 @@ function App() {
         <Route path = "/project" element={<Project/>}/>
           <Route path = "/project/settings" element={<ProjectSettings/>}/>
       </Routes>
-      </>
+      </> 
   )
 }
 
