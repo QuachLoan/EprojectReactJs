@@ -1,8 +1,6 @@
-<<<<<<< HEAD
+
 import { Link, NavLink } from "react-router-dom";
-=======
 import {Link} from "react-router-dom";
->>>>>>> 29b3771158952869af8f0b719771d2cf430f78cf
 
 function Nav(){
    function GetNavClass({isActive}){
@@ -20,19 +18,18 @@ function Nav(){
           </span><span className="nav-label">Dashboard</span></NavLink>
         <NavLink href="my-tasks.html" class="nav-item"><span class="icon" data-icon="listTodo">
           <svg viewBox="0 0 24 24"><path d="M13 5h8"></path><path d="M13 12h8"></path><path d="M13 19h8"></path><path d="m3 17 2 2 4-4"></path><rect x="3" y="4" width="6" height="6" rx="1"></rect></svg>
-<<<<<<< HEAD
+
           </span><span class="nav-label">My Tasks</span></NavLink>
         <NavLink to='/Projects' className={GetNavClass}><span class="icon" data-icon="folderKanban">
           <svg viewBox="0 0 24 24"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path><path d="M8 10v4"></path><path d="M12 10v2"></path><path d="M16 10v6"></path></svg>
           </span><span class="nav-label">Projects</span></NavLink>
         <NavLink href="members.html" class="nav-item"><span class="icon" data-icon="users">
-=======
-          </span><span class="nav-label">My Tasks</span></a>
+          </span><span class="nav-label">My Tasks</span></NavLink>
         <Link to="/project" class="nav-item"><span class="icon" data-icon="folderKanban">
           <svg viewBox="0 0 24 24"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path><path d="M8 10v4"></path><path d="M12 10v2"></path><path d="M16 10v6"></path></svg>
           </span><span class="nav-label">Projects</span></Link>
-        <a href="members.html" class="nav-item"><span class="icon" data-icon="users">
->>>>>>> 29b3771158952869af8f0b719771d2cf430f78cf
+        <NavLink href="members.html" class="nav-item"><span class="icon" data-icon="users">
+
           <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><path d="M16 3.128a4 4 0 0 1 0 7.744"></path><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><circle cx="9" cy="7" r="4"></circle></svg>
           </span><span class="nav-label">Members</span></NavLink>
         <p class="sidebar-section-label">Admin</p>
