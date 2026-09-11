@@ -13,17 +13,17 @@ const handleResponse = async (res) => {
 // ==========================================
 
 export const fetchProjects = async () => {
-    const res = await fetch(`${API_BASE_URL}/projects`);
+    const res = await fetch(`${API_BASE_URL}/project`);
     return handleResponse(res);
 };
 
 export const fetchProjectById = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}`);
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}`);
     return handleResponse(res);
 };
 
 export const createProject = async (projectData) => {
-    const res = await fetch(`${API_BASE_URL}/projects`, {
+    const res = await fetch(`${API_BASE_URL}/project`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(projectData)
@@ -32,7 +32,7 @@ export const createProject = async (projectData) => {
 };
 
 export const updateProject = async (projectId, projectData) => {
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(projectData)
@@ -41,7 +41,7 @@ export const updateProject = async (projectId, projectData) => {
 };
 
 export const deleteProject = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}`, {
         method: 'DELETE'
     });
     return handleResponse(res);
