@@ -1,0 +1,702 @@
+import React, { useState, useEffect } from 'react';
+import {
+    KanbanSquare,
+    LayoutDashboard,
+    ListTodo,
+    FolderKanban,
+    Users,
+    ShieldCheck,
+    Flag,
+    ChevronsLeft,
+    ChevronsRight,
+    Menu,
+    Search,
+    Plus,
+    ListPlus,
+    FolderPlus,
+    LogOut,
+    X,
+    ListChecks,
+    UsersRound,
+    CalendarClock,
+    CheckCircle2,
+    XCircle,
+    Info
+} from 'lucide-react';
+import { fetchProjects, createProject, fetchMembers, createTask } from './../../../api.jsx';
+
+const COLOR_OPTIONS = [
+    '#4f46e5',
+    '#0ea5e9',
+    '#16a34a',
+    '#f59e0b',
+    '#db2777',
+    '#9333ea',
+    '#0d9488',
+    '#dc2626'
+];
+
+export default function Projects() {
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
+    const [createDropdownOpen, setCreateDropdownOpen] = useState(false);
+    const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+    const [activeModal, setActiveModal] = useState(null);
+    const [commandQuery, setCommandQuery] = useState('');
+
+    const [projects, setProjects] = useState([]);
+    const [members, setMembers] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    const [projectName, setProjectName] = useState('');
+    const [projectDesc, setProjectDesc] = useState('');
+    const [projectDueDate, setProjectDueDate] = useState('');
+    const [selectedColor, setSelectedColor] = useState('#4f46e5');
+    const [selectedMembers, setSelectedMembers] = useState([]);
+
+    const [taskTitle, setTaskTitle] = useState('');
+    const [taskProject, setTaskProject] = useState('');
+    const [taskColumn, setTaskColumn] = useState('Todo');
+    const [taskPriority, setTaskPriority] = useState('Medium');
+    const [taskDueDate, setTaskDueDate] = useState('');
+
+    const [toasts, setToasts] = useState([]);
+
+    const loadProjects = async () => {
+        try {
+            const data = await fetchProjects();
+            setProjects(data);
+            if (data.length > 0) setTaskProject(data[0]._id || data[0].id);
+        } catch (error) {
+            showToast('Lỗi', 'Không thể kết nối tới server (Port 3000)', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadMembers = async () => {
+        try {
+            const data = await fetchMembers();
+            setMembers(data);
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    useEffect(() => {
+        loadProjects();
+        loadMembers();
+    }, []);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                setActiveModal('commandPalette');
+            }
+            if (e.key === 'Escape') {
+                setActiveModal(null);
+                setCreateDropdownOpen(false);
+                setUserDropdownOpen(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    const showToast = (title, description = null, variant = 'info') => {
+        const id = Date.now();
+        setToasts((prev) => [...prev, { id, title, description, variant }]);
+        setTimeout(() => {
+            setToasts((prev) => prev.filter((t) => t.id !== id));
+        }, 4000);
+    };
+
+    const removeToast = (id) => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+    };
+
+    const toggleMemberSelection = (id) => {
+        setSelectedMembers((prev) =>
+            prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
+        );
+    };
+
+    const handleCreateProject = async (e) => {
+        e.preventDefault();
+        try {
+            await createProject({
+                name: projectName,
+                desc: projectDesc,
+                dueDate: projectDueDate,
+                color: selectedColor,
+                members: selectedMembers
+            });
+            showToast('Project created', 'Project đã lưu vào MongoDB.', 'success');
+            setProjectName('');
+            setProjectDesc('');
+            setProjectDueDate('');
+            setSelectedMembers([]);
+            setActiveModal(null);
+            loadProjects();
+        } catch (error) {
+            showToast('Lỗi', 'Không thể tạo project.', 'error');
+        }
+    };
+
+    const handleCreateTask = async (e) => {
+        e.preventDefault();
+        try {
+            await createTask({
+                title: taskTitle,
+                projectId: taskProject,
+                column: taskColumn,
+                priority: taskPriority,
+                dueDate: taskDueDate
+            });
+            showToast('Task created', 'Task mới đã tạo thành công.', 'success');
+            setTaskTitle('');
+            setTaskDueDate('');
+            setActiveModal(null);
+        } catch (error) {
+            showToast('Lỗi', 'Không thể tạo task.', 'error');
+        }
+    };
+
+    return (
+        <div className="app-shell">
+            <aside
+                className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${
+                    sidebarMobileOpen ? 'mobile-open' : ''
+                }`}
+            >
+                <div className="sidebar-brand">
+                    <KanbanSquare className="sidebar-brand-logo icon" />
+                    <span className="sidebar-brand-name">TeamFlow</span>
+                </div>
+                <div className="sidebar-workspace">
+                    <p className="sidebar-workspace-label">Workspace</p>
+                    <p className="sidebar-workspace-name">Aptech Capstone Team</p>
+                </div>
+                <nav className="sidebar-nav">
+                    <a href="dashboard.html" className="nav-item">
+                        <LayoutDashboard className="icon" />
+                        <span className="nav-label">Dashboard</span>
+                    </a>
+                    <a href="my-tasks.html" className="nav-item">
+                        <ListTodo className="icon" />
+                        <span className="nav-label">My Tasks</span>
+                    </a>
+                    <a href="projects.html" className="nav-item active">
+                        <FolderKanban className="icon" />
+                        <span className="nav-label">Projects</span>
+                    </a>
+                    <a href="members.html" className="nav-item">
+                        <Users className="icon" />
+                        <span className="nav-label">Members</span>
+                    </a>
+                    <p className="sidebar-section-label">Admin</p>
+                    <a href="admin-users.html" className="nav-item">
+                        <ShieldCheck className="icon" />
+                        <span className="nav-label">Users</span>
+                    </a>
+                    <a href="admin-moderation.html" className="nav-item">
+                        <Flag className="icon" />
+                        <span className="nav-label">Moderation</span>
+                    </a>
+                </nav>
+                <div className="sidebar-collapse-btn">
+                    <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
+                        {sidebarCollapsed ? (
+                            <ChevronsRight className="icon icon-sm" />
+                        ) : (
+                            <ChevronsLeft className="icon icon-sm" />
+                        )}
+                        <span>Collapse</span>
+                    </button>
+                </div>
+            </aside>
+
+            {sidebarMobileOpen && (
+                <div
+                    className="sidebar-overlay show"
+                    onClick={() => setSidebarMobileOpen(false)}
+                />
+            )}
+
+            <div className="app-main">
+                <header className="header">
+                    <button
+                        className="icon-btn mobile-menu-btn"
+                        onClick={() => setSidebarMobileOpen(true)}
+                        aria-label="Open menu"
+                    >
+                        <Menu className="icon" />
+                    </button>
+                    <button
+                        className="header-search"
+                        onClick={() => setActiveModal('commandPalette')}
+                    >
+                        <Search className="icon icon-sm" />
+                        <span className="search-label">Search anything…</span>
+                        <kbd>Ctrl K</kbd>
+                    </button>
+                    <div className="header-actions">
+                        <div className="dropdown">
+                            <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => setCreateDropdownOpen(!createDropdownOpen)}
+                            >
+                                <Plus className="icon icon-sm" />
+                                <span className="create-btn-label">Create</span>
+                            </button>
+                            {createDropdownOpen && (
+                                <div className="dropdown-menu">
+                                    <button
+                                        className="dropdown-item"
+                                        onClick={() => {
+                                            setActiveModal('quickCreateTaskModal');
+                                            setCreateDropdownOpen(false);
+                                        }}
+                                    >
+                                        <ListPlus className="icon icon-sm" />
+                                        New Task
+                                    </button>
+                                    <button
+                                        className="dropdown-item"
+                                        onClick={() => {
+                                            setActiveModal('createProjectModal');
+                                            setCreateDropdownOpen(false);
+                                        }}
+                                    >
+                                        <FolderPlus className="icon icon-sm" />
+                                        New Project
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="dropdown">
+                            <button
+                                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                                aria-label="Open user menu"
+                            >
+                <span
+                    className="avatar avatar-sm"
+                    style={{ background: '#4f46e5' }}
+                >
+                  CS
+                </span>
+                            </button>
+                            {userDropdownOpen && (
+                                <div className="dropdown-menu">
+                                    <div className="dropdown-user-info">
+                                        <p className="dropdown-user-name">Cao Sơn</p>
+                                        <p className="dropdown-user-email">caosonhs@gmail.com</p>
+                                        <p className="dropdown-user-role">leader</p>
+                                    </div>
+                                    <div className="dropdown-separator"></div>
+                                    <a className="dropdown-item destructive" href="login.html">
+                                        <LogOut className="icon icon-sm" />
+                                        Log out
+                                    </a>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </header>
+
+                <main className="page-content">
+                    <div className="page-content-inner">
+                        <div className="page-header">
+                            <div>
+                                <h1>Projects</h1>
+                                <p className="page-subtitle">
+                                    All the boards your team is working on.
+                                </p>
+                            </div>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => setActiveModal('createProjectModal')}
+                            >
+                                <Plus className="icon icon-sm" />
+                                Create Project
+                            </button>
+                        </div>
+
+                        {loading ? (
+                            <p>Loading projects from MongoDB...</p>
+                        ) : (
+                            <div className="grid-cards">
+                                {projects.map((project) => (
+                                    <a
+                                        key={project._id || project.id}
+                                        href={`project-board.html?id=${project._id || project.id}`}
+                                        className="card project-card"
+                                    >
+                                        <div className="project-card-top">
+                                            <div className="project-title-row">
+                        <span
+                            className="project-color-dot"
+                            style={{ background: project.color || '#4f46e5' }}
+                        ></span>
+                                                <span className="project-card-name">{project.name}</span>
+                                            </div>
+                                            <span className={`badge ${project.badgeClass || 'badge-success'}`}>
+                        {project.status || 'On track'}
+                      </span>
+                                        </div>
+                                        <p className="project-card-desc">{project.desc}</p>
+                                        <div>
+                                            <div className="project-card-progress-row">
+                        <span className="icon-inline">
+                          <ListChecks className="icon icon-sm" />
+                            {project.tasksText || '0 tasks'}
+                        </span>
+                                                <span>{project.progress || 0}%</span>
+                                            </div>
+                                            <div className="progress-bar">
+                        <span
+                            className="progress-bar-fill"
+                            style={{ width: `${project.progress || 0}%` }}
+                        ></span>
+                                            </div>
+                                        </div>
+                                        <div className="project-card-footer">
+                      <span className="avatar-group">
+                        {(project.membersList || []).map((member, index) => (
+                            <span
+                                key={member._id || index}
+                                className="avatar avatar-xs"
+                                style={{ background: member.bg || '#4f46e5' }}
+                            >
+                            {member.initials || 'U'}
+                          </span>
+                        ))}
+                      </span>
+                                            <span className="project-card-footer-meta">
+                        <span className="icon-inline">
+                          <UsersRound className="icon icon-sm" />
+                            {project.membersCount || (project.membersList ? project.membersList.length : 0)}
+                        </span>
+                        <span className="icon-inline">
+                          <CalendarClock className="icon icon-sm" />
+                            {project.dueDate || 'N/A'}
+                        </span>
+                      </span>
+                                        </div>
+                                    </a>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </main>
+            </div>
+
+            {activeModal === 'commandPalette' && (
+                <div
+                    className="command-palette-overlay"
+                    onClick={() => setActiveModal(null)}
+                >
+                    <div
+                        className="command-palette-box"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="command-palette-input-row">
+                            <Search className="icon icon-sm" />
+                            <input
+                                className="command-palette-input"
+                                placeholder="Search tasks, projects, members…"
+                                autoFocus
+                                value={commandQuery}
+                                onChange={(e) => setCommandQuery(e.target.value)}
+                            />
+                            <kbd
+                                onClick={() => setActiveModal(null)}
+                                style={{ cursor: 'pointer' }}
+                            >
+                                ESC
+                            </kbd>
+                        </div>
+                        <div className="command-palette-results">
+                            {!commandQuery.trim() ? (
+                                <p className="command-palette-empty">
+                                    Start typing to search across your workspace.
+                                </p>
+                            ) : (
+                                <p className="command-palette-empty">
+                                    No results for "{commandQuery}".
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {activeModal === 'quickCreateTaskModal' && (
+                <div className="modal-overlay" onClick={() => setActiveModal(null)}>
+                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2 className="modal-title">Create task</h2>
+                            <button
+                                className="icon-btn"
+                                onClick={() => setActiveModal(null)}
+                                aria-label="Close"
+                            >
+                                <X className="icon" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleCreateTask}>
+                            <div
+                                className="modal-body"
+                                style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
+                            >
+                                <div className="field">
+                                    <label className="field-label">Title</label>
+                                    <input
+                                        className="input"
+                                        placeholder="e.g. Fix pagination bug"
+                                        required
+                                        autoFocus
+                                        value={taskTitle}
+                                        onChange={(e) => setTaskTitle(e.target.value)}
+                                    />
+                                </div>
+                                <div className="grid-2">
+                                    <div className="field">
+                                        <label className="field-label">Project</label>
+                                        <select
+                                            className="select"
+                                            value={taskProject}
+                                            onChange={(e) => setTaskProject(e.target.value)}
+                                        >
+                                            {projects.map((p) => (
+                                                <option key={p._id || p.id} value={p._id || p.id}>
+                                                    {p.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="field">
+                                        <label className="field-label">Column</label>
+                                        <select
+                                            className="select"
+                                            value={taskColumn}
+                                            onChange={(e) => setTaskColumn(e.target.value)}
+                                        >
+                                            <option value="Todo">Todo</option>
+                                            <option value="In Progress">In Progress</option>
+                                            <option value="Review">Review</option>
+                                            <option value="Done">Done</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="grid-2">
+                                    <div className="field">
+                                        <label className="field-label">Priority</label>
+                                        <select
+                                            className="select"
+                                            value={taskPriority}
+                                            onChange={(e) => setTaskPriority(e.target.value)}
+                                        >
+                                            <option value="Medium">Medium</option>
+                                            <option value="Urgent">Urgent</option>
+                                            <option value="High">High</option>
+                                            <option value="Low">Low</option>
+                                        </select>
+                                    </div>
+                                    <div className="field">
+                                        <label className="field-label">Due date</label>
+                                        <input
+                                            className="input"
+                                            type="date"
+                                            value={taskDueDate}
+                                            onChange={(e) => setTaskDueDate(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button
+                                    type="button"
+                                    className="btn btn-outline btn-sm"
+                                    onClick={() => setActiveModal(null)}
+                                >
+                                    Cancel
+                                </button>
+                                <button type="submit" className="btn btn-primary btn-sm">
+                                    Create task
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {activeModal === 'createProjectModal' && (
+                <div className="modal-overlay" onClick={() => setActiveModal(null)}>
+                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h2 className="modal-title">Create project</h2>
+                                <p className="modal-desc">Set up a new board for your team.</p>
+                            </div>
+                            <button
+                                className="icon-btn"
+                                onClick={() => setActiveModal(null)}
+                                aria-label="Close"
+                            >
+                                <X className="icon" />
+                            </button>
+                        </div>
+                        <form onSubmit={handleCreateProject}>
+                            <div
+                                className="modal-body"
+                                style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
+                            >
+                                <div className="field">
+                                    <label className="field-label">Name</label>
+                                    <input
+                                        className="input"
+                                        placeholder="e.g. Growth Experiments"
+                                        required
+                                        autoFocus
+                                        value={projectName}
+                                        onChange={(e) => setProjectName(e.target.value)}
+                                    />
+                                </div>
+                                <div className="field">
+                                    <label className="field-label">Description</label>
+                                    <textarea
+                                        className="textarea"
+                                        placeholder="What is this project about?"
+                                        rows={2}
+                                        value={projectDesc}
+                                        onChange={(e) => setProjectDesc(e.target.value)}
+                                    ></textarea>
+                                </div>
+                                <div className="field">
+                                    <label className="field-label">Due date</label>
+                                    <input
+                                        className="input"
+                                        type="date"
+                                        value={projectDueDate}
+                                        onChange={(e) => setProjectDueDate(e.target.value)}
+                                    />
+                                </div>
+                                <div className="field">
+                                    <span className="field-label">Color</span>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                        {COLOR_OPTIONS.map((color) => (
+                                            <button
+                                                key={color}
+                                                type="button"
+                                                aria-label="Color"
+                                                onClick={() => setSelectedColor(color)}
+                                                style={{
+                                                    width: '24px',
+                                                    height: '24px',
+                                                    borderRadius: '50%',
+                                                    background: color,
+                                                    border: 'none',
+                                                    cursor: 'pointer',
+                                                    boxShadow:
+                                                        selectedColor === color
+                                                            ? `0 0 0 2px #fff, 0 0 0 4px ${color}`
+                                                            : 'none'
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="field">
+                                    <span className="field-label">Members</span>
+                                    <div
+                                        className="card"
+                                        style={{
+                                            maxHeight: '144px',
+                                            overflowY: 'auto',
+                                            padding: '8px',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '4px'
+                                        }}
+                                    >
+                                        {members.map((member) => (
+                                            <label
+                                                key={member._id || member.id}
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '8px',
+                                                    padding: '4px 6px',
+                                                    borderRadius: '6px',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    className="checkbox"
+                                                    checked={selectedMembers.includes(member._id || member.id)}
+                                                    onChange={() => toggleMemberSelection(member._id || member.id)}
+                                                />
+                                                <span
+                                                    className="avatar avatar-xs"
+                                                    style={{ background: member.bg || '#4f46e5' }}
+                                                >
+                          {member.initials}
+                        </span>
+                                                <span style={{ fontSize: '14px' }}>{member.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button
+                                    type="button"
+                                    className="btn btn-outline btn-sm"
+                                    onClick={() => setActiveModal(null)}
+                                >
+                                    Cancel
+                                </button>
+                                <button type="submit" className="btn btn-primary btn-sm">
+                                    Create project
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            <div className="toast-viewport">
+                {toasts.map((toast) => (
+                    <div key={toast.id} className={`toast variant-${toast.variant}`}>
+                        {toast.variant === 'success' && (
+                            <CheckCircle2 className="toast-icon icon" />
+                        )}
+                        {toast.variant === 'error' && (
+                            <XCircle className="toast-icon icon" />
+                        )}
+                        {toast.variant === 'info' && <Info className="toast-icon icon" />}
+
+                        <div className="toast-body">
+                            <p className="toast-title">{toast.title}</p>
+                            {toast.description && (
+                                <p className="toast-desc">{toast.description}</p>
+                            )}
+                        </div>
+
+                        <button
+                            className="toast-close icon icon-sm"
+                            onClick={() => removeToast(toast.id)}
+                            aria-label="Dismiss"
+                        >
+                            <X />
+                        </button>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
