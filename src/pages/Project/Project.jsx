@@ -1,14 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-    KanbanSquare,
-    LayoutDashboard,
-    ListTodo,
-    FolderKanban,
-    Users,
-    ShieldCheck,
-    Flag,
-    ChevronsLeft,
-    ChevronsRight,
     Menu,
     Search,
     Plus,
@@ -18,11 +9,9 @@ import {
     X,
     ListChecks,
     UsersRound,
-    CalendarClock,
-    CheckCircle2,
-    XCircle,
-    Info
+    CalendarClock
 } from 'lucide-react';
+import SideBar from './../../components/layout/SideBar/SideBar'; // Import Sidebar đã tách component
 import { fetchProjects, createProject, fetchMembers, createTask } from './../../../api.jsx';
 
 const COLOR_OPTIONS = [
@@ -37,7 +26,6 @@ const COLOR_OPTIONS = [
 ];
 
 export default function Projects() {
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
     const [createDropdownOpen, setCreateDropdownOpen] = useState(false);
     const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -112,10 +100,6 @@ export default function Projects() {
         }, 4000);
     };
 
-    const removeToast = (id) => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-    };
-
     const toggleMemberSelection = (id) => {
         setSelectedMembers((prev) =>
             prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
@@ -165,57 +149,8 @@ export default function Projects() {
 
     return (
         <div className="app-shell">
-            <aside
-                className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${
-                    sidebarMobileOpen ? 'mobile-open' : ''
-                }`}
-            >
-                <div className="sidebar-brand">
-                    <KanbanSquare className="sidebar-brand-logo icon" />
-                    <span className="sidebar-brand-name">TeamFlow</span>
-                </div>
-                <div className="sidebar-workspace">
-                    <p className="sidebar-workspace-label">Workspace</p>
-                    <p className="sidebar-workspace-name">Aptech Capstone Team</p>
-                </div>
-                <nav className="sidebar-nav">
-                    <a href="dashboard.html" className="nav-item">
-                        <LayoutDashboard className="icon" />
-                        <span className="nav-label">Dashboard</span>
-                    </a>
-                    <a href="my-tasks.html" className="nav-item">
-                        <ListTodo className="icon" />
-                        <span className="nav-label">My Tasks</span>
-                    </a>
-                    <a href="projects.html" className="nav-item active">
-                        <FolderKanban className="icon" />
-                        <span className="nav-label">Projects</span>
-                    </a>
-                    <a href="members.html" className="nav-item">
-                        <Users className="icon" />
-                        <span className="nav-label">Members</span>
-                    </a>
-                    <p className="sidebar-section-label">Admin</p>
-                    <a href="admin-users.html" className="nav-item">
-                        <ShieldCheck className="icon" />
-                        <span className="nav-label">Users</span>
-                    </a>
-                    <a href="admin-moderation.html" className="nav-item">
-                        <Flag className="icon" />
-                        <span className="nav-label">Moderation</span>
-                    </a>
-                </nav>
-                <div className="sidebar-collapse-btn">
-                    <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
-                        {sidebarCollapsed ? (
-                            <ChevronsRight className="icon icon-sm" />
-                        ) : (
-                            <ChevronsLeft className="icon icon-sm" />
-                        )}
-                        <span>Collapse</span>
-                    </button>
-                </div>
-            </aside>
+            {/* Sử dụng Component SideBar đã tối ưu */}
+            <SideBar />
 
             {sidebarMobileOpen && (
                 <div
@@ -281,12 +216,12 @@ export default function Projects() {
                                 onClick={() => setUserDropdownOpen(!userDropdownOpen)}
                                 aria-label="Open user menu"
                             >
-                <span
-                    className="avatar avatar-sm"
-                    style={{ background: '#4f46e5' }}
-                >
-                  CS
-                </span>
+                                <span
+                                    className="avatar avatar-sm"
+                                    style={{ background: '#4f46e5' }}
+                                >
+                                    CS
+                                </span>
                             </button>
                             {userDropdownOpen && (
                                 <div className="dropdown-menu">
@@ -336,54 +271,54 @@ export default function Projects() {
                                     >
                                         <div className="project-card-top">
                                             <div className="project-title-row">
-                        <span
-                            className="project-color-dot"
-                            style={{ background: project.color || '#4f46e5' }}
-                        ></span>
+                                                <span
+                                                    className="project-color-dot"
+                                                    style={{ background: project.color || '#4f46e5' }}
+                                                ></span>
                                                 <span className="project-card-name">{project.name}</span>
                                             </div>
                                             <span className={`badge ${project.badgeClass || 'badge-success'}`}>
-                        {project.status || 'On track'}
-                      </span>
+                                                {project.status || 'On track'}
+                                            </span>
                                         </div>
                                         <p className="project-card-desc">{project.desc}</p>
                                         <div>
                                             <div className="project-card-progress-row">
-                        <span className="icon-inline">
-                          <ListChecks className="icon icon-sm" />
-                            {project.tasksText || '0 tasks'}
-                        </span>
+                                                <span className="icon-inline">
+                                                    <ListChecks className="icon icon-sm" />
+                                                    {project.tasksText || '0 tasks'}
+                                                </span>
                                                 <span>{project.progress || 0}%</span>
                                             </div>
                                             <div className="progress-bar">
-                        <span
-                            className="progress-bar-fill"
-                            style={{ width: `${project.progress || 0}%` }}
-                        ></span>
+                                                <span
+                                                    className="progress-bar-fill"
+                                                    style={{ width: `${project.progress || 0}%` }}
+                                                ></span>
                                             </div>
                                         </div>
                                         <div className="project-card-footer">
-                      <span className="avatar-group">
-                        {(project.membersList || []).map((member, index) => (
-                            <span
-                                key={member._id || index}
-                                className="avatar avatar-xs"
-                                style={{ background: member.bg || '#4f46e5' }}
-                            >
-                            {member.initials || 'U'}
-                          </span>
-                        ))}
-                      </span>
+                                            <span className="avatar-group">
+                                                {(project.membersList || []).map((member, index) => (
+                                                    <span
+                                                        key={member._id || index}
+                                                        className="avatar avatar-xs"
+                                                        style={{ background: member.bg || '#4f46e5' }}
+                                                    >
+                                                        {member.initials || 'U'}
+                                                    </span>
+                                                ))}
+                                            </span>
                                             <span className="project-card-footer-meta">
-                        <span className="icon-inline">
-                          <UsersRound className="icon icon-sm" />
-                            {project.membersCount || (project.membersList ? project.membersList.length : 0)}
-                        </span>
-                        <span className="icon-inline">
-                          <CalendarClock className="icon icon-sm" />
-                            {project.dueDate || 'N/A'}
-                        </span>
-                      </span>
+                                                <span className="icon-inline">
+                                                    <UsersRound className="icon icon-sm" />
+                                                    {project.membersCount || (project.membersList ? project.membersList.length : 0)}
+                                                </span>
+                                                <span className="icon-inline">
+                                                    <CalendarClock className="icon icon-sm" />
+                                                    {project.dueDate || 'N/A'}
+                                                </span>
+                                            </span>
                                         </div>
                                     </a>
                                 ))}
@@ -393,15 +328,10 @@ export default function Projects() {
                 </main>
             </div>
 
+            {/* Modal Command Palette */}
             {activeModal === 'commandPalette' && (
-                <div
-                    className="command-palette-overlay"
-                    onClick={() => setActiveModal(null)}
-                >
-                    <div
-                        className="command-palette-box"
-                        onClick={(e) => e.stopPropagation()}
-                    >
+                <div className="command-palette-overlay" onClick={() => setActiveModal(null)}>
+                    <div className="command-palette-box" onClick={(e) => e.stopPropagation()}>
                         <div className="command-palette-input-row">
                             <Search className="icon icon-sm" />
                             <input
@@ -411,46 +341,33 @@ export default function Projects() {
                                 value={commandQuery}
                                 onChange={(e) => setCommandQuery(e.target.value)}
                             />
-                            <kbd
-                                onClick={() => setActiveModal(null)}
-                                style={{ cursor: 'pointer' }}
-                            >
+                            <kbd onClick={() => setActiveModal(null)} style={{ cursor: 'pointer' }}>
                                 ESC
                             </kbd>
                         </div>
                         <div className="command-palette-results">
                             {!commandQuery.trim() ? (
-                                <p className="command-palette-empty">
-                                    Start typing to search across your workspace.
-                                </p>
+                                <p className="command-palette-empty">Start typing to search across your workspace.</p>
                             ) : (
-                                <p className="command-palette-empty">
-                                    No results for "{commandQuery}".
-                                </p>
+                                <p className="command-palette-empty">No results for "{commandQuery}".</p>
                             )}
                         </div>
                     </div>
                 </div>
             )}
 
+            {/* Modal Create Task */}
             {activeModal === 'quickCreateTaskModal' && (
                 <div className="modal-overlay" onClick={() => setActiveModal(null)}>
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <h2 className="modal-title">Create task</h2>
-                            <button
-                                className="icon-btn"
-                                onClick={() => setActiveModal(null)}
-                                aria-label="Close"
-                            >
+                            <button className="icon-btn" onClick={() => setActiveModal(null)} aria-label="Close">
                                 <X className="icon" />
                             </button>
                         </div>
                         <form onSubmit={handleCreateTask}>
-                            <div
-                                className="modal-body"
-                                style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
-                            >
+                            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                                 <div className="field">
                                     <label className="field-label">Title</label>
                                     <input
@@ -465,11 +382,7 @@ export default function Projects() {
                                 <div className="grid-2">
                                     <div className="field">
                                         <label className="field-label">Project</label>
-                                        <select
-                                            className="select"
-                                            value={taskProject}
-                                            onChange={(e) => setTaskProject(e.target.value)}
-                                        >
+                                        <select className="select" value={taskProject} onChange={(e) => setTaskProject(e.target.value)}>
                                             {projects.map((p) => (
                                                 <option key={p._id || p.id} value={p._id || p.id}>
                                                     {p.name}
@@ -479,11 +392,7 @@ export default function Projects() {
                                     </div>
                                     <div className="field">
                                         <label className="field-label">Column</label>
-                                        <select
-                                            className="select"
-                                            value={taskColumn}
-                                            onChange={(e) => setTaskColumn(e.target.value)}
-                                        >
+                                        <select className="select" value={taskColumn} onChange={(e) => setTaskColumn(e.target.value)}>
                                             <option value="Todo">Todo</option>
                                             <option value="In Progress">In Progress</option>
                                             <option value="Review">Review</option>
@@ -494,11 +403,7 @@ export default function Projects() {
                                 <div className="grid-2">
                                     <div className="field">
                                         <label className="field-label">Priority</label>
-                                        <select
-                                            className="select"
-                                            value={taskPriority}
-                                            onChange={(e) => setTaskPriority(e.target.value)}
-                                        >
+                                        <select className="select" value={taskPriority} onChange={(e) => setTaskPriority(e.target.value)}>
                                             <option value="Medium">Medium</option>
                                             <option value="Urgent">Urgent</option>
                                             <option value="High">High</option>
@@ -507,21 +412,12 @@ export default function Projects() {
                                     </div>
                                     <div className="field">
                                         <label className="field-label">Due date</label>
-                                        <input
-                                            className="input"
-                                            type="date"
-                                            value={taskDueDate}
-                                            onChange={(e) => setTaskDueDate(e.target.value)}
-                                        />
+                                        <input className="input" type="date" value={taskDueDate} onChange={(e) => setTaskDueDate(e.target.value)} />
                                     </div>
                                 </div>
                             </div>
                             <div className="modal-footer">
-                                <button
-                                    type="button"
-                                    className="btn btn-outline btn-sm"
-                                    onClick={() => setActiveModal(null)}
-                                >
+                                <button type="button" className="btn btn-outline btn-sm" onClick={() => setActiveModal(null)}>
                                     Cancel
                                 </button>
                                 <button type="submit" className="btn btn-primary btn-sm">
@@ -533,6 +429,7 @@ export default function Projects() {
                 </div>
             )}
 
+            {/* Modal Create Project */}
             {activeModal === 'createProjectModal' && (
                 <div className="modal-overlay" onClick={() => setActiveModal(null)}>
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
@@ -541,19 +438,12 @@ export default function Projects() {
                                 <h2 className="modal-title">Create project</h2>
                                 <p className="modal-desc">Set up a new board for your team.</p>
                             </div>
-                            <button
-                                className="icon-btn"
-                                onClick={() => setActiveModal(null)}
-                                aria-label="Close"
-                            >
+                            <button className="icon-btn" onClick={() => setActiveModal(null)} aria-label="Close">
                                 <X className="icon" />
                             </button>
                         </div>
                         <form onSubmit={handleCreateProject}>
-                            <div
-                                className="modal-body"
-                                style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
-                            >
+                            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                                 <div className="field">
                                     <label className="field-label">Name</label>
                                     <input
@@ -577,12 +467,7 @@ export default function Projects() {
                                 </div>
                                 <div className="field">
                                     <label className="field-label">Due date</label>
-                                    <input
-                                        className="input"
-                                        type="date"
-                                        value={projectDueDate}
-                                        onChange={(e) => setProjectDueDate(e.target.value)}
-                                    />
+                                    <input className="input" type="date" value={projectDueDate} onChange={(e) => setProjectDueDate(e.target.value)} />
                                 </div>
                                 <div className="field">
                                     <span className="field-label">Color</span>
@@ -600,10 +485,7 @@ export default function Projects() {
                                                     background: color,
                                                     border: 'none',
                                                     cursor: 'pointer',
-                                                    boxShadow:
-                                                        selectedColor === color
-                                                            ? `0 0 0 2px #fff, 0 0 0 4px ${color}`
-                                                            : 'none'
+                                                    boxShadow: selectedColor === color ? `0 0 0 2px #fff, 0 0 0 4px ${color}` : 'none'
                                                 }}
                                             />
                                         ))}
@@ -611,41 +493,18 @@ export default function Projects() {
                                 </div>
                                 <div className="field">
                                     <span className="field-label">Members</span>
-                                    <div
-                                        className="card"
-                                        style={{
-                                            maxHeight: '144px',
-                                            overflowY: 'auto',
-                                            padding: '8px',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: '4px'
-                                        }}
-                                    >
+                                    <div className="card" style={{ maxHeight: '144px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         {members.map((member) => (
-                                            <label
-                                                key={member._id || member.id}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '8px',
-                                                    padding: '4px 6px',
-                                                    borderRadius: '6px',
-                                                    cursor: 'pointer'
-                                                }}
-                                            >
+                                            <label key={member._id || member.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', borderRadius: '6px', cursor: 'pointer' }}>
                                                 <input
                                                     type="checkbox"
                                                     className="checkbox"
                                                     checked={selectedMembers.includes(member._id || member.id)}
                                                     onChange={() => toggleMemberSelection(member._id || member.id)}
                                                 />
-                                                <span
-                                                    className="avatar avatar-xs"
-                                                    style={{ background: member.bg || '#4f46e5' }}
-                                                >
-                          {member.initials}
-                        </span>
+                                                <span className="avatar avatar-xs" style={{ background: member.bg || '#4f46e5' }}>
+                                                    {member.initials}
+                                                </span>
                                                 <span style={{ fontSize: '14px' }}>{member.name}</span>
                                             </label>
                                         ))}
@@ -653,11 +512,7 @@ export default function Projects() {
                                 </div>
                             </div>
                             <div className="modal-footer">
-                                <button
-                                    type="button"
-                                    className="btn btn-outline btn-sm"
-                                    onClick={() => setActiveModal(null)}
-                                >
+                                <button type="button" className="btn btn-outline btn-sm" onClick={() => setActiveModal(null)}>
                                     Cancel
                                 </button>
                                 <button type="submit" className="btn btn-primary btn-sm">
@@ -668,35 +523,6 @@ export default function Projects() {
                     </div>
                 </div>
             )}
-
-            <div className="toast-viewport">
-                {toasts.map((toast) => (
-                    <div key={toast.id} className={`toast variant-${toast.variant}`}>
-                        {toast.variant === 'success' && (
-                            <CheckCircle2 className="toast-icon icon" />
-                        )}
-                        {toast.variant === 'error' && (
-                            <XCircle className="toast-icon icon" />
-                        )}
-                        {toast.variant === 'info' && <Info className="toast-icon icon" />}
-
-                        <div className="toast-body">
-                            <p className="toast-title">{toast.title}</p>
-                            {toast.description && (
-                                <p className="toast-desc">{toast.description}</p>
-                            )}
-                        </div>
-
-                        <button
-                            className="toast-close icon icon-sm"
-                            onClick={() => removeToast(toast.id)}
-                            aria-label="Dismiss"
-                        >
-                            <X />
-                        </button>
-                    </div>
-                ))}
-            </div>
         </div>
     );
 }
