@@ -1,266 +1,150 @@
-const API_BASE_URL = 'http://localhost:3000/api';
+const API_BASE_URL = 'http://localhost:3000/api'; // Thay bằng URL API của bạn
 
+// Hàm xử lý Response chung
 const handleResponse = async (res) => {
     if (!res.ok) {
+        if (res.status === 401) {
+            // Token hết hạn hoặc không hợp lệ -> Xóa token và về login
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+        }
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Đã có lỗi xảy ra từ server');
+        throw new Error(errorData.message || `Lỗi ${res.status}: Không thể thực hiện yêu cầu`);
     }
     return res.json();
 };
 
-// ==========================================
-// 1. PROJECTS API
-// ==========================================
+// Hàm bổ trợ lấy Headers đính kèm Token
+const getAuthHeaders = () => {
+    const token = localStorage.getItem('token');
+    return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+    };
+};
+
+// ==================== PROJECTS ====================
 
 export const fetchProjects = async () => {
-    const res = await fetch(`${API_BASE_URL}/project`);
+    const res = await fetch(`${API_BASE_URL}/project`, {
+        headers: getAuthHeaders()
+    });
     return handleResponse(res);
 };
 
-export const fetchProjectById = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/project/${projectId}`);
+export const fetchProjectById = async (id) => {
+    const res = await fetch(`${API_BASE_URL}/project/${id}`, {
+        headers: getAuthHeaders()
+    });
     return handleResponse(res);
 };
 
 export const createProject = async (projectData) => {
-    // 1. Lấy token JWT đã lưu từ localStorage sau khi Đăng nhập
-    const token = localStorage.getItem('token');
-
-    // 2. Kiểm tra nếu chưa có Token thì báo lỗi/chuyển sang Login
-    if (!token) {
-        throw new Error('Bạn chưa đăng nhập hoặc phiên làm việc đã hết hạn');
-    }
-
-    // 3. Gửi Request đính kèm Bearer Token lên Backend
-    const response = await fetch('http://localhost:3000/api/project', { // Thay URL API project của bạn nếu khác
+    const res = await fetch(`${API_BASE_URL}/project`, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`, // <--- GỬI TOKEN XÁC THỰC Ở ĐÂY
-        },
-        body: JSON.stringify(projectData),
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Không thể tạo project');
-    }
-
-    return await response.json();
-};
-
-export const updateProject = async (projectId, projectData) => {
-    const res = await fetch(`${API_BASE_URL}/project/${projectId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(projectData)
     });
     return handleResponse(res);
 };
 
-export const deleteProject = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/project/${projectId}`, {
-        method: 'DELETE'
-    });
-    return handleResponse(res);
-};
-
-// ==========================================
-// 2. MEMBERS API
-// ==========================================
-
 export const fetchMembers = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/members`);
-    return handleResponse(res);
-};
-
-export const addMemberToProject = async (projectId, email, role = 'member') => {
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/members`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, role })
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}/members`, {
+        headers: getAuthHeaders()
     });
     return handleResponse(res);
 };
-
-export const removeMemberFromProject = async (projectId, memberId) => {
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/members/${memberId}`, {
-        method: 'DELETE'
-    });
-    return handleResponse(res);
-};
-
-// ==========================================
-// 3. COLUMNS API
-// ==========================================
 
 export const fetchColumns = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/columns`);
-    return handleResponse(res);
-};
-
-export const createColumn = async (projectId, columnData) => {
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/columns`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(columnData)
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}/columns`, {
+        headers: getAuthHeaders()
     });
     return handleResponse(res);
 };
 
-export const updateColumn = async (columnId, columnData) => {
-    const res = await fetch(`${API_BASE_URL}/columns/${columnId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(columnData)
-    });
-    return handleResponse(res);
-};
-
-export const deleteColumn = async (columnId) => {
-    const res = await fetch(`${API_BASE_URL}/columns/${columnId}`, {
-        method: 'DELETE'
-    });
-    return handleResponse(res);
-};
-
-// ==========================================
-// 4. LABELS API
-// ==========================================
-
-export const fetchLabels = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/labels`);
-    return handleResponse(res);
-};
-
-export const createLabel = async (projectId, labelData) => {
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/labels`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(labelData)
-    });
-    return handleResponse(res);
-};
-
-export const deleteLabel = async (labelId) => {
-    const res = await fetch(`${API_BASE_URL}/labels/${labelId}`, {
-        method: 'DELETE'
-    });
-    return handleResponse(res);
-};
-
-// ==========================================
-// 5. TASKS API
-// ==========================================
+// ==================== TASKS ====================
 
 export const fetchTasksByProject = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/tasks`);
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}/tasks`, {
+        headers: getAuthHeaders()
+    });
     return handleResponse(res);
 };
 
 export const fetchTaskById = async (taskId) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}`);
+    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+        headers: getAuthHeaders()
+    });
     return handleResponse(res);
 };
 
 export const createTask = async (taskData) => {
     const res = await fetch(`${API_BASE_URL}/tasks`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(taskData)
     });
     return handleResponse(res);
 };
 
-export const updateTask = async (taskId, taskData) => {
+export const updateTask = async (taskId, updateData) => {
     const res = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(taskData)
-    });
-    return handleResponse(res);
-};
-
-export const moveTask = async (taskId, { columnId, position }) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/move`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ columnId, position })
+        headers: getAuthHeaders(),
+        body: JSON.stringify(updateData)
     });
     return handleResponse(res);
 };
 
 export const deleteTask = async (taskId) => {
     const res = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: getAuthHeaders()
     });
     return handleResponse(res);
 };
 
-// ==========================================
-// 6. CHECKLISTS API (MỚI)
-// ==========================================
+// ==================== CHECKLIST ====================
 
 export const addChecklistItem = async (taskId, text) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/checklists`, {
+    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/checklist`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, completed: false })
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ text })
     });
     return handleResponse(res);
 };
 
 export const toggleChecklistItem = async (taskId, itemId, completed) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/checklists/${itemId}`, {
+    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/checklist/${itemId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ completed })
     });
     return handleResponse(res);
 };
 
-export const deleteChecklistItem = async (taskId, itemId) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/checklists/${itemId}`, {
-        method: 'DELETE'
-    });
-    return handleResponse(res);
-};
-
-// ==========================================
-// 7. COMMENTS API (MỚI)
-// ==========================================
+// ==================== COMMENTS & ACTIVITIES ====================
 
 export const fetchTaskComments = async (taskId) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/comments`);
+    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/comments`, {
+        headers: getAuthHeaders()
+    });
     return handleResponse(res);
 };
 
-export const addComment = async (taskId, content) => {
+export const addComment = async (taskId, text) => {
     const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/comments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content })
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ text })
     });
-    return handleResponse(res);
-};
-
-export const deleteComment = async (commentId) => {
-    const res = await fetch(`${API_BASE_URL}/comments/${commentId}`, {
-        method: 'DELETE'
-    });
-    return handleResponse(res);
-};
-
-// ==========================================
-// 8. ACTIVITIES / LOGS API (MỚI)
-// ==========================================
-
-export const fetchProjectActivities = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/activities`);
     return handleResponse(res);
 };
 
 export const fetchTaskActivities = async (taskId) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/activities`);
+    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/activity`, {
+        headers: getAuthHeaders()
+    });
     return handleResponse(res);
 };

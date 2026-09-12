@@ -1,20 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import Header from './../../components/layout/Header/Header.jsx';
+import Sidebar from './../../components/layout/Sidebar/Sidebar.jsx'; // Nhúng Sidebar dùng chung
 import {
-    KanbanSquare,
-    LayoutDashboard,
-    ListTodo,
-    FolderKanban,
-    Users,
-    ShieldCheck,
-    Flag,
-    ChevronsLeft,
-    ChevronsRight,
-    Menu,
     Search,
     Plus,
-    ListPlus,
-    FolderPlus,
-    LogOut,
     X,
     UsersRound,
     ListChecks,
@@ -54,12 +44,14 @@ import {
     fetchTaskActivities
 } from '../../../api';
 
-export default function ProjectBoard({ projectId = 'p1' }) {
-    // Sidebar & Layout State
+export default function ProjectBoard() {
+    const { id: projectId } = useParams();
+
+    // Sidebar State
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
-    const [createDropdownOpen, setCreateDropdownOpen] = useState(false);
-    const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+
+    // UI Modal & Toast State
     const [activeModal, setActiveModal] = useState(null);
     const [commandQuery, setCommandQuery] = useState('');
     const [toasts, setToasts] = useState([]);
@@ -78,7 +70,7 @@ export default function ProjectBoard({ projectId = 'p1' }) {
     const [dueDateFilter, setDueDateFilter] = useState('All');
     const [sortBy, setSortBy] = useState('Priority');
 
-    // Task Drawer & Sub-resources
+    // Task Drawer
     const [selectedTask, setSelectedTask] = useState(null);
     const [taskComments, setTaskComments] = useState([]);
     const [taskActivities, setTaskActivities] = useState([]);
@@ -96,33 +88,27 @@ export default function ProjectBoard({ projectId = 'p1' }) {
     const [newProjectDueDate, setNewProjectDueDate] = useState('');
 
     useEffect(() => {
-        loadProjectData();
+        if (projectId) {
+            loadProjectData();
+        }
     }, [projectId]);
 
     const loadProjectData = async () => {
         try {
-            const pData = await fetchProjectById(projectId).catch(() => ({
-                name: 'TeamFlow Platform',
-                desc: 'Kanban team task management system — the capstone product.',
-                dueDate: 'Sep 15, 2026',
-                color: '#4f46e5'
-            }));
-            setProject(pData);
+            const pData = await fetchProjectById(projectId);
+            setProject(pData || {});
 
             const mems = await fetchMembers(projectId).catch(() => []);
-            setMembers(mems);
+            setMembers(mems || []);
 
-            const cols = await fetchColumns(projectId).catch(() => [
-                { id: 'c0', name: 'Todo', color: '#94a3b8' },
-                { id: 'c1', name: 'In Progress', color: '#f59e0b' },
-                { id: 'c2', name: 'Review', color: '#9333ea' },
-                { id: 'c3', name: 'Done', color: '#16a34a' }
-            ]);
-            setColumns(cols);
-            if (cols.length > 0) setNewTaskColumn(cols[0].name);
+            const cols = await fetchColumns(projectId).catch(() => []);
+            setColumns(cols || []);
+            if (cols && cols.length > 0) {
+                setNewTaskColumn(cols[0].name || cols[0].id);
+            }
 
             const tskList = await fetchTasksByProject(projectId).catch(() => []);
-            setTasks(tskList);
+            setTasks(tskList || []);
         } catch (err) {
             showToast('Lỗi tải dữ liệu', 'Không thể kết nối đến máy chủ', 'error');
         }
@@ -139,13 +125,14 @@ export default function ProjectBoard({ projectId = 'p1' }) {
     const handleOpenTaskDrawer = async (task) => {
         setSelectedTask(task);
         try {
-            const fullTask = await fetchTaskById(task.id).catch(() => task);
+            const taskId = task._id || task.id;
+            const fullTask = await fetchTaskById(taskId).catch(() => task);
             setSelectedTask(fullTask);
 
-            const comments = await fetchTaskComments(task.id).catch(() => []);
+            const comments = await fetchTaskComments(taskId).catch(() => []);
             setTaskComments(comments);
 
-            const activities = await fetchTaskActivities(task.id).catch(() => []);
+            const activities = await fetchTaskActivities(taskId).catch(() => []);
             setTaskActivities(activities);
         } catch (err) {
             console.error(err);
@@ -164,20 +151,11 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                 priority: newTaskPriority,
                 dueDate: newTaskDueDate
             });
-            setTasks((prev) => [...prev, created || {
-                id: `task-${Date.now()}`,
-                title: newTaskTitle,
-                column: newTaskColumn,
-                priority: newTaskPriority,
-                dueDate: newTaskDueDate,
-                checklists: [],
-                comments: [],
-                assignees: [],
-                labels: []
-            }]);
+            setTasks((prev) => [...prev, created]);
             showToast('Task created', 'Task added to board live.', 'success');
             setNewTaskTitle('');
             setActiveModal(null);
+            loadProjectData();
         } catch (err) {
             showToast('Lỗi', 'Không thể tạo task mới', 'error');
         }
@@ -193,7 +171,7 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                 desc: newProjectDesc,
                 dueDate: newProjectDueDate
             });
-            showToast('Project created', '“Your project” is ready to go.', 'success');
+            showToast('Project created', 'Project created successfully.', 'success');
             setNewProjectName('');
             setNewProjectDesc('');
             setActiveModal(null);
@@ -204,9 +182,10 @@ export default function ProjectBoard({ projectId = 'p1' }) {
 
     const handleDeleteTask = async () => {
         if (!selectedTask) return;
+        const taskId = selectedTask._id || selectedTask.id;
         try {
-            await deleteTask(selectedTask.id);
-            setTasks((prev) => prev.filter((t) => t.id !== selectedTask.id));
+            await deleteTask(taskId);
+            setTasks((prev) => prev.filter((t) => (t._id || t.id) !== taskId));
             setSelectedTask(null);
             setActiveModal(null);
             showToast('Đã xóa công việc', null, 'success');
@@ -217,12 +196,13 @@ export default function ProjectBoard({ projectId = 'p1' }) {
 
     const handleAddChecklist = async () => {
         if (!newChecklistText.trim() || !selectedTask) return;
+        const taskId = selectedTask._id || selectedTask.id;
         try {
-            const item = await addChecklistItem(selectedTask.id, newChecklistText);
-            const updatedChecklist = [...(selectedTask.checklists || []), item || { id: Date.now(), text: newChecklistText, completed: false }];
+            const item = await addChecklistItem(taskId, newChecklistText);
+            const updatedChecklist = [...(selectedTask.checklists || []), item];
             const updatedTask = { ...selectedTask, checklists: updatedChecklist };
             setSelectedTask(updatedTask);
-            setTasks((prev) => prev.map((t) => (t.id === selectedTask.id ? updatedTask : t)));
+            setTasks((prev) => prev.map((t) => ((t._id || t.id) === taskId ? updatedTask : t)));
             setNewChecklistText('');
         } catch (err) {
             showToast('Lỗi', 'Không thể thêm checklist', 'error');
@@ -231,14 +211,15 @@ export default function ProjectBoard({ projectId = 'p1' }) {
 
     const handleToggleChecklist = async (itemId, currentStatus) => {
         if (!selectedTask) return;
+        const taskId = selectedTask._id || selectedTask.id;
         try {
-            await toggleChecklistItem(selectedTask.id, itemId, !currentStatus);
+            await toggleChecklistItem(taskId, itemId, !currentStatus);
             const updatedChecklist = (selectedTask.checklists || []).map((c) =>
-                c.id === itemId ? { ...c, completed: !currentStatus } : c
+                (c._id || c.id) === itemId ? { ...c, completed: !currentStatus } : c
             );
             const updatedTask = { ...selectedTask, checklists: updatedChecklist };
             setSelectedTask(updatedTask);
-            setTasks((prev) => prev.map((t) => (t.id === selectedTask.id ? updatedTask : t)));
+            setTasks((prev) => prev.map((t) => ((t._id || t.id) === taskId ? updatedTask : t)));
         } catch (err) {
             showToast('Lỗi', 'Không thể cập nhật trạng thái', 'error');
         }
@@ -247,9 +228,10 @@ export default function ProjectBoard({ projectId = 'p1' }) {
     const handleAddComment = async (e) => {
         e.preventDefault();
         if (!newCommentText.trim() || !selectedTask) return;
+        const taskId = selectedTask._id || selectedTask.id;
         try {
-            const newCmt = await addComment(selectedTask.id, newCommentText);
-            setTaskComments((prev) => [...prev, newCmt || { id: Date.now(), user: 'Cao Sơn', avatarBg: '#4f46e5', userInitials: 'CS', content: newCommentText, createdAt: 'Just now' }]);
+            const newCmt = await addComment(taskId, newCommentText);
+            setTaskComments((prev) => [...prev, newCmt]);
             setNewCommentText('');
         } catch (err) {
             showToast('Lỗi', 'Không thể gửi bình luận', 'error');
@@ -258,17 +240,17 @@ export default function ProjectBoard({ projectId = 'p1' }) {
 
     const handleStatusChange = async (newColName) => {
         if (!selectedTask) return;
+        const taskId = selectedTask._id || selectedTask.id;
         const updatedTask = { ...selectedTask, column: newColName };
         setSelectedTask(updatedTask);
-        setTasks((prev) => prev.map((t) => (t.id === selectedTask.id ? updatedTask : t)));
+        setTasks((prev) => prev.map((t) => ((t._id || t.id) === taskId ? updatedTask : t)));
         try {
-            await updateTask(selectedTask.id, { column: newColName });
+            await updateTask(taskId, { column: newColName });
         } catch (err) {
             showToast('Lỗi', 'Không thể cập nhật cột', 'error');
         }
     };
 
-    // Filter tasks
     const filteredTasks = useMemo(() => {
         return tasks.filter((task) => {
             if (searchQuery && !task.title.toLowerCase().includes(searchQuery.toLowerCase())) {
@@ -307,137 +289,53 @@ export default function ProjectBoard({ projectId = 'p1' }) {
 
     return (
         <div className="app-shell">
-            <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${sidebarMobileOpen ? 'mobile-open' : ''}`}>
-                <div className="sidebar-brand">
-                    <KanbanSquare className="sidebar-brand-logo icon" />
-                    <span className="sidebar-brand-name">TeamFlow</span>
-                </div>
-                <div className="sidebar-workspace">
-                    <p className="sidebar-workspace-label">Workspace</p>
-                    <p className="sidebar-workspace-name">Aptech Capstone Team</p>
-                </div>
-                <nav className="sidebar-nav">
-                    <a href="dashboard.html" className="nav-item">
-                        <LayoutDashboard className="icon" />
-                        <span className="nav-label">Dashboard</span>
-                    </a>
-                    <a href="my-tasks.html" className="nav-item">
-                        <ListTodo className="icon" />
-                        <span className="nav-label">My Tasks</span>
-                    </a>
-                    <a href="projects.html" className="nav-item active">
-                        <FolderKanban className="icon" />
-                        <span className="nav-label">Projects</span>
-                    </a>
-                    <a href="members.html" className="nav-item">
-                        <Users className="icon" />
-                        <span className="nav-label">Members</span>
-                    </a>
-                    <p className="sidebar-section-label">Admin</p>
-                    <a href="admin-users.html" className="nav-item">
-                        <ShieldCheck className="icon" />
-                        <span className="nav-label">Users</span>
-                    </a>
-                    <a href="admin-moderation.html" className="nav-item">
-                        <Flag className="icon" />
-                        <span className="nav-label">Moderation</span>
-                    </a>
-                </nav>
-                <div className="sidebar-collapse-btn">
-                    <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
-                        {sidebarCollapsed ? <ChevronsRight className="icon icon-sm" /> : <ChevronsLeft className="icon icon-sm" />}
-                        <span>Collapse</span>
-                    </button>
-                </div>
-            </aside>
-
-            {sidebarMobileOpen && (
-                <div className="sidebar-overlay show" onClick={() => setSidebarMobileOpen(false)} />
-            )}
+            {/* Sidebar Dùng Chung */}
+            <Sidebar
+                collapsed={sidebarCollapsed}
+                setCollapsed={setSidebarCollapsed}
+                mobileOpen={sidebarMobileOpen}
+                setMobileOpen={setSidebarMobileOpen}
+            />
 
             <div className="app-main">
-                <header className="header">
-                    <button className="icon-btn mobile-menu-btn" onClick={() => setSidebarMobileOpen(true)} aria-label="Open menu">
-                        <Menu className="icon" />
-                    </button>
-                    <button className="header-search" onClick={() => setActiveModal('commandPalette')}>
-                        <Search className="icon icon-sm" />
-                        <span className="search-label">Search anything…</span>
-                        <kbd>Ctrl K</kbd>
-                    </button>
-                    <div className="header-actions">
-                        <div className="dropdown">
-                            <button className="btn btn-primary btn-sm" onClick={() => setCreateDropdownOpen(!createDropdownOpen)}>
-                                <Plus className="icon icon-sm" />
-                                <span className="create-btn-label">Create</span>
-                            </button>
-                            {createDropdownOpen && (
-                                <div className="dropdown-menu">
-                                    <button className="dropdown-item" onClick={() => { setActiveModal('quickCreateTaskModal'); setCreateDropdownOpen(false); }}>
-                                        <ListPlus className="icon icon-sm" />
-                                        New Task
-                                    </button>
-                                    <button className="dropdown-item" onClick={() => { setActiveModal('createProjectModal'); setCreateDropdownOpen(false); }}>
-                                        <FolderPlus className="icon icon-sm" />
-                                        New Project
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="dropdown">
-                            <button onClick={() => setUserDropdownOpen(!userDropdownOpen)} aria-label="Open user menu">
-                                <span className="avatar avatar-sm" style={{ background: '#4f46e5' }}>CS</span>
-                            </button>
-                            {userDropdownOpen && (
-                                <div className="dropdown-menu">
-                                    <div className="dropdown-user-info">
-                                        <p className="dropdown-user-name">Cao Sơn</p>
-                                        <p className="dropdown-user-email">caosonhs@gmail.com</p>
-                                        <p className="dropdown-user-role">leader</p>
-                                    </div>
-                                    <div className="dropdown-separator"></div>
-                                    <a className="dropdown-item destructive" href="login.html">
-                                        <LogOut className="icon icon-sm" />
-                                        Log out
-                                    </a>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </header>
+                {/* Header Dùng Chung */}
+                <Header
+                    onOpenSidebar={() => setSidebarMobileOpen(true)}
+                    onOpenModal={(modal) => setActiveModal(modal)}
+                />
 
                 <div className="project-header">
                     <div className="project-header-top">
                         <div style={{ minWidth: 0 }}>
                             <div className="project-title-row">
                                 <span className="project-color-dot" style={{ background: project.color || '#4f46e5' }}></span>
-                                <h1>{project.name}</h1>
+                                <h1>{project.name || 'Project Name'}</h1>
                             </div>
-                            <p className="page-subtitle" style={{ maxWidth: '640px' }}>{project.desc}</p>
+                            <p className="page-subtitle" style={{ maxWidth: '640px' }}>{project.desc || project.description}</p>
                             <div className="project-meta-row">
-                                <span className="project-meta-item"><UsersRound className="icon icon-sm" />{members.length || 4} members</span>
+                                <span className="project-meta-item"><UsersRound className="icon icon-sm" />{members.length} members</span>
                                 <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
-                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />Due {project.dueDate || 'Sep 15, 2026'}</span>
+                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />Due {project.dueDate || 'No due date'}</span>
                             </div>
                         </div>
                         <div className="project-header-actions">
-              <span className="avatar-group">
-                <span className="avatar avatar-sm" style={{ background: '#4f46e5' }}>CS</span>
-                <span className="avatar avatar-sm" style={{ background: '#0ea5e9' }}>QL</span>
-                <span className="avatar avatar-sm" style={{ background: '#16a34a' }}>NL</span>
-                <span className="avatar avatar-sm" style={{ background: '#db2777' }}>KN</span>
-              </span>
-                            <a href="project-settings.html" className="icon-btn icon-btn-outline" aria-label="Project settings">
+                            <span className="avatar-group">
+                                {members.slice(0, 4).map((m, idx) => (
+                                    <span key={m._id || m.id || idx} className="avatar avatar-sm" style={{ background: '#4f46e5' }}>
+                                        {m.name ? m.name.substring(0, 2).toUpperCase() : 'U'}
+                                    </span>
+                                ))}
+                            </span>
+                            <Link to={`/project-settings/${projectId}`} className="icon-btn icon-btn-outline" aria-label="Project settings">
                                 <Settings className="icon" />
-                            </a>
+                            </Link>
                         </div>
                     </div>
                     <nav className="project-tabs">
-                        <a href="project-board.html" className="project-tab active"><LayoutGrid className="icon icon-sm" />Board</a>
-                        <a href="project-list.html" className="project-tab"><List className="icon icon-sm" />List</a>
-                        <a href="project-calendar.html" className="project-tab"><Calendar className="icon icon-sm" />Calendar</a>
-                        <a href="project-activity.html" className="project-tab"><Activity className="icon icon-sm" />Activity</a>
+                        <Link to={`/projectboard/${projectId}`} className="project-tab active"><LayoutGrid className="icon icon-sm" />Board</Link>
+                        <Link to={`/projectlist/${projectId}`} className="project-tab"><List className="icon icon-sm" />List</Link>
+                        <Link to={`/calendar/${projectId}`} className="project-tab"><Calendar className="icon icon-sm" />Calendar</Link>
+                        <Link to={`/activity/${projectId}`} className="project-tab"><Activity className="icon icon-sm" />Activity</Link>
                     </nav>
                 </div>
 
@@ -455,10 +353,9 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                             </div>
                             <select className="select" value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
                                 <option value="All">Assignee: All</option>
-                                <option value="Cao Sơn">Cao Sơn</option>
-                                <option value="Quách Loan">Quách Loan</option>
-                                <option value="Ngô Lâm">Ngô Lâm</option>
-                                <option value="Khánh Ngọc">Khánh Ngọc</option>
+                                {members.map(m => (
+                                    <option key={m._id || m.id} value={m.name}>{m.name}</option>
+                                ))}
                             </select>
                             <select className="select" value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
                                 <option value="All">Priority: All</option>
@@ -472,24 +369,17 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                                 <option value="Design">Design</option>
                                 <option value="Frontend">Frontend</option>
                                 <option value="Backend">Backend</option>
-                                <option value="Security">Security</option>
-                                <option value="Bug">Bug</option>
-                                <option value="Documentation">Documentation</option>
-                                <option value="DevOps">DevOps</option>
-                                <option value="Research">Research</option>
                             </select>
                             <select className="select" value={dueDateFilter} onChange={(e) => setDueDateFilter(e.target.value)}>
                                 <option value="All">Due date</option>
                                 <option value="Overdue">Overdue</option>
                                 <option value="Due today">Due today</option>
                                 <option value="Upcoming">Upcoming</option>
-                                <option value="No due date">No due date</option>
                             </select>
                             <select className="select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
                                 <option value="Priority">Sort: Priority</option>
                                 <option value="Due date">Sort: Due date</option>
                                 <option value="Title">Sort: Title</option>
-                                <option value="Newest">Sort: Newest</option>
                             </select>
                         </div>
                         <button className="btn btn-primary btn-sm" onClick={() => setActiveModal('quickCreateTaskModal')}>
@@ -500,9 +390,9 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                     <div className="board-scroll">
                         <div className="board scroll-x" id="kanbanBoard">
                             {columns.map((col) => {
-                                const columnTasks = filteredTasks.filter((t) => t.column === col.name || t.status === col.name);
+                                const columnTasks = filteredTasks.filter((t) => t.column === col.name || t.status === col.name || t.column === col._id);
                                 return (
-                                    <div key={col.id} className="board-column">
+                                    <div key={col._id || col.id} className="board-column">
                                         <div className="column-header">
                                             <div className="column-header-title">
                                                 <span className="column-dot" style={{ background: col.color || '#4f46e5' }}></span>
@@ -516,25 +406,26 @@ export default function ProjectBoard({ projectId = 'p1' }) {
 
                                         <div className="task-list">
                                             {columnTasks.map((task) => {
+                                                const taskId = task._id || task.id;
                                                 const completedChecklist = task.checklists?.filter((c) => c.completed).length || 0;
                                                 const totalChecklist = task.checklists?.length || 0;
 
                                                 return (
                                                     <div
-                                                        key={task.id}
+                                                        key={taskId}
                                                         className="task-card"
                                                         onClick={() => handleOpenTaskDrawer(task)}
                                                     >
                                                         <div className="task-card-header">
-                              <span className="priority-badge" style={renderPriorityBadgeStyle(task.priority)}>
-                                {renderPriorityIcon(task.priority)}
-                                  <span>{task.priority || 'Medium'}</span>
-                              </span>
+                                                            <span className="priority-badge" style={renderPriorityBadgeStyle(task.priority)}>
+                                                                {renderPriorityIcon(task.priority)}
+                                                                <span>{task.priority || 'Medium'}</span>
+                                                            </span>
                                                             {task.dueDate && (
                                                                 <span className="task-due-date">
-                                  <CalendarClock className="icon icon-xs" />
+                                                                    <CalendarClock className="icon icon-xs" />
                                                                     {task.dueDate}
-                                </span>
+                                                                </span>
                                                             )}
                                                         </div>
 
@@ -552,15 +443,15 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                                                             <div className="task-card-meta">
                                                                 {totalChecklist > 0 && (
                                                                     <span className="task-meta-item">
-                                    <ListChecks className="icon icon-xs" />
+                                                                        <ListChecks className="icon icon-xs" />
                                                                         {completedChecklist}/{totalChecklist}
-                                  </span>
+                                                                    </span>
                                                                 )}
                                                                 {task.commentsCount > 0 && (
                                                                     <span className="task-meta-item">
-                                    <MessageSquare className="icon icon-xs" />
+                                                                        <MessageSquare className="icon icon-xs" />
                                                                         {task.commentsCount}
-                                  </span>
+                                                                    </span>
                                                                 )}
                                                             </div>
 
@@ -568,8 +459,8 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                                                                 <div className="avatar-group">
                                                                     {task.assignees.map((ass, idx) => (
                                                                         <span key={idx} className="avatar avatar-xs" style={{ background: ass.color || '#4f46e5' }}>
-                                      {ass.initials || 'CS'}
-                                    </span>
+                                                                            {ass.initials || 'U'}
+                                                                        </span>
                                                                     ))}
                                                                 </div>
                                                             )}
@@ -586,16 +477,16 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                 </main>
             </div>
 
-            {/* Task detail drawer */}
+            {/* Task Detail Drawer */}
             {selectedTask && (
                 <div className="drawer-overlay" onClick={() => setSelectedTask(null)}>
                     <div className="drawer-panel" onClick={(e) => e.stopPropagation()}>
                         <div className="drawer-header">
                             <div className="drawer-header-meta">
-                <span className="priority-badge" style={renderPriorityBadgeStyle(selectedTask.priority)}>
-                  {renderPriorityIcon(selectedTask.priority)}
-                    <span>{selectedTask.priority || 'Medium'}</span>
-                </span>
+                                <span className="priority-badge" style={renderPriorityBadgeStyle(selectedTask.priority)}>
+                                    {renderPriorityIcon(selectedTask.priority)}
+                                    <span>{selectedTask.priority || 'Medium'}</span>
+                                </span>
                                 <span>{selectedTask.updatedAt || 'Updated recently'}</span>
                             </div>
                             <button className="icon-btn" onClick={() => setSelectedTask(null)} aria-label="Close panel">
@@ -603,12 +494,12 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                             </button>
                         </div>
                         <div className="drawer-body">
-              <textarea
-                  className="drawer-title-input"
-                  rows={1}
-                  value={selectedTask.title}
-                  onChange={(e) => setSelectedTask({ ...selectedTask, title: e.target.value })}
-              />
+                            <textarea
+                                className="drawer-title-input"
+                                rows={1}
+                                value={selectedTask.title || ''}
+                                onChange={(e) => setSelectedTask({ ...selectedTask, title: e.target.value })}
+                            />
 
                             <div className="drawer-field-grid">
                                 <div>
@@ -619,7 +510,7 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                                         onChange={(e) => handleStatusChange(e.target.value)}
                                     >
                                         {columns.map((c) => (
-                                            <option key={c.id} value={c.name}>{c.name}</option>
+                                            <option key={c._id || c.id} value={c.name}>{c.name}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -645,25 +536,6 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                                         onChange={(e) => setSelectedTask({ ...selectedTask, dueDate: e.target.value })}
                                     />
                                 </div>
-                                <div>
-                                    <span className="drawer-field-label">Assignees</span>
-                                    <div className="drawer-assignee-list">
-                                        {(selectedTask.assignees || []).map((a, idx) => (
-                                            <span key={idx} className="avatar avatar-sm" style={{ background: a.color || '#4f46e5' }}>
-                        {a.initials || 'CS'}
-                      </span>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <span className="drawer-field-label">Labels</span>
-                                <div className="drawer-label-list">
-                                    {(selectedTask.labels || ['Design']).map((lbl, idx) => (
-                                        <span key={idx} className="badge badge-subtle">{lbl}</span>
-                                    ))}
-                                </div>
                             </div>
 
                             <div>
@@ -672,7 +544,7 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                                     className="textarea"
                                     rows={3}
                                     placeholder="Add a more detailed description…"
-                                    value={selectedTask.desc || ''}
+                                    value={selectedTask.desc || selectedTask.description || ''}
                                     onChange={(e) => setSelectedTask({ ...selectedTask, desc: e.target.value })}
                                 />
                             </div>
@@ -682,28 +554,16 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                                 <div className="checklist-header">
                                     <span className="comments-title">Checklist</span>
                                     <span className="checklist-count">
-                    {(selectedTask.checklists || []).filter((c) => c.completed).length}/{(selectedTask.checklists || []).length}
-                  </span>
-                                </div>
-                                <div className="progress-bar">
-                  <span
-                      className="progress-bar-fill tone-success"
-                      style={{
-                          width: `${
-                              selectedTask.checklists?.length
-                                  ? ((selectedTask.checklists.filter((c) => c.completed).length / selectedTask.checklists.length) * 100)
-                                  : 0
-                          }%`
-                      }}
-                  ></span>
+                                        {(selectedTask.checklists || []).filter((c) => c.completed).length}/{(selectedTask.checklists || []).length}
+                                    </span>
                                 </div>
                                 <div className="checklist-items">
                                     {(selectedTask.checklists || []).map((item) => (
-                                        <div key={item.id} className="checklist-item">
+                                        <div key={item._id || item.id} className="checklist-item">
                                             <input
                                                 type="checkbox"
                                                 checked={item.completed}
-                                                onChange={() => handleToggleChecklist(item.id, item.completed)}
+                                                onChange={() => handleToggleChecklist(item._id || item.id, item.completed)}
                                             />
                                             <span className={item.completed ? 'completed' : ''}>{item.text}</span>
                                         </div>
@@ -727,13 +587,13 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                                 <p className="comments-title">Comments ({taskComments.length})</p>
                                 <div className="comments-list">
                                     {taskComments.map((cmt) => (
-                                        <div key={cmt.id} className="comment-item">
-                      <span className="avatar avatar-sm" style={{ background: cmt.avatarBg || '#4f46e5' }}>
-                        {cmt.userInitials || 'CS'}
-                      </span>
+                                        <div key={cmt._id || cmt.id} className="comment-item">
+                                            <span className="avatar avatar-sm" style={{ background: cmt.avatarBg || '#4f46e5' }}>
+                                                {cmt.userInitials || 'U'}
+                                            </span>
                                             <div className="comment-content">
                                                 <div className="comment-header">
-                                                    <span className="comment-author">{cmt.user || 'Cao Sơn'}</span>
+                                                    <span className="comment-author">{cmt.user || 'User'}</span>
                                                     <span className="comment-time">{cmt.createdAt || 'Recently'}</span>
                                                 </div>
                                                 <p className="comment-text">{cmt.content}</p>
@@ -742,34 +602,19 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                                     ))}
                                 </div>
                                 <form className="comment-form" onSubmit={handleAddComment}>
-                  <textarea
-                      className="textarea"
-                      rows={2}
-                      placeholder="Write a comment…"
-                      value={newCommentText}
-                      onChange={(e) => setNewCommentText(e.target.value)}
-                  />
+                                    <textarea
+                                        className="textarea"
+                                        rows={2}
+                                        placeholder="Write a comment…"
+                                        value={newCommentText}
+                                        onChange={(e) => setNewCommentText(e.target.value)}
+                                    />
                                     <div className="comment-form-actions">
                                         <button type="submit" className="btn btn-primary btn-sm">
                                             Send <Send className="icon icon-sm" />
                                         </button>
                                     </div>
                                 </form>
-                            </div>
-
-                            {/* Activity Section */}
-                            <div className="drawer-section">
-                                <p className="comments-title" style={{ marginBottom: '12px' }}>Activity</p>
-                                <ol className="timeline">
-                                    {taskActivities.map((act) => (
-                                        <li key={act.id} className="timeline-item">
-                                            <div className="timeline-content">
-                                                <p><strong>{act.user}</strong> {act.action}</p>
-                                                <span className="timeline-time">{act.createdAt}</span>
-                                            </div>
-                                        </li>
-                                    ))}
-                                </ol>
                             </div>
 
                             {/* Delete Task */}
@@ -796,30 +641,11 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                             <button className="icon-btn" onClick={() => setActiveModal(null)} aria-label="Close"><X className="icon" /></button>
                         </div>
                         <div className="modal-body">
-                            <p className="page-subtitle" style={{ margin: 0 }}>This task and all its comments and checklist items will be permanently removed.</p>
+                            <p className="page-subtitle" style={{ margin: 0 }}>This task and all its items will be permanently removed.</p>
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-outline btn-sm" onClick={() => setActiveModal(null)}>Cancel</button>
                             <button className="btn btn-danger btn-sm" onClick={handleDeleteTask}>Delete task</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Command Palette */}
-            {activeModal === 'commandPalette' && (
-                <div className="command-palette-overlay" onClick={() => setActiveModal(null)}>
-                    <div className="command-palette-box" onClick={(e) => e.stopPropagation()}>
-                        <div className="command-palette-input-row">
-                            <Search className="icon icon-sm" />
-                            <input
-                                className="command-palette-input"
-                                placeholder="Search tasks, projects, members…"
-                                autoFocus
-                                value={commandQuery}
-                                onChange={(e) => setCommandQuery(e.target.value)}
-                            />
-                            <kbd onClick={() => setActiveModal(null)} style={{ cursor: 'pointer' }}>ESC</kbd>
                         </div>
                     </div>
                 </div>
@@ -844,7 +670,7 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                                         <label className="field-label">Column</label>
                                         <select className="select" value={newTaskColumn} onChange={(e) => setNewTaskColumn(e.target.value)}>
                                             {columns.map((c) => (
-                                                <option key={c.id} value={c.name}>{c.name}</option>
+                                                <option key={c._id || c.id} value={c.name}>{c.name}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -866,41 +692,6 @@ export default function ProjectBoard({ projectId = 'p1' }) {
                             <div className="modal-footer">
                                 <button type="button" className="btn btn-outline btn-sm" onClick={() => setActiveModal(null)}>Cancel</button>
                                 <button type="submit" className="btn btn-primary btn-sm">Create task</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Create Project Modal */}
-            {activeModal === 'createProjectModal' && (
-                <div className="modal-overlay" onClick={() => setActiveModal(null)}>
-                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <div>
-                                <h2 className="modal-title">Create project</h2>
-                                <p className="modal-desc">Set up a new board for your team.</p>
-                            </div>
-                            <button className="icon-btn" onClick={() => setActiveModal(null)} aria-label="Close"><X className="icon" /></button>
-                        </div>
-                        <form onSubmit={handleCreateProjectSubmit}>
-                            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                                <div className="field">
-                                    <label className="field-label">Name</label>
-                                    <input className="input" placeholder="e.g. Growth Experiments" required autoFocus value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} />
-                                </div>
-                                <div className="field">
-                                    <label className="field-label">Description</label>
-                                    <textarea className="textarea" placeholder="What is this project about?" rows={2} value={newProjectDesc} onChange={(e) => setNewProjectDesc(e.target.value)} />
-                                </div>
-                                <div className="field">
-                                    <label className="field-label">Due date</label>
-                                    <input className="input" type="date" value={newProjectDueDate} onChange={(e) => setNewProjectDueDate(e.target.value)} />
-                                </div>
-                            </div>
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-outline btn-sm" onClick={() => setActiveModal(null)}>Cancel</button>
-                                <button type="submit" className="btn btn-primary btn-sm">Create project</button>
                             </div>
                         </form>
                     </div>

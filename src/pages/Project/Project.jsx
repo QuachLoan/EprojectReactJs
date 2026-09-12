@@ -12,6 +12,7 @@ import {
 import SideBar from './../../components/layout/SideBar/SideBar';
 import Header from './../../components/layout/Header/Header';
 import { fetchProjects, createProject, fetchMembers, createTask } from './../../../api.jsx';
+import {Link} from "react-router-dom";
 
 const COLOR_OPTIONS = [
     '#4f46e5',
@@ -180,9 +181,9 @@ export default function Projects() {
                         ) : (
                             <div className="grid-cards">
                                 {projects.map((project) => (
-                                    <a
+                                    <Link
                                         key={project._id || project.id}
-                                        href={`project-board.html?id=${project._id || project.id}`}
+                                        to={`/projectboard/${project._id || project.id}`}
                                         className="card project-card"
                                     >
                                         <div className="project-card-top">
@@ -236,7 +237,7 @@ export default function Projects() {
                                                 </span>
                                             </span>
                                         </div>
-                                    </a>
+                                    </Link>
                                 ))}
                             </div>
                         )}
