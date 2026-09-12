@@ -32,6 +32,22 @@ export const fetchProjects = async () => {
     return handleResponse(res);
 };
 
+// src/api.jsx
+
+export const createQuickTask = async (taskData) => {
+    // Thay đổi URL API tương ứng với Backend của bạn
+    const response = await fetch('/api/task', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(taskData)
+    });
+    if (!response.ok) {
+        throw new Error('Lỗi khi tạo task nhanh');
+    }
+
+    return await response.json();
+};
+
 export const fetchProjectById = async (id) => {
     const res = await fetch(`${API_BASE_URL}/project/${id}`, {
         headers: getAuthHeaders()
@@ -48,15 +64,22 @@ export const createProject = async (projectData) => {
     return handleResponse(res);
 };
 
-export const fetchMembers = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/project/${projectId}/members`, {
+export const fetchMembersByProject = async (projectId) => {
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}/user`, {
+        headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
+
+export const fetchMembers = async () => {
+    const res = await fetch(`${API_BASE_URL}/user`, {
         headers: getAuthHeaders()
     });
     return handleResponse(res);
 };
 
 export const fetchColumns = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/project/${projectId}/columns`, {
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}/column`, {
         headers: getAuthHeaders()
     });
     return handleResponse(res);
@@ -65,21 +88,21 @@ export const fetchColumns = async (projectId) => {
 // ==================== TASKS ====================
 
 export const fetchTasksByProject = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/project/${projectId}/tasks`, {
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}/task`, {
         headers: getAuthHeaders()
     });
     return handleResponse(res);
 };
 
 export const fetchTaskById = async (taskId) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}`, {
         headers: getAuthHeaders()
     });
     return handleResponse(res);
 };
 
 export const createTask = async (taskData) => {
-    const res = await fetch(`${API_BASE_URL}/tasks`, {
+    const res = await fetch(`${API_BASE_URL}/task`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(taskData)
@@ -88,7 +111,7 @@ export const createTask = async (taskData) => {
 };
 
 export const updateTask = async (taskId, updateData) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify(updateData)
@@ -97,7 +120,7 @@ export const updateTask = async (taskId, updateData) => {
 };
 
 export const deleteTask = async (taskId) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
     });
@@ -107,7 +130,7 @@ export const deleteTask = async (taskId) => {
 // ==================== CHECKLIST ====================
 
 export const addChecklistItem = async (taskId, text) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/checklist`, {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}/checklist`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ text })
@@ -116,7 +139,7 @@ export const addChecklistItem = async (taskId, text) => {
 };
 
 export const toggleChecklistItem = async (taskId, itemId, completed) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/checklist/${itemId}`, {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}/checklist/${itemId}`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify({ completed })
@@ -127,14 +150,14 @@ export const toggleChecklistItem = async (taskId, itemId, completed) => {
 // ==================== COMMENTS & ACTIVITIES ====================
 
 export const fetchTaskComments = async (taskId) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/comments`, {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}/comments`, {
         headers: getAuthHeaders()
     });
     return handleResponse(res);
 };
 
 export const addComment = async (taskId, text) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/comments`, {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}/comments`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ text })
@@ -143,7 +166,7 @@ export const addComment = async (taskId, text) => {
 };
 
 export const fetchTaskActivities = async (taskId) => {
-    const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/activity`, {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}/activity`, {
         headers: getAuthHeaders()
     });
     return handleResponse(res);

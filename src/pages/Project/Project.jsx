@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import "./project.css";
+
 import {
     Plus,
-    ListPlus,
-    FolderPlus,
     X,
     ListChecks,
     UsersRound,
@@ -12,7 +12,7 @@ import {
 import SideBar from './../../components/layout/SideBar/SideBar';
 import Header from './../../components/layout/Header/Header';
 import { fetchProjects, createProject, fetchMembers, createTask } from './../../../api.jsx';
-import {Link} from "react-router-dom";
+import { Link } from "react-router-dom";
 
 const COLOR_OPTIONS = [
     '#4f46e5',
@@ -32,7 +32,9 @@ export default function Projects() {
 
     const [projects, setProjects] = useState([]);
     const [members, setMembers] = useState([]);
-    const [loading, setLoading] = useState(true);
+
+    const [loadingProjects, setLoadingProjects] = useState(true);
+    const [loadingMembers, setLoadingMembers] = useState(false);
 
     const [projectName, setProjectName] = useState('');
     const [projectDesc, setProjectDesc] = useState('');
@@ -48,24 +50,40 @@ export default function Projects() {
 
     const [toasts, setToasts] = useState([]);
 
+    // 1. Fetch Projects
     const loadProjects = async () => {
+        setLoadingProjects(true);
         try {
             const data = await fetchProjects();
-            setProjects(data);
-            if (data.length > 0) setTaskProject(data[0]._id || data[0].id);
+            const list = Array.isArray(data) ? data : (data?.data || []);
+
+            // Log dữ liệu ra console để kiểm tra cấu trúc Backend trả về
+            console.log(">>> [LOG] Projects nhận từ Backend:", list);
+
+            setProjects(list);
+            if (list.length > 0) {
+                setTaskProject(list[0]._id || list[0].id);
+            }
         } catch (error) {
-            showToast('Lỗi', 'Không thể kết nối tới server (Port 3000)', 'error');
+            console.error("Lỗi fetch projects:", error);
+            showToast('Lỗi', 'Không thể tải danh sách Projects.', 'error');
         } finally {
-            setLoading(false);
+            setLoadingProjects(false);
         }
     };
 
+    // 2. Fetch Members
     const loadMembers = async () => {
+        setLoadingMembers(true);
         try {
             const data = await fetchMembers();
-            setMembers(data);
+            const list = Array.isArray(data) ? data : (data?.data || data?.users || []);
+            setMembers(list);
         } catch (error) {
-            console.error(error);
+            console.error("Lỗi fetch members:", error);
+            showToast('Lỗi', 'Không thể tải danh sách Members.', 'error');
+        } finally {
+            setLoadingMembers(false);
         }
     };
 
@@ -102,17 +120,21 @@ export default function Projects() {
         );
     };
 
+    // Hàm tạo Project gửi dữ liệu chuẩn Schema
     const handleCreateProject = async (e) => {
         e.preventDefault();
         try {
+            const cleanMembers = selectedMembers.filter(id => Boolean(id));
+
             await createProject({
                 name: projectName,
-                desc: projectDesc,
-                dueDate: projectDueDate,
+                description: projectDesc,   // Khớp với 'description' Schema
+                date: projectDueDate,       // Khớp với 'date' Schema
                 color: selectedColor,
-                members: selectedMembers
+                assignees: cleanMembers     // Khớp với 'assignees' Schema
             });
-            showToast('Project created', 'Project đã lưu vào MongoDB.', 'success');
+
+            showToast('Project created', 'Project đã lưu thành công.', 'success');
             setProjectName('');
             setProjectDesc('');
             setProjectDueDate('');
@@ -120,6 +142,7 @@ export default function Projects() {
             setActiveModal(null);
             loadProjects();
         } catch (error) {
+            console.error("Lỗi tạo Project:", error);
             showToast('Lỗi', 'Không thể tạo project.', 'error');
         }
     };
@@ -155,7 +178,6 @@ export default function Projects() {
             )}
 
             <div className="app-main">
-                {/* Thay thế Header cũ bằng Component Header */}
                 <Header />
 
                 <main className="page-content">
@@ -176,69 +198,100 @@ export default function Projects() {
                             </button>
                         </div>
 
-                        {loading ? (
-                            <p>Loading projects from MongoDB...</p>
+                        {loadingProjects ? (
+                            <p>Loading projects...</p>
+                        ) : projects.length === 0 ? (
+                            <p>Chưa có project nào. Hãy tạo project mới!</p>
                         ) : (
                             <div className="grid-cards">
-                                {projects.map((project) => (
-                                    <Link
-                                        key={project._id || project.id}
-                                        to={`/projectboard/${project._id || project.id}`}
-                                        className="card project-card"
-                                    >
-                                        <div className="project-card-top">
-                                            <div className="project-title-row">
-                                                <span
-                                                    className="project-color-dot"
-                                                    style={{ background: project.color || '#4f46e5' }}
-                                                ></span>
-                                                <span className="project-card-name">{project.name}</span>
-                                            </div>
-                                            <span className={`badge ${project.badgeClass || 'badge-success'}`}>
-                                                {project.status || 'On track'}
-                                            </span>
-                                        </div>
-                                        <p className="project-card-desc">{project.desc}</p>
-                                        <div>
-                                            <div className="project-card-progress-row">
-                                                <span className="icon-inline">
-                                                    <ListChecks className="icon icon-sm" />
-                                                    {project.tasksText || '0 tasks'}
-                                                </span>
-                                                <span>{project.progress || 0}%</span>
-                                            </div>
-                                            <div className="progress-bar">
-                                                <span
-                                                    className="progress-bar-fill"
-                                                    style={{ width: `${project.progress || 0}%` }}
-                                                ></span>
-                                            </div>
-                                        </div>
-                                        <div className="project-card-footer">
-                                            <span className="avatar-group">
-                                                {(project.membersList || []).map((member, index) => (
+                                {projects.map((project) => {
+                                    // BỘ LỌC ĐA NĂNG: Tự lấy mảng member từ mọi tên trường có thể có ở Backend
+                                    const memberList = Array.isArray(project.assignees)
+                                        ? project.assignees
+                                        : Array.isArray(project.members)
+                                            ? project.members
+                                            : Array.isArray(project.membersList)
+                                                ? project.membersList
+                                                : [];
+
+                                    return (
+                                        <Link
+                                            key={project._id || project.id}
+                                            to={`/projectboard/${project._id || project.id}`}
+                                            className="card project-card"
+                                        >
+                                            <div className="project-card-top">
+                                                <div className="project-title-row">
                                                     <span
-                                                        key={member._id || index}
-                                                        className="avatar avatar-xs"
-                                                        style={{ background: member.bg || '#4f46e5' }}
-                                                    >
-                                                        {member.initials || 'U'}
+                                                        className="project-color-dot"
+                                                        style={{ background: project.color || '#4f46e5' }}
+                                                    ></span>
+                                                    <span className="project-card-name">{project.name}</span>
+                                                </div>
+                                                <span className={`badge ${project.badgeClass || 'badge-success'}`}>
+                                                    {project.status || 'On track'}
+                                                </span>
+                                            </div>
+                                            <p className="project-card-desc">{project.description || project.desc}</p>
+                                            <div>
+                                                <div className="project-card-progress-row">
+                                                    <span className="icon-inline">
+                                                        <ListChecks className="icon icon-sm" />
+                                                        {project.tasksText || '0 tasks'}
                                                     </span>
-                                                ))}
-                                            </span>
-                                            <span className="project-card-footer-meta">
-                                                <span className="icon-inline">
-                                                    <UsersRound className="icon icon-sm" />
-                                                    {project.membersCount || (project.membersList ? project.membersList.length : 0)}
+                                                    <span>{project.progress || 0}%</span>
+                                                </div>
+                                                <div className="progress-bar">
+                                                    <span
+                                                        className="progress-bar-fill"
+                                                        style={{ width: `${project.progress || 0}%` }}
+                                                    ></span>
+                                                </div>
+                                            </div>
+                                            <div className="project-card-footer">
+                                                <span className="avatar-group">
+                                                    {memberList.map((member, index) => {
+                                                        if (typeof member === 'string' || !member) {
+                                                            return (
+                                                                <span key={member || index} className="avatar avatar-xs" style={{ background: '#4f46e5' }}>
+                                                                    U
+                                                                </span>
+                                                            );
+                                                        }
+
+                                                        const displayName = member.username || member.name || member.email || 'User';
+                                                        const initials = displayName.slice(0, 2).toUpperCase();
+
+                                                        return (
+                                                            <span
+                                                                key={member._id || index}
+                                                                className="avatar avatar-xs"
+                                                                style={{ background: '#4f46e5' }}
+                                                                title={displayName}
+                                                            >
+                                                                {initials}
+                                                            </span>
+                                                        );
+                                                    })}
                                                 </span>
-                                                <span className="icon-inline">
-                                                    <CalendarClock className="icon icon-sm" />
-                                                    {project.dueDate || 'N/A'}
+                                                <span className="project-card-footer-meta">
+                                                    <span className="icon-inline">
+                                                        <UsersRound className="icon icon-sm" />
+                                                        {/* Đếm độ dài mảng chuẩn xác */}
+                                                        {memberList.length}
+                                                    </span>
+                                                    <span className="icon-inline">
+                                                        <CalendarClock className="icon icon-sm" />
+                                                        {/* Đọc trường date hoặc dueDate */}
+                                                        {(project.date || project.dueDate)
+                                                            ? new Date(project.date || project.dueDate).toLocaleDateString('vi-VN')
+                                                            : 'N/A'}
+                                                    </span>
                                                 </span>
-                                            </span>
-                                        </div>
-                                    </Link>
-                                ))}
+                                            </div>
+                                        </Link>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -408,23 +461,42 @@ export default function Projects() {
                                         ))}
                                     </div>
                                 </div>
+
+                                {/* Danh sách chọn Members */}
                                 <div className="field">
-                                    <span className="field-label">Members</span>
+                                    <span className="field-label">
+                                        Members {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
+                                    </span>
                                     <div className="card" style={{ maxHeight: '144px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                        {members.map((member) => (
-                                            <label key={member._id || member.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', borderRadius: '6px', cursor: 'pointer' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    className="checkbox"
-                                                    checked={selectedMembers.includes(member._id || member.id)}
-                                                    onChange={() => toggleMemberSelection(member._id || member.id)}
-                                                />
-                                                <span className="avatar avatar-xs" style={{ background: member.bg || '#4f46e5' }}>
-                                                    {member.initials}
-                                                </span>
-                                                <span style={{ fontSize: '14px' }}>{member.name}</span>
-                                            </label>
-                                        ))}
+                                        {loadingMembers ? (
+                                            <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>Loading members...</p>
+                                        ) : members.length === 0 ? (
+                                            <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>Không có thành viên nào.</p>
+                                        ) : (
+                                            members.map((member) => {
+                                                const memberId = member._id || member.id;
+                                                const displayName = member.username || member.email || 'User';
+                                                const initials = displayName.slice(0, 2).toUpperCase();
+
+                                                return (
+                                                    <label key={memberId} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', borderRadius: '6px', cursor: 'pointer' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            className="checkbox"
+                                                            checked={selectedMembers.includes(memberId)}
+                                                            onChange={() => toggleMemberSelection(memberId)}
+                                                        />
+                                                        <span className="avatar avatar-xs" style={{ background: '#4f46e5' }}>
+                                                            {initials}
+                                                        </span>
+                                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                            <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
+                                                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{member.role || 'Member'}</span>
+                                                        </div>
+                                                    </label>
+                                                );
+                                            })
+                                        )}
                                     </div>
                                 </div>
                             </div>
