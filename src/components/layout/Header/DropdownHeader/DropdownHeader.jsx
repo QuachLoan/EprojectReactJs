@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 function DropdownHeader(){
     const [activeDropdown, setActiveDropdown] = useState(null);
@@ -7,30 +8,30 @@ function DropdownHeader(){
   };
     return(
         <>
-        <div class="header-actions">
-          <div class="dropdown">
-            <button class="btn btn-primary btn-sm" onClick={() => toggleDropdown("create")} data-dropdown-trigger><span class="icon icon-sm" data-icon="plus">
+        <div className="header-actions">
+          <div className="dropdown">
+            <button className="btn btn-primary btn-sm" onClick={() => toggleDropdown("create")} data-dropdown-trigger><span class="icon icon-sm" data-icon="plus">
                 <svg viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
-                </span><span class="create-btn-label" >Create</span></button>
+                </span><span className="create-btn-label" >Create</span></button>
             {activeDropdown === "create" && (
-               <div class="dropdown-menu " data-dropdown-menu>
-              <button class="dropdown-item" data-open-modal="quickCreateTaskModal"><span class="icon icon-sm" data-icon="listPlus"></span>New Task</button>
-              <button class="dropdown-item" data-open-modal="createProjectModal"><span class="icon icon-sm" data-icon="folderPlus"></span>New Project</button>
+               <div className="dropdown-menu " data-dropdown-menu>
+              <button className="dropdown-item" data-open-modal="quickCreateTaskModal"><span class="icon icon-sm" data-icon="listPlus"></span>New Task</button>
+              <button className="dropdown-item" data-open-modal="createProjectModal"><span class="icon icon-sm" data-icon="folderPlus"></span>New Project</button>
             </div>
             )}
             
           </div>
-          <div class="dropdown">
+          <div className="dropdown">
             <button data-dropdown-trigger aria-label="Open user menu" onClick={() => toggleDropdown("user")}><span class="avatar avatar-sm" style={{background:'#4f46e5'}}>CS</span></button>
             {activeDropdown === "user" && (
-            <div class="dropdown-menu " data-dropdown-menu>
-              <div class="dropdown-user-info">
-                <p class="dropdown-user-name">Cao Sơn</p>
-                <p class="dropdown-user-email">caosonhs@gmail.com</p>
-                <p class="dropdown-user-role">leader</p>
+            <div className="dropdown-menu " data-dropdown-menu>
+              <div className="dropdown-user-info">
+                <p className="dropdown-user-name">Cao Sơn</p>
+                <p className="dropdown-user-email">caosonhs@gmail.com</p>
+                <p className="dropdown-user-role">leader</p>
               </div>
-              <div class="dropdown-separator"></div>
-              <a class="dropdown-item destructive" href="login.html"><span class="icon icon-sm" data-icon="logOut"></span>Log out</a>
+              <div className="dropdown-separator"></div>
+              <Link class="dropdown-item destructive" to="/Login"><span className="icon icon-sm" data-icon="logOut"></span>Log out</Link>
             </div>
             )}
             
