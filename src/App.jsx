@@ -3,9 +3,7 @@ import { Route, Routes } from 'react-router-dom'
 import './App.css'
 import MainLayout from './Layouts/MainLayout'
 import Dashboard from './pages/Dashboard/Dasboard'
-import Projects from './pages/Project/Project'
-import Project from './pages/Project/ProjectBoard'
-import ProjectSettings from "./pages/Project/ProjectSetting.jsx";
+import Project from './pages/Project/Project'
 function App() {
 
   return (
@@ -16,7 +14,6 @@ function App() {
           <Route path='/dashboard' element ={<Dashboard/>}/>
         </Route>
         <Route path = "/project" element={<Project/>}/>
-          <Route path = "/project/settings" element={<ProjectSettings/>}/>
       </Routes>
       </> 
   )
