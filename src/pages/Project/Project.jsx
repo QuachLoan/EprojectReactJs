@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Menu,
-    Search,
     Plus,
     ListPlus,
     FolderPlus,
-    LogOut,
     X,
     ListChecks,
     UsersRound,
-    CalendarClock
+    CalendarClock,
+    Search
 } from 'lucide-react';
-import SideBar from './../../components/layout/SideBar/SideBar'; // Import Sidebar đã tách component
+import SideBar from './../../components/layout/SideBar/SideBar';
+import Header from './../../components/layout/Header/Header';
 import { fetchProjects, createProject, fetchMembers, createTask } from './../../../api.jsx';
 
 const COLOR_OPTIONS = [
@@ -27,8 +26,6 @@ const COLOR_OPTIONS = [
 
 export default function Projects() {
     const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
-    const [createDropdownOpen, setCreateDropdownOpen] = useState(false);
-    const [userDropdownOpen, setUserDropdownOpen] = useState(false);
     const [activeModal, setActiveModal] = useState(null);
     const [commandQuery, setCommandQuery] = useState('');
 
@@ -84,8 +81,6 @@ export default function Projects() {
             }
             if (e.key === 'Escape') {
                 setActiveModal(null);
-                setCreateDropdownOpen(false);
-                setUserDropdownOpen(false);
             }
         };
         window.addEventListener('keydown', handleKeyDown);
@@ -149,7 +144,6 @@ export default function Projects() {
 
     return (
         <div className="app-shell">
-            {/* Sử dụng Component SideBar đã tối ưu */}
             <SideBar />
 
             {sidebarMobileOpen && (
@@ -160,86 +154,8 @@ export default function Projects() {
             )}
 
             <div className="app-main">
-                <header className="header">
-                    <button
-                        className="icon-btn mobile-menu-btn"
-                        onClick={() => setSidebarMobileOpen(true)}
-                        aria-label="Open menu"
-                    >
-                        <Menu className="icon" />
-                    </button>
-                    <button
-                        className="header-search"
-                        onClick={() => setActiveModal('commandPalette')}
-                    >
-                        <Search className="icon icon-sm" />
-                        <span className="search-label">Search anything…</span>
-                        <kbd>Ctrl K</kbd>
-                    </button>
-                    <div className="header-actions">
-                        <div className="dropdown">
-                            <button
-                                className="btn btn-primary btn-sm"
-                                onClick={() => setCreateDropdownOpen(!createDropdownOpen)}
-                            >
-                                <Plus className="icon icon-sm" />
-                                <span className="create-btn-label">Create</span>
-                            </button>
-                            {createDropdownOpen && (
-                                <div className="dropdown-menu">
-                                    <button
-                                        className="dropdown-item"
-                                        onClick={() => {
-                                            setActiveModal('quickCreateTaskModal');
-                                            setCreateDropdownOpen(false);
-                                        }}
-                                    >
-                                        <ListPlus className="icon icon-sm" />
-                                        New Task
-                                    </button>
-                                    <button
-                                        className="dropdown-item"
-                                        onClick={() => {
-                                            setActiveModal('createProjectModal');
-                                            setCreateDropdownOpen(false);
-                                        }}
-                                    >
-                                        <FolderPlus className="icon icon-sm" />
-                                        New Project
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="dropdown">
-                            <button
-                                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                                aria-label="Open user menu"
-                            >
-                                <span
-                                    className="avatar avatar-sm"
-                                    style={{ background: '#4f46e5' }}
-                                >
-                                    CS
-                                </span>
-                            </button>
-                            {userDropdownOpen && (
-                                <div className="dropdown-menu">
-                                    <div className="dropdown-user-info">
-                                        <p className="dropdown-user-name">Cao Sơn</p>
-                                        <p className="dropdown-user-email">caosonhs@gmail.com</p>
-                                        <p className="dropdown-user-role">leader</p>
-                                    </div>
-                                    <div className="dropdown-separator"></div>
-                                    <a className="dropdown-item destructive" href="login.html">
-                                        <LogOut className="icon icon-sm" />
-                                        Log out
-                                    </a>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </header>
+                {/* Thay thế Header cũ bằng Component Header */}
+                <Header />
 
                 <main className="page-content">
                     <div className="page-content-inner">

@@ -23,12 +23,30 @@ export const fetchProjectById = async (projectId) => {
 };
 
 export const createProject = async (projectData) => {
-    const res = await fetch(`${API_BASE_URL}/project`, {
+    // 1. Lấy token JWT đã lưu từ localStorage sau khi Đăng nhập
+    const token = localStorage.getItem('token');
+
+    // 2. Kiểm tra nếu chưa có Token thì báo lỗi/chuyển sang Login
+    if (!token) {
+        throw new Error('Bạn chưa đăng nhập hoặc phiên làm việc đã hết hạn');
+    }
+
+    // 3. Gửi Request đính kèm Bearer Token lên Backend
+    const response = await fetch('http://localhost:3000/api/project', { // Thay URL API project của bạn nếu khác
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(projectData)
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`, // <--- GỬI TOKEN XÁC THỰC Ở ĐÂY
+        },
+        body: JSON.stringify(projectData),
     });
-    return handleResponse(res);
+
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Không thể tạo project');
+    }
+
+    return await response.json();
 };
 
 export const updateProject = async (projectId, projectData) => {

@@ -1,20 +1,30 @@
-import { useState } from "react";
+import React from "react";
 import DropdownHeader from "./DropdownHeader/DropdownHeader";
+import { Search, Menu } from "lucide-react";
 
-function Header(){
-     const [isOpen, setIsOpen] = useState(false);
-    return(
-        <>
-    <header class="header">
-        <button class="icon-btn mobile-menu-btn" data-action="open-sidebar" aria-label="Open menu"><span class="icon" data-icon="menu"></span></button>
-        <button class="header-search" data-open-modal="commandPalette">
-          <span class="icon icon-sm" data-icon="search"></span>
-          <span class="search-label">Search anything…</span>
-          <kbd>Ctrl K</kbd>
-        </button>
-        <DropdownHeader/>
-      </header>
-        </>
-    )
+function Header({ onOpenSidebar, onOpenModal }) {
+    return (
+        <header className="header">
+            <button
+                className="icon-btn mobile-menu-btn"
+                onClick={onOpenSidebar}
+                aria-label="Open menu"
+            >
+                <Menu className="icon" />
+            </button>
+
+            <button
+                className="header-search"
+                onClick={() => onOpenModal && onOpenModal("commandPalette")}
+            >
+                <Search className="icon icon-sm" />
+                <span className="search-label">Search anything…</span>
+                <kbd>Ctrl K</kbd>
+            </button>
+
+            <DropdownHeader onOpenModal={onOpenModal} />
+        </header>
+    );
 }
+
 export default Header;
