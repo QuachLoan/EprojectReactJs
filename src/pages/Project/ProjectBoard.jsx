@@ -72,8 +72,12 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     // Lọc danh sách task theo columnId
     const filterTasksByColumn = (columnId) => {
         return tasks.filter(task => {
+            if (!task || !task.columnId) return false;
+
+            // Lấy ID chuẩn cho cả 2 trường hợp: dạng String hoặc dạng Object bọc sẵn
             const taskColId = typeof task.columnId === 'object' ? task.columnId._id : task.columnId;
-            return taskColId === columnId;
+
+            return String(taskColId) === String(columnId);
         });
     };
 
@@ -89,11 +93,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     // Gọi API Tạo Task Mới
     const handleCreateTask = async (e) => {
         e.preventDefault();
-        if (!newTaskTitle.trim() || !newTaskColumnId) {
-            alert('Vui lòng nhập tên công việc và chọn cột!');
-            return;
-        }
-
         try {
             setIsSubmitting(true);
             const payload = {
@@ -106,12 +105,14 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             const response = await createTask(payload);
             const createdTask = response?.data || response;
 
-            // Thêm task vừa tạo trực tiếp vào UI State
-            setTasks(prev => [...prev, createdTask]);
+            // CHỈ cập nhật tasks, KHÔNG đụng vào columns
+            setTasks(prevTasks => [...prevTasks, createdTask]);
+
+            // Đóng modal và reset form
             setActiveModal(null);
+            setNewTaskTitle('');
         } catch (error) {
-            console.error("Lỗi khi tạo task mới:", error);
-            alert("Không thể tạo task. Vui lòng thử lại!");
+            console.error("Lỗi khi tạo task:", error);
         } finally {
             setIsSubmitting(false);
         }
