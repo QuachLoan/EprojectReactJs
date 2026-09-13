@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom'; // Thêm useParams để đọc ID từ đường dẫn URL
+import { useParams, Link } from 'react-router-dom';
 import Header from './../../components/layout/Header/Header.jsx';
 import Sidebar from './../../components/layout/Sidebar/Sidebar.jsx';
-import { fetchProjectById, fetchTasksByProject } from './../../../api.jsx';
+import {
+    fetchProjectById,
+    fetchTasksByProject,
+    fetchColumnsByProject,
+    createTask
+} from './../../../api.jsx';
 import "./project.css";
-import {Link} from "react-router-dom";
 
 export default function ProjectBoard({ projectId: propProjectId }) {
-    // Ưu tiên lấy projectId từ URL (ví dụ /projectboard/65a...), nếu không có thì lấy từ props
     const { id: urlProjectId } = useParams();
     const activeProjectId = urlProjectId || propProjectId;
 
@@ -17,14 +20,22 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
     // Data States
     const [project, setProject] = useState(null);
+    const [columns, setColumns] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // UI States
+    // UI & Modal States
     const [selectedTask, setSelectedTask] = useState(null);
     const [activeModal, setActiveModal] = useState(null);
 
-    // Gọi API lấy dữ liệu chi tiết Project và Task khi activeProjectId thay đổi
+    // Form Task State
+    const [newTaskTitle, setNewTaskTitle] = useState('');
+    const [newTaskColumnId, setNewTaskColumnId] = useState('');
+    const [newTaskPriority, setNewTaskPriority] = useState('Medium');
+    const [newTaskDesc, setNewTaskDesc] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Gọi API lấy dữ liệu chi tiết Project, Columns và Tasks
     useEffect(() => {
         const fetchBoardData = async () => {
             if (!activeProjectId) return;
@@ -32,20 +43,24 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             try {
                 setLoading(true);
 
-                // Gọi đồng thời API lấy thông tin Dự án và danh sách Task
-                const [projectData, tasksData] = await Promise.all([
+                const [projectData, columnsData, tasksData] = await Promise.all([
                     fetchProjectById(activeProjectId),
+                    fetchColumnsByProject(activeProjectId),
                     fetchTasksByProject(activeProjectId)
                 ]);
 
-                // Xử lý dữ liệu trả về nếu bị bọc trong { success: true, data: ... }
                 const realProject = projectData?.data || projectData;
+                const realColumns = Array.isArray(columnsData) ? columnsData : (columnsData?.data || []);
                 const realTasks = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
 
+                // Sắp xếp các cột theo thứ tự position
+                realColumns.sort((a, b) => (a.position || 0) - (b.position || 0));
+
                 setProject(realProject);
+                setColumns(realColumns);
                 setTasks(realTasks);
             } catch (error) {
-                console.error("Lỗi khi tải dữ liệu chi tiết Project từ API:", error);
+                console.error("Lỗi khi tải dữ liệu từ API:", error);
             } finally {
                 setLoading(false);
             }
@@ -54,30 +69,65 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         fetchBoardData();
     }, [activeProjectId]);
 
-    // Lọc danh sách task theo từng cột Kanban (Hỗ trợ cả field 'column' và 'status')
-    const filterTasksByStatus = (statusName) => {
-        return tasks.filter(task => (task.column || task.status) === statusName);
+    // Lọc danh sách task theo columnId
+    const filterTasksByColumn = (columnId) => {
+        return tasks.filter(task => {
+            const taskColId = typeof task.columnId === 'object' ? task.columnId._id : task.columnId;
+            return taskColId === columnId;
+        });
+    };
+
+    // Mở Modal tạo task và chọn sẵn Column mặc định nếu có
+    const handleOpenCreateModal = (columnId = '') => {
+        setNewTaskColumnId(columnId || (columns[0]?._id || ''));
+        setNewTaskTitle('');
+        setNewTaskDesc('');
+        setNewTaskPriority('Medium');
+        setActiveModal('quickCreateTaskModal');
+    };
+
+    // Gọi API Tạo Task Mới
+    const handleCreateTask = async (e) => {
+        e.preventDefault();
+        if (!newTaskTitle.trim() || !newTaskColumnId) {
+            alert('Vui lòng nhập tên công việc và chọn cột!');
+            return;
+        }
+
+        try {
+            setIsSubmitting(true);
+            const payload = {
+                title: newTaskTitle,
+                description: newTaskDesc,
+                columnId: newTaskColumnId,
+                priority: newTaskPriority
+            };
+
+            const response = await createTask(payload);
+            const createdTask = response?.data || response;
+
+            // Thêm task vừa tạo trực tiếp vào UI State
+            setTasks(prev => [...prev, createdTask]);
+            setActiveModal(null);
+        } catch (error) {
+            console.error("Lỗi khi tạo task mới:", error);
+            alert("Không thể tạo task. Vui lòng thử lại!");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     if (loading) {
         return <div style={{ padding: '32px', textAlign: 'center' }}>Đang tải dữ liệu dự án...</div>;
     }
 
-    // Tính toán mảng danh sách thành viên linh hoạt theo Schema
-    const memberList = Array.isArray(project?.assignees)
-        ? project.assignees
-        : Array.isArray(project?.members)
-            ? project.members
-            : [];
-
-    // Format ngày hạn chót (dueDate/date)
-    const formattedDueDate = (project?.date || project?.dueDate)
-        ? new Date(project.date || project.dueDate).toLocaleDateString('vi-VN')
+    const memberList = Array.isArray(project?.assignees) ? project.assignees : [];
+    const formattedDueDate = (project?.date)
+        ? new Date(project.date).toLocaleDateString('vi-VN')
         : 'N/A';
 
     return (
         <div className="app-shell">
-            {/* 1. Sidebar Dùng Chung */}
             <Sidebar
                 collapsed={sidebarCollapsed}
                 setCollapsed={setSidebarCollapsed}
@@ -85,34 +135,28 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 setMobileOpen={setSidebarMobileOpen}
             />
             {sidebarMobileOpen && (
-                <div
-                    className="sidebar-overlay"
-                    onClick={() => setSidebarMobileOpen(false)}
-                />
+                <div className="sidebar-overlay" onClick={() => setSidebarMobileOpen(false)} />
             )}
 
             <div className="app-main">
-                {/* 2. Header Dùng Chung */}
                 <Header
                     onOpenSidebar={() => setSidebarMobileOpen(true)}
                     onOpenModal={(modal) => setActiveModal(modal)}
                 />
 
-                {/* ============ PROJECT HEADER (DỮ LIỆU TỪ API) ============ */}
+                {/* PROJECT HEADER */}
                 <div className="project-header">
                     <div className="project-header-top">
                         <div>
                             <div className="project-title-row">
                                 <span className="project-color-dot" style={{ background: project?.color || '#4f46e5' }}></span>
-                                <h1>{project?.name || project?.title || 'Dự án'}</h1>
+                                <h1>{project?.name || 'Dự án'}</h1>
                             </div>
-                            <p className="page-subtitle">{project?.description || project?.desc || 'Chưa có mô tả dự án.'}</p>
+                            <p className="page-subtitle">{project?.description || 'Chưa có mô tả dự án.'}</p>
 
                             <div className="project-meta-row">
-                                {/* Đếm số lượng từ mảng memberList */}
                                 <span className="project-meta-item">👥 {memberList.length} thành viên</span>
                                 <span className="project-meta-item">📋 {tasks.length} task</span>
-                                {/* Render Hạn chót đã format */}
                                 <span className="project-meta-item">📅 Hạn: {formattedDueDate}</span>
                             </div>
                         </div>
@@ -126,77 +170,82 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                     </nav>
                 </div>
 
-                {/* ============ MAIN CONTENT & KANBAN BOARD ============ */}
+                {/* MAIN KANBAN BOARD */}
                 <main className="page-content">
-                    <div className="filter-bar">
-                        <div className="input-icon-wrap">
+                    <div className="filter-bar" style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                        <div className="input-icon-wrap" style={{ width: '220px', flexShrink: 0 }}>
                             <span className="input-icon">🔍</span>
-                            <input className="input" placeholder="Tìm task..." />
+                            <input className="input" placeholder="Tìm task..." style={{ width: '100%' }} />
                         </div>
-                        <select className="select">
-                            <option>Người thực hiện</option>
-                        </select>
-                        <select className="select">
-                            <option>Độ ưu tiên</option>
-                        </select>
+
                         <button
                             className="btn btn-primary"
-                            style={{ marginLeft: 'auto' }}
-                            onClick={() => setActiveModal('quickCreateTaskModal')}
+                            style={{ marginLeft: 'auto', flexShrink: 0 }}
+                            onClick={() => handleOpenCreateModal()}
                         >
                             + Thêm task
                         </button>
                     </div>
 
-                    {/* Khung Bảng Kanban Render Động */}
+                    {/* RENDER CỘT ĐỘNG TỪ API */}
                     <div className="board scroll-x" id="kanbanBoard">
-                        {['Todo', 'In Progress', 'Review', 'Done'].map((status) => {
-                            const columnTasks = filterTasksByStatus(status);
+                        {columns.map((column) => {
+                            const columnTasks = filterTasksByColumn(column._id);
                             return (
-                                <div className="board-column" key={status}>
+                                <div className="board-column" key={column._id}>
                                     <div className="board-column-header">
-                                        <h3>{status} ({columnTasks.length})</h3>
-                                        <button className="btn-icon" onClick={() => setActiveModal('quickCreateTaskModal')}>+</button>
+                                        <span className="board-column-title">{column.title}</span>
+                                        <span className="board-column-count">{columnTasks.length}</span>
+                                        <button
+                                            className="btn-icon"
+                                            style={{ marginLeft: 'auto' }}
+                                            onClick={() => handleOpenCreateModal(column._id)}
+                                        >
+                                            +
+                                        </button>
                                     </div>
-                                    <div className="board-cards">
+
+                                    <div className="board-column-body">
                                         {columnTasks.length === 0 ? (
-                                            <div
-                                                className="empty-placeholder"
-                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100px', color: '#9ca3af', fontSize: '14px' }}
-                                            >
-                                                Chưa có công việc
+                                            <div className="empty-state" style={{ padding: '24px 0' }}>
+                                                <div className="empty-state-desc">Chưa có công việc</div>
                                             </div>
                                         ) : (
                                             columnTasks.map((task) => {
-                                                const taskId = task._id || task.id;
-                                                const taskDueDateFormatted = task.dueDate
-                                                    ? new Date(task.dueDate).toLocaleDateString('vi-VN')
+                                                const taskDueDateFormatted = task.date
+                                                    ? new Date(task.date).toLocaleDateString('vi-VN')
                                                     : 'N/A';
-
-                                                // Xử lý avatar người thực hiện task
-                                                const assigneeName = task.assignee?.username || task.assigneeName || 'User';
-                                                const initials = assigneeName.slice(0, 2).toUpperCase();
 
                                                 return (
                                                     <div
-                                                        className="board-card"
-                                                        key={taskId}
+                                                        className="task-card"
+                                                        key={task._id}
                                                         onClick={() => setSelectedTask(task)}
                                                     >
-                                                        <div className="card-title">{task.title}</div>
-                                                        <div className="card-footer" style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                            <span className="card-date" style={{ fontSize: '12px', color: '#6b7280' }}>
-                                                                {taskDueDateFormatted}
-                                                            </span>
-                                                            <span className="avatar avatar-xs" style={{ background: '#2563eb' }} title={assigneeName}>
-                                                                {initials}
-                                                            </span>
+                                                        <div className="task-card-title">{task.title}</div>
+                                                        <div className="task-card-bottom">
+                                                            <div className="task-card-meta">
+                                                                <span className="task-card-meta-item">
+                                                                    📅 {taskDueDateFormatted}
+                                                                </span>
+                                                                <span className={`priority-tag priority-${task.priority?.toLowerCase()}`}>
+                                                                    {task.priority || 'Medium'}
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 );
                                             })
                                         )}
                                     </div>
+
+                                    <button
+                                        className="add-task-btn"
+                                        style={{ width: '285px' }}
+                                        onClick={() => handleOpenCreateModal(column._id)}
+                                    >
+                                        + Thêm task
+                                    </button>
                                 </div>
                             );
                         })}
@@ -204,71 +253,76 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 </main>
             </div>
 
-            {/* ============ DRAWER: Chi tiết Task ============ */}
-            <div className={`drawer-overlay ${selectedTask ? '' : 'hidden'}`} id="taskDrawer" onClick={() => setSelectedTask(null)}>
-                <div className="drawer-panel" onClick={(e) => e.stopPropagation()}>
-                    <div className="drawer-header">
-                        <h2>{selectedTask?.title || 'Tên task'}</h2>
-                        <button className="btn-icon" onClick={() => setSelectedTask(null)}>✕</button>
-                    </div>
-                    <div className="drawer-body">
-                        <div className="drawer-field-grid">
-                            <div className="form-group" style={{ marginBottom: 0 }}>
-                                <label className="form-label">Độ ưu tiên</label>
-                                <div>{selectedTask?.priority || 'Trung bình'}</div>
+            {/* MODAL: TẠO TASK MỚI */}
+            {activeModal === 'quickCreateTaskModal' && (
+                <div className="modal-overlay" onClick={() => setActiveModal(null)}>
+                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                        <form onSubmit={handleCreateTask}>
+                            <div className="modal-header">
+                                <h2>Tạo task mới</h2>
+                                <button type="button" className="btn-icon" onClick={() => setActiveModal(null)}>✕</button>
                             </div>
-                            <div className="form-group" style={{ marginBottom: 0 }}>
-                                <label className="form-label">Hạn chót</label>
-                                <div className="text-muted">
-                                    {selectedTask?.dueDate
-                                        ? new Date(selectedTask.dueDate).toLocaleDateString('vi-VN')
-                                        : 'N/A'}
+                            <div className="modal-body">
+                                <div className="form-group">
+                                    <label className="form-label">Tiêu đề *</label>
+                                    <input
+                                        className="input"
+                                        placeholder="VD: Thiết kế giao diện Dashboard"
+                                        value={newTaskTitle}
+                                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Cột thực hiện *</label>
+                                    <select
+                                        className="select"
+                                        value={newTaskColumnId}
+                                        onChange={(e) => setNewTaskColumnId(e.target.value)}
+                                        required
+                                    >
+                                        {columns.map((col) => (
+                                            <option key={col._id} value={col._id}>
+                                                {col.title}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Độ ưu tiên</label>
+                                    <select
+                                        className="select"
+                                        value={newTaskPriority}
+                                        onChange={(e) => setNewTaskPriority(e.target.value)}
+                                    >
+                                        <option value="Low">Low</option>
+                                        <option value="Medium">Medium</option>
+                                        <option value="High">High</option>
+                                        <option value="Urgent">Urgent</option>
+                                    </select>
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label">Mô tả</label>
+                                    <textarea
+                                        className="textarea"
+                                        placeholder="Chi tiết nội dung công việc..."
+                                        value={newTaskDesc}
+                                        onChange={(e) => setNewTaskDesc(e.target.value)}
+                                    />
                                 </div>
                             </div>
-                        </div>
-
-                        <div className="form-group" style={{ marginTop: '16px' }}>
-                            <label className="form-label">Mô tả</label>
-                            <textarea
-                                className="textarea"
-                                defaultValue={selectedTask?.description}
-                                placeholder="Chưa có mô tả cho task này..."
-                            ></textarea>
-                        </div>
-
-                        <button className="btn btn-danger btn-sm" style={{ marginTop: '16px' }}>🗑️ Xoá task</button>
+                            <div className="modal-footer">
+                                <button type="button" className="btn btn-secondary" onClick={() => setActiveModal(null)}>
+                                    Hủy
+                                </button>
+                                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                                    {isSubmitting ? 'Đang tạo...' : 'Tạo task'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
-            </div>
-
-            {/* ============ MODAL: Tạo Task nhanh ============ */}
-            <div className={`modal-overlay ${activeModal === 'quickCreateTaskModal' ? '' : 'hidden'}`} id="quickCreateTaskModal" onClick={() => setActiveModal(null)}>
-                <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                    <div className="modal-header">
-                        <h2>Tạo task mới</h2>
-                        <button className="btn-icon" onClick={() => setActiveModal(null)}>✕</button>
-                    </div>
-                    <div className="modal-body">
-                        <div className="form-group">
-                            <label className="form-label">Tiêu đề</label>
-                            <input className="input" placeholder="VD: Thiết kế trang chủ" />
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">Cột</label>
-                            <select className="select">
-                                <option value="Todo">Todo</option>
-                                <option value="In Progress">In Progress</option>
-                                <option value="Review">Review</option>
-                                <option value="Done">Done</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div className="modal-footer">
-                        <button className="btn btn-secondary" onClick={() => setActiveModal(null)}>Huỷ</button>
-                        <button className="btn btn-primary" onClick={() => setActiveModal(null)}>Tạo task</button>
-                    </div>
-                </div>
-            </div>
+            )}
         </div>
     );
 }

@@ -335,17 +335,25 @@
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    flex-wrap: wrap;
+    flex-wrap: nowrap; /* Giữ tất cả trên 1 hàng ngang */
     margin-bottom: var(--space-4);
+    width: 100%;
 }
 
 .filter-bar .input-icon-wrap {
     width: 220px;
+    flex-shrink: 0;
 }
 
 .filter-bar .select {
     width: auto;
-    min-width: 130px;
+    min-width: 140px;
+    flex-shrink: 0;
+}
+
+.filter-bar .btn-primary {
+    margin-left: auto; /* Đẩy nút "+ Thêm task" về góc phải */
+    flex-shrink: 0;
 }
 
 .filter-chips {
