@@ -34,6 +34,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
     const [newTaskDesc, setNewTaskDesc] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [newTaskDate, setNewTaskDate] = useState('');
 
     // Gọi API lấy dữ liệu chi tiết Project, Columns và Tasks
     useEffect(() => {
@@ -82,37 +83,41 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     };
 
     // Mở Modal tạo task và chọn sẵn Column mặc định nếu có
+    // 1. Reset date khi mở Modal
     const handleOpenCreateModal = (columnId = '') => {
         setNewTaskColumnId(columnId || (columns[0]?._id || ''));
         setNewTaskTitle('');
         setNewTaskDesc('');
         setNewTaskPriority('Medium');
+        setNewTaskDate(''); // Reset về rỗng
         setActiveModal('quickCreateTaskModal');
     };
 
-    // Gọi API Tạo Task Mới
+// 2. Gửi key `date` theo Schema task.js lên backend
     const handleCreateTask = async (e) => {
         e.preventDefault();
+        if (!newTaskTitle.trim() || !newTaskColumnId) {
+            alert('Vui lòng nhập tên công việc và chọn cột!');
+            return;
+        }
+
         try {
             setIsSubmitting(true);
             const payload = {
                 title: newTaskTitle,
                 description: newTaskDesc,
                 columnId: newTaskColumnId,
-                priority: newTaskPriority
+                priority: newTaskPriority,
+                date: newTaskDate ? new Date(newTaskDate) : new Date() // Gửi key 'date' cho backend
             };
 
             const response = await createTask(payload);
             const createdTask = response?.data || response;
 
-            // CHỈ cập nhật tasks, KHÔNG đụng vào columns
-            setTasks(prevTasks => [...prevTasks, createdTask]);
-
-            // Đóng modal và reset form
+            setTasks(prev => [...prev, createdTask]);
             setActiveModal(null);
-            setNewTaskTitle('');
         } catch (error) {
-            console.error("Lỗi khi tạo task:", error);
+            console.error("Lỗi khi tạo task mới:", error);
         } finally {
             setIsSubmitting(false);
         }
@@ -268,12 +273,13 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                     <label className="form-label">Tiêu đề *</label>
                                     <input
                                         className="input"
-                                        placeholder="VD: Thiết kế giao diện Dashboard"
+                                        placeholder="VD: Thiết kế giao diện"
                                         value={newTaskTitle}
                                         onChange={(e) => setNewTaskTitle(e.target.value)}
                                         required
                                     />
                                 </div>
+
                                 <div className="form-group">
                                     <label className="form-label">Cột thực hiện *</label>
                                     <select
@@ -283,12 +289,22 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                         required
                                     >
                                         {columns.map((col) => (
-                                            <option key={col._id} value={col._id}>
-                                                {col.title}
-                                            </option>
+                                            <option key={col._id} value={col._id}>{col.title}</option>
                                         ))}
                                     </select>
                                 </div>
+
+                                {/* ➕ Ô CHỌN HẠN CHÓT (DUE DATE) */}
+                                <div className="form-group">
+                                    <label className="form-label">Hạn chót (Due Date)</label>
+                                    <input
+                                        type="date"
+                                        className="input"
+                                        value={newTaskDate}
+                                        onChange={(e) => setNewTaskDate(e.target.value)}
+                                    />
+                                </div>
+
                                 <div className="form-group">
                                     <label className="form-label">Độ ưu tiên</label>
                                     <select
@@ -302,20 +318,20 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                         <option value="Urgent">Urgent</option>
                                     </select>
                                 </div>
+
                                 <div className="form-group">
                                     <label className="form-label">Mô tả</label>
                                     <textarea
                                         className="textarea"
-                                        placeholder="Chi tiết nội dung công việc..."
+                                        placeholder="Mô tả công việc..."
                                         value={newTaskDesc}
                                         onChange={(e) => setNewTaskDesc(e.target.value)}
                                     />
                                 </div>
                             </div>
+
                             <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => setActiveModal(null)}>
-                                    Hủy
-                                </button>
+                                <button type="button" className="btn btn-secondary" onClick={() => setActiveModal(null)}>Hủy</button>
                                 <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
                                     {isSubmitting ? 'Đang tạo...' : 'Tạo task'}
                                 </button>
