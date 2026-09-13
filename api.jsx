@@ -88,7 +88,7 @@ export const fetchColumns = async (projectId) => {
 // ==================== TASKS ====================
 
 export const fetchTasksByProject = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/project/${projectId}/task`, {
+    const res = await fetch(`${API_BASE_URL}/task/project/${projectId}`, {
         headers: getAuthHeaders()
     });
     return handleResponse(res);

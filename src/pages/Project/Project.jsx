@@ -201,7 +201,7 @@ export default function Projects() {
                         {loadingProjects ? (
                             <p>Loading projects...</p>
                         ) : projects.length === 0 ? (
-                            <p>Chưa có project nào. Hãy tạo project mới!</p>
+                            <p>Create your first project!</p>
                         ) : (
                             <div className="grid-cards">
                                 {projects.map((project) => {

@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom'; // Thêm useParams để đọc ID từ đường dẫn URL
 import Header from './../../components/layout/Header/Header.jsx';
 import Sidebar from './../../components/layout/Sidebar/Sidebar.jsx';
-import {fetchProjectById, fetchTasksByProject} from './../../../api.jsx'; // Import các hàm API từ api.js
+import { fetchProjectById, fetchTasksByProject } from './../../../api.jsx';
 import "./project.css";
+import {Link} from "react-router-dom";
 
-export default function ProjectBoard({ projectId = 1 }) {
+export default function ProjectBoard({ projectId: propProjectId }) {
+    // Ưu tiên lấy projectId từ URL (ví dụ /projectboard/65a...), nếu không có thì lấy từ props
+    const { id: urlProjectId } = useParams();
+    const activeProjectId = urlProjectId || propProjectId;
+
     // Layout State
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
@@ -18,38 +24,56 @@ export default function ProjectBoard({ projectId = 1 }) {
     const [selectedTask, setSelectedTask] = useState(null);
     const [activeModal, setActiveModal] = useState(null);
 
-    // Gọi API từ api.js khi component mount hoặc projectId đổi
+    // Gọi API lấy dữ liệu chi tiết Project và Task khi activeProjectId thay đổi
     useEffect(() => {
         const fetchBoardData = async () => {
+            if (!activeProjectId) return;
+
             try {
                 setLoading(true);
 
                 // Gọi đồng thời API lấy thông tin Dự án và danh sách Task
                 const [projectData, tasksData] = await Promise.all([
-                    fetchProjectById(projectId),
-                    fetchTasksByProject(projectId)
+                    fetchProjectById(activeProjectId),
+                    fetchTasksByProject(activeProjectId)
                 ]);
 
-                setProject(projectData);
-                setTasks(tasksData || []);
+                // Xử lý dữ liệu trả về nếu bị bọc trong { success: true, data: ... }
+                const realProject = projectData?.data || projectData;
+                const realTasks = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
+
+                setProject(realProject);
+                setTasks(realTasks);
             } catch (error) {
-                console.error("Lỗi khi tải dữ liệu từ api.js:", error);
+                console.error("Lỗi khi tải dữ liệu chi tiết Project từ API:", error);
             } finally {
                 setLoading(false);
             }
         };
 
         fetchBoardData();
-    }, [projectId]);
+    }, [activeProjectId]);
 
-    // Lọc danh sách task theo từng cột Kanban
-    const filterTasksByStatus = (status) => {
-        return tasks.filter(task => task.status === status);
+    // Lọc danh sách task theo từng cột Kanban (Hỗ trợ cả field 'column' và 'status')
+    const filterTasksByStatus = (statusName) => {
+        return tasks.filter(task => (task.column || task.status) === statusName);
     };
 
     if (loading) {
-        return <div style={{ padding: '32px', textAlign: 'center' }}>Đang tải dữ liệu...</div>;
+        return <div style={{ padding: '32px', textAlign: 'center' }}>Đang tải dữ liệu dự án...</div>;
     }
+
+    // Tính toán mảng danh sách thành viên linh hoạt theo Schema
+    const memberList = Array.isArray(project?.assignees)
+        ? project.assignees
+        : Array.isArray(project?.members)
+            ? project.members
+            : [];
+
+    // Format ngày hạn chót (dueDate/date)
+    const formattedDueDate = (project?.date || project?.dueDate)
+        ? new Date(project.date || project.dueDate).toLocaleDateString('vi-VN')
+        : 'N/A';
 
     return (
         <div className="app-shell">
@@ -82,20 +106,23 @@ export default function ProjectBoard({ projectId = 1 }) {
                                 <span className="project-color-dot" style={{ background: project?.color || '#4f46e5' }}></span>
                                 <h1>{project?.name || project?.title || 'Dự án'}</h1>
                             </div>
-                            <p className="page-subtitle">{project?.description}</p>
+                            <p className="page-subtitle">{project?.description || project?.desc || 'Chưa có mô tả dự án.'}</p>
+
                             <div className="project-meta-row">
-                                <span className="project-meta-item">👥 {project?.membersCount || project?.members?.length || 0} thành viên</span>
+                                {/* Đếm số lượng từ mảng memberList */}
+                                <span className="project-meta-item">👥 {memberList.length} thành viên</span>
                                 <span className="project-meta-item">📋 {tasks.length} task</span>
-                                <span className="project-meta-item">📅 Hạn: {project?.dueDate}</span>
+                                {/* Render Hạn chót đã format */}
+                                <span className="project-meta-item">📅 Hạn: {formattedDueDate}</span>
                             </div>
                         </div>
-                        <a href="project-settings.html" className="btn-icon" title="Cài đặt dự án">⚙️</a>
+                        <Link to="/projectsetting" className="btn-icon" title="Cài đặt dự án">⚙️</Link>
                     </div>
                     <nav className="project-tabs">
-                        <a href="project-board.html" className="project-tab active">Board</a>
-                        <a href="project-list.html" className="project-tab">List</a>
-                        <a href="project-calendar.html" className="project-tab">Calendar</a>
-                        <a href="project-activity.html" className="project-tab">Activity</a>
+                        <Link to="/projectboard" className="project-tab active">Board</Link>
+                        <Link to="/projectlist" className="project-tab">List</Link>
+                        <Link to="/projectcalendar" className="project-tab">Calendar</Link>
+                        <Link to="/projectactivity" className="project-tab">Activity</Link>
                     </nav>
                 </div>
 
@@ -140,21 +167,34 @@ export default function ProjectBoard({ projectId = 1 }) {
                                                 Chưa có công việc
                                             </div>
                                         ) : (
-                                            columnTasks.map((task) => (
-                                                <div
-                                                    className="board-card"
-                                                    key={task.id}
-                                                    onClick={() => setSelectedTask(task)}
-                                                >
-                                                    <div className="card-title">{task.title}</div>
-                                                    <div className="card-footer" style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                        <span className="card-date" style={{ fontSize: '12px', color: '#6b7280' }}>{task.dueDate}</span>
-                                                        <span className="avatar avatar-xs" style={{ background: task.assigneeBg || '#2563eb' }}>
-                                                            {task.assigneeInitials || 'NV'}
-                                                        </span>
+                                            columnTasks.map((task) => {
+                                                const taskId = task._id || task.id;
+                                                const taskDueDateFormatted = task.dueDate
+                                                    ? new Date(task.dueDate).toLocaleDateString('vi-VN')
+                                                    : 'N/A';
+
+                                                // Xử lý avatar người thực hiện task
+                                                const assigneeName = task.assignee?.username || task.assigneeName || 'User';
+                                                const initials = assigneeName.slice(0, 2).toUpperCase();
+
+                                                return (
+                                                    <div
+                                                        className="board-card"
+                                                        key={taskId}
+                                                        onClick={() => setSelectedTask(task)}
+                                                    >
+                                                        <div className="card-title">{task.title}</div>
+                                                        <div className="card-footer" style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <span className="card-date" style={{ fontSize: '12px', color: '#6b7280' }}>
+                                                                {taskDueDateFormatted}
+                                                            </span>
+                                                            <span className="avatar avatar-xs" style={{ background: '#2563eb' }} title={assigneeName}>
+                                                                {initials}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ))
+                                                );
+                                            })
                                         )}
                                     </div>
                                 </div>
@@ -179,13 +219,21 @@ export default function ProjectBoard({ projectId = 1 }) {
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label className="form-label">Hạn chót</label>
-                                <div className="text-muted">{selectedTask?.dueDate || 'N/A'}</div>
+                                <div className="text-muted">
+                                    {selectedTask?.dueDate
+                                        ? new Date(selectedTask.dueDate).toLocaleDateString('vi-VN')
+                                        : 'N/A'}
+                                </div>
                             </div>
                         </div>
 
                         <div className="form-group" style={{ marginTop: '16px' }}>
                             <label className="form-label">Mô tả</label>
-                            <textarea className="textarea" defaultValue={selectedTask?.description} placeholder="Chưa có mô tả cho task này..."></textarea>
+                            <textarea
+                                className="textarea"
+                                defaultValue={selectedTask?.description}
+                                placeholder="Chưa có mô tả cho task này..."
+                            ></textarea>
                         </div>
 
                         <button className="btn btn-danger btn-sm" style={{ marginTop: '16px' }}>🗑️ Xoá task</button>
@@ -208,10 +256,10 @@ export default function ProjectBoard({ projectId = 1 }) {
                         <div className="form-group">
                             <label className="form-label">Cột</label>
                             <select className="select">
-                                <option>Todo</option>
-                                <option>In Progress</option>
-                                <option>Review</option>
-                                <option>Done</option>
+                                <option value="Todo">Todo</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Review">Review</option>
+                                <option value="Done">Done</option>
                             </select>
                         </div>
                     </div>
