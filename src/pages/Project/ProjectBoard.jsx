@@ -94,6 +94,17 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     };
 
 // 2. Gửi key `date` theo Schema task.js lên backend
+    const reloadTasks = async () => {
+        try {
+            const tasksData = await fetchTasksByProject(activeProjectId);
+            const realTasks = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
+            setTasks(realTasks);
+        } catch (error) {
+            console.error("Lỗi khi tải lại tasks:", error);
+        }
+    };
+
+// 2. Gọi reloadTasks() sau khi tạo thành công
     const handleCreateTask = async (e) => {
         e.preventDefault();
         if (!newTaskTitle.trim() || !newTaskColumnId) {
@@ -108,13 +119,14 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 description: newTaskDesc,
                 columnId: newTaskColumnId,
                 priority: newTaskPriority,
-                date: newTaskDate ? new Date(newTaskDate) : new Date() // Gửi key 'date' cho backend
+                date: newTaskDate ? new Date(newTaskDate) : new Date()
             };
 
-            const response = await createTask(payload);
-            const createdTask = response?.data || response;
+            await createTask(payload);
 
-            setTasks(prev => [...prev, createdTask]);
+            // 🟢 Fetch lại danh sách task mới nhất từ Server
+            await reloadTasks();
+
             setActiveModal(null);
         } catch (error) {
             console.error("Lỗi khi tạo task mới:", error);
