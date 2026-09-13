@@ -247,7 +247,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
                                     <button
                                         className="add-task-btn"
-                                        style={{ width: '285px' }}
+                                        style={{ width: '260px' }}
                                         onClick={() => handleOpenCreateModal(column._id)}
                                     >
                                         + Thêm task
