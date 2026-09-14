@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import SideBar from './../../components/layout/SideBar/SideBar';
 import Header from './../../components/layout/Header/Header';
-import { fetchProjects, createProject, fetchMembers, createTask } from './../../../api.jsx';
+import { fetchProjects, createProject, fetchMembers, createTask, fetchTasksByProject } from './../../../api.jsx';
 import { Link } from "react-router-dom";
 
 const COLOR_OPTIONS = [
@@ -33,6 +33,9 @@ export default function Projects() {
     const [projects, setProjects] = useState([]);
     const [members, setMembers] = useState([]);
 
+    // Lưu số liệu task: { [projectId]: { total: number, done: number } }
+    const [projectTaskStats, setProjectTaskStats] = useState({});
+
     const [loadingProjects, setLoadingProjects] = useState(true);
     const [loadingMembers, setLoadingMembers] = useState(false);
 
@@ -50,20 +53,56 @@ export default function Projects() {
 
     const [toasts, setToasts] = useState([]);
 
-    // 1. Fetch Projects
+    const getProgressColorClass = (percent) => {
+        if (percent >= 80) return 'high';   // >= 80%: Xanh lá
+        if (percent >= 30) return 'medium'; // 30% - 79%: Xanh dương
+        return 'low';                       // < 30%: Màu cam
+    };
+
+    // Fetch danh sách project & đếm task Done theo column.position === 3
     const loadProjects = async () => {
         setLoadingProjects(true);
         try {
             const data = await fetchProjects();
             const list = Array.isArray(data) ? data : (data?.data || []);
 
-            // Log dữ liệu ra console để kiểm tra cấu trúc Backend trả về
-            console.log(">>> [LOG] Projects nhận từ Backend:", list);
-
             setProjects(list);
             if (list.length > 0) {
                 setTaskProject(list[0]._id || list[0].id);
             }
+
+            const statsMap = {};
+            await Promise.all(
+                list.map(async (project) => {
+                    const pId = project._id || project.id;
+                    try {
+                        const tasksData = await fetchTasksByProject(pId);
+                        const tasksList = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
+
+                        // 🟢 Lọc ra các task nằm ở cột Done dựa trên position === 3
+                        const doneTasksCount = tasksList.filter((task) => {
+                            // Trường hợp columnId là Object populated từ MongoDB (ví dụ: { _id, name, position })
+                            if (task.columnId && typeof task.columnId === 'object') {
+                                return task.columnId.position === 3;
+                            }
+                            // Trường hợp task.position chính là position của column
+                            if (task.position === 3) {
+                                return true;
+                            }
+                            return false;
+                        }).length;
+
+                        statsMap[pId] = {
+                            total: tasksList.length,
+                            done: doneTasksCount
+                        };
+                    } catch (err) {
+                        statsMap[pId] = { total: 0, done: 0 };
+                    }
+                })
+            );
+            setProjectTaskStats(statsMap);
+
         } catch (error) {
             console.error("Lỗi fetch projects:", error);
             showToast('Lỗi', 'Không thể tải danh sách Projects.', 'error');
@@ -72,7 +111,6 @@ export default function Projects() {
         }
     };
 
-    // 2. Fetch Members
     const loadMembers = async () => {
         setLoadingMembers(true);
         try {
@@ -120,7 +158,27 @@ export default function Projects() {
         );
     };
 
-    // Hàm tạo Project gửi dữ liệu chuẩn Schema
+    // 🟢 Hàm tính % tiến độ chuẩn dựa trên số task Done / tổng số task
+    const calculateProgress = (project) => {
+        const pId = project._id || project.id;
+        const stats = projectTaskStats[pId];
+
+        if (stats && stats.total > 0) {
+            return Math.round((stats.done / stats.total) * 100);
+        }
+
+        return 0;
+    };
+
+    // Hàm lấy tổng số task
+    const getTaskCount = (project) => {
+        const pId = project._id || project.id;
+        if (projectTaskStats[pId] !== undefined) {
+            return projectTaskStats[pId].total;
+        }
+        return 0;
+    };
+
     const handleCreateProject = async (e) => {
         e.preventDefault();
         try {
@@ -128,10 +186,10 @@ export default function Projects() {
 
             await createProject({
                 name: projectName,
-                description: projectDesc,   // Khớp với 'description' Schema
-                date: projectDueDate,       // Khớp với 'date' Schema
+                description: projectDesc,
+                date: projectDueDate,
                 color: selectedColor,
-                assignees: cleanMembers     // Khớp với 'assignees' Schema
+                assignees: cleanMembers
             });
 
             showToast('Project created', 'Project đã lưu thành công.', 'success');
@@ -161,6 +219,7 @@ export default function Projects() {
             setTaskTitle('');
             setTaskDueDate('');
             setActiveModal(null);
+            loadProjects();
         } catch (error) {
             showToast('Lỗi', 'Không thể tạo task.', 'error');
         }
@@ -205,7 +264,6 @@ export default function Projects() {
                         ) : (
                             <div className="grid-cards">
                                 {projects.map((project) => {
-                                    // BỘ LỌC ĐA NĂNG: Tự lấy mảng member từ mọi tên trường có thể có ở Backend
                                     const memberList = Array.isArray(project.assignees)
                                         ? project.assignees
                                         : Array.isArray(project.members)
@@ -213,6 +271,9 @@ export default function Projects() {
                                             : Array.isArray(project.membersList)
                                                 ? project.membersList
                                                 : [];
+
+                                    const totalTask = getTaskCount(project);
+                                    const progressPercent = calculateProgress(project);
 
                                     return (
                                         <Link
@@ -235,17 +296,43 @@ export default function Projects() {
                                             <p className="project-card-desc">{project.description || project.desc}</p>
                                             <div>
                                                 <div className="project-card-progress-row">
-                                                    <span className="icon-inline">
-                                                        <ListChecks className="icon icon-sm" />
-                                                        {project.tasksText || '0 tasks'}
-                                                    </span>
-                                                    <span>{project.progress || 0}%</span>
+        <span className="icon-inline">
+            <ListChecks className="icon icon-sm" />
+            {totalTask} {totalTask === 1 ? 'task' : 'tasks'}
+        </span>
+                                                    {/* Tô đậm số % */}
+                                                    <span style={{ fontWeight: 700, color: '#0f172a' }}>
+            {progressPercent}%
+        </span>
                                                 </div>
-                                                <div className="progress-bar">
-                                                    <span
-                                                        className="progress-bar-fill"
-                                                        style={{ width: `${project.progress || 0}%` }}
-                                                    ></span>
+
+                                                {/* 🟢 Khung nền thanh Progress (Xám nhạt) */}
+                                                <div
+                                                    style={{
+                                                        width: '100%',
+                                                        height: '10px',
+                                                        backgroundColor: '#e2e8f0',
+                                                        borderRadius: '999px',
+                                                        overflow: 'hidden',
+                                                        marginTop: '8px'
+                                                    }}
+                                                >
+                                                    {/* 🟢 Thanh tô màu tiến độ */}
+                                                    <div
+                                                        style={{
+                                                            width: `${progressPercent}%`,
+                                                            height: '100%',
+                                                            // Đổi màu đậm theo %: 100% Xanh lá, >=50% Xanh dương, <50% Màu cam
+                                                            backgroundColor: progressPercent === 100
+                                                                ? '#10b981'
+                                                                : progressPercent >= 50
+                                                                    ? '#3b82f6'
+                                                                    : '#f59e0b',
+                                                            borderRadius: '999px',
+                                                            transition: 'width 0.4s ease-in-out',
+                                                            boxShadow: progressPercent > 0 ? '0 0 8px rgba(59, 130, 246, 0.5)' : 'none'
+                                                        }}
+                                                    />
                                                 </div>
                                             </div>
                                             <div className="project-card-footer">
@@ -277,12 +364,10 @@ export default function Projects() {
                                                 <span className="project-card-footer-meta">
                                                     <span className="icon-inline">
                                                         <UsersRound className="icon icon-sm" />
-                                                        {/* Đếm độ dài mảng chuẩn xác */}
                                                         {memberList.length}
                                                     </span>
                                                     <span className="icon-inline">
                                                         <CalendarClock className="icon icon-sm" />
-                                                        {/* Đọc trường date hoặc dueDate */}
                                                         {(project.date || project.dueDate)
                                                             ? new Date(project.date || project.dueDate).toLocaleDateString('vi-VN')
                                                             : 'N/A'}
@@ -462,7 +547,6 @@ export default function Projects() {
                                     </div>
                                 </div>
 
-                                {/* Danh sách chọn Members */}
                                 <div className="field">
                                     <span className="field-label">
                                         Members {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}

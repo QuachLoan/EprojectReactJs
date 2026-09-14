@@ -1883,3 +1883,36 @@ h3 {
 .board-column-body::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
 }
+
+/* Khung chứa thanh tiến độ */
+.progress-bar {
+    width: 100%;
+    height: 8px; /* Tăng độ dày một chút để nhìn rõ màu */
+    background-color: #e2e8f0; /* Màu nền xám nhạt */
+    border-radius: 9999px;
+    overflow: hidden;
+    margin-top: 6px;
+}
+
+/* Thanh fill tiến độ */
+.progress-bar-fill {
+    height: 100%;
+    border-radius: 9999px;
+    /* Hiệu ứng chuyển động mượt khi width thay đổi */
+    transition: width 0.4s ease-in-out, background-color 0.3s ease;
+}
+
+/* Các lớp màu tương ứng với % */
+.progress-bar-fill.low {
+    background-color: #f59e0b; /* Cam đậm cho tiến độ thấp (< 30%) */
+}
+
+.progress-bar-fill.medium {
+    background-color: #3b82f6; /* Xanh dương cho tiến độ trung bình (30% - 79%) */
+}
+
+.progress-bar-fill.high {
+    background-color: #10b981; /* Xanh lá đậm cho tiến độ cao/hoàn thành (>= 80%) */
+}
+
+

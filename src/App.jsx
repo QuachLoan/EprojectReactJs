@@ -10,13 +10,17 @@ import MyTasks from './pages/MyTasks/MyTasks.jsx'
 import Members from './pages/Members/Members.jsx'
 import AdminUsers from './pages/AdminUsers/AdminUsers.jsx'
 import AdminMorder from './pages/AdminMorder/AdminMorder.jsx'
+import ProjectList from "./pages/Project/ProjectList.jsx";
+import ProjectCalendar from "./pages/Project/ProjectCalendar.jsx";
+import ProjectActivity from "./pages/Project/ProjectActivity.jsx";
+import ProjectSetting from "./pages/Project/ProjectSetting.jsx";
 function App() {
 
   return (
       <>
       <Routes>
+        <Route index element={<Login/>}/>
         <Route element={<MainLayout/>}>
-          <Route index element={<Dashboard/>}/>
           <Route path='/dashboard' element ={<Dashboard/>}/>
           <Route path='/myTasks' element ={<MyTasks/>}/>
           <Route path='/members' element ={<Members/>}/>
@@ -27,6 +31,10 @@ function App() {
         <Route path = "/project" element={<Project/>}/>
           <Route path = "/Login" element={<Login/>}/>
           <Route path="/projectboard/:id" element={<ProjectBoard />} />
+          <Route path = "/projectlist:id" element = {<ProjectList/>}/>
+          <Route path = "/projectcalendar:id" element = {<ProjectCalendar/>}/>
+          <Route path = "/projectactivity:id" element = {<ProjectActivity/>}/>
+          <Route path = "/projectsetting:id" element = {<ProjectSetting/>}/>
       </Routes>
       </> 
   )

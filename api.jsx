@@ -118,7 +118,7 @@ export const createTask = async (taskData) => {
 };
 
 export const updateTask = async (taskId, updateData) => {
-    const res = await fetch(`${API_BASE_URL}/task/${taskId}`, {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}/move`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify(updateData)

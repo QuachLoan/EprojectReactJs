@@ -22,8 +22,6 @@ import {
     fetchProjectById,
     fetchMembers,
     fetchTasksByProject,
-    updateProject,
-    deleteProject
 } from '../../../api';
 
 export default function ProjectSetting() {

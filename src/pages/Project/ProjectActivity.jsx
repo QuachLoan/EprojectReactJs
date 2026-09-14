@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 
 import {
-    fetchActivities,
     createQuickTask,
     fetchProjectById,
     fetchMembers,
