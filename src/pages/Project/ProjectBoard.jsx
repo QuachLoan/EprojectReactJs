@@ -8,7 +8,7 @@ import {
     fetchTasksByProject,
     fetchColumnsByProject,
     createTask,
-    updateTask
+    updateTask // Hoặc moveTask API nếu có
 } from './../../../api.jsx';
 import "./project.css";
 
@@ -71,33 +71,113 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         fetchBoardData();
     }, [activeProjectId]);
 
-    // Lọc danh sách task theo columnId
-    const filterTasksByColumn = (columnId) => {
-        return tasks.filter(task => {
-            if (!task || !task.columnId) return false;
+    // 🟢 SỬA LỖI 1: Sắp xếp Task chính xác theo mảng taskOrderIds của Column
+    const getSortedTasksForColumn = (column) => {
+        const columnTaskMap = new Map();
+
+        tasks.forEach(task => {
+            if (!task || !task.columnId) return;
             const taskColId = typeof task.columnId === 'object' ? task.columnId._id : task.columnId;
-            return String(taskColId) === String(columnId);
+            if (String(taskColId) === String(column._id)) {
+                columnTaskMap.set(String(task._id), task);
+            }
         });
+
+        // Nếu column có taskOrderIds thì sắp xếp theo đúng thứ tự đó
+        if (Array.isArray(column.taskOrderIds) && column.taskOrderIds.length > 0) {
+            const sorted = [];
+            column.taskOrderIds.forEach(id => {
+                const idStr = typeof id === 'object' ? id._id || id.toString() : String(id);
+                if (columnTaskMap.has(idStr)) {
+                    sorted.push(columnTaskMap.get(idStr));
+                    columnTaskMap.delete(idStr); // Xóa khỏi map để tránh trùng
+                }
+            });
+            // Thêm các task chưa có trong taskOrderIds vào cuối
+            return [...sorted, ...Array.from(columnTaskMap.values())];
+        }
+
+        return Array.from(columnTaskMap.values());
     };
 
-    // 🟢 XỬ LÝ SỰ KIỆN KHI KÉO THẢ TASK XONG
+    // 🟢 SỬA LỖI 2: Optimistic UI Update ngay khi thả
     const handleOnDragEnd = async (result) => {
         const { destination, source, draggableId } = result;
+
+        // Vứt ra ngoài hoặc giữ nguyên vị trí cũ
         if (!destination) return;
+        if (
+            destination.droppableId === source.droppableId &&
+            destination.index === source.index
+        ) {
+            return;
+        }
 
-        // ... (Code Optimistic UI cập nhật giao diện ngay lập tức)
+        const sourceColId = source.droppableId;
+        const destColId = destination.droppableId;
 
+        // 1. Cập nhật state local ngay lập tức (Optimistic Update)
+        setColumns(prevColumns => {
+            const newColumns = structuredClone(prevColumns);
+            const sourceCol = newColumns.find(c => String(c._id) === String(sourceColId));
+            const destCol = newColumns.find(c => String(c._id) === String(destColId));
+
+            if (!sourceCol || !destCol) return prevColumns;
+
+            // Đảm bảo taskOrderIds tồn tại
+            if (!sourceCol.taskOrderIds) sourceCol.taskOrderIds = [];
+            if (!destCol.taskOrderIds) destCol.taskOrderIds = [];
+
+            // Nếu taskOrderIds rỗng, khởi tạo từ danh sách task hiện tại
+            if (sourceCol.taskOrderIds.length === 0) {
+                sourceCol.taskOrderIds = getSortedTasksForColumn(sourceCol).map(t => t._id);
+            }
+            if (destCol.taskOrderIds.length === 0 && sourceColId !== destColId) {
+                destCol.taskOrderIds = getSortedTasksForColumn(destCol).map(t => t._id);
+            }
+
+            if (sourceColId === destColId) {
+                // Kéo thả trong cùng 1 cột
+                const newOrder = Array.from(sourceCol.taskOrderIds.map(id => String(id)));
+                const [movedId] = newOrder.splice(source.index, 1);
+                newOrder.splice(destination.index, 0, movedId);
+                sourceCol.taskOrderIds = newOrder;
+            } else {
+                // Kéo thả sang cột khác
+                const sourceOrder = Array.from(sourceCol.taskOrderIds.map(id => String(id)));
+                sourceOrder.splice(source.index, 1);
+                sourceCol.taskOrderIds = sourceOrder;
+
+                const destOrder = Array.from(destCol.taskOrderIds.map(id => String(id)));
+                destOrder.splice(destination.index, 0, draggableId);
+                destCol.taskOrderIds = destOrder;
+            }
+
+            return newColumns;
+        });
+
+        // Cập nhật columnId trong state tasks nếu đổi cột
+        if (sourceColId !== destColId) {
+            setTasks(prevTasks =>
+                prevTasks.map(t =>
+                    String(t._id) === String(draggableId)
+                        ? { ...t, columnId: destColId }
+                        : t
+                )
+            );
+        }
+
+        // 2. Gửi request cập nhật DB
         try {
-            // Gọi API gửi đủ thông tin cần thiết
             await updateTask(draggableId, {
-                sourceColumnId: source.droppableId,
-                destColumnId: destination.droppableId,
+                sourceColumnId: sourceColId,
+                destColumnId: destColId,
                 destinationIndex: destination.index
             });
-            reloadTasks();
         } catch (error) {
-            console.error("Lỗi khi cập nhật vị trí Task:", error);
-            reloadTasks();
+            console.error("Lỗi khi cập nhật vị trí Task trên server:", error);
+            // Rollback bằng cách fetch lại dữ liệu từ server nếu lỗi
+            fetchBoardData();
         }
     };
 
@@ -140,7 +220,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             };
 
             await createTask(payload);
-            await reloadTasks();
+            await fetchBoardData(); // Fetch lại để cập nhật cả column.taskOrderIds
             setActiveModal(null);
         } catch (error) {
             console.error("Lỗi khi tạo task mới:", error);
@@ -219,15 +299,14 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                         </button>
                     </div>
 
-                    {/* 🟢 BAO BỌC BẢNG KANBAN BẰNG DragDropContext */}
                     <DragDropContext onDragEnd={handleOnDragEnd}>
                         <div className="board scroll-x" id="kanbanBoard">
                             {columns.map((column) => {
-                                const columnTasks = filterTasksByColumn(column._id);
+                                const columnTasks = getSortedTasksForColumn(column);
                                 return (
                                     <div className="board-column" key={column._id}>
                                         <div className="board-column-header">
-                                            <span className="board-column-title">{column.title}</span>
+                                            <span className="board-column-title">{column.name || column.title}</span>
                                             <span className="board-column-count">{columnTasks.length}</span>
                                             <button
                                                 className="btn-icon"
@@ -239,7 +318,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                             </button>
                                         </div>
 
-                                        {/* 🟢 KHU VỰC THẢ TASK (Droppable) */}
                                         <Droppable droppableId={String(column._id)}>
                                             {(provided, snapshot) => (
                                                 <div
@@ -264,9 +342,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                 : 'N/A';
 
                                                             return (
-                                                                /* 🟢 TỪNG TASK KÉO ĐƯỢC (Draggable) */
                                                                 <Draggable
-                                                                    key={task._id}
+                                                                    key={String(task._id)}
                                                                     draggableId={String(task._id)}
                                                                     index={index}
                                                                 >
@@ -358,7 +435,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                         required
                                     >
                                         {columns.map((col) => (
-                                            <option key={col._id} value={col._id}>{col.title}</option>
+                                            <option key={col._id} value={col._id}>{col.name || col.title}</option>
                                         ))}
                                     </select>
                                 </div>
