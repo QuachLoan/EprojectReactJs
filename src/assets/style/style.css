@@ -7,7 +7,7 @@
    - Shared primitives: button, badge, avatar, form fields, icon
    These values are copied from the original React app's design
    tokens (src/styles/tokens.css) so this HTML version keeps the
-   exact same colors, radii, and shadows.
+   exact same colors, radii, and shadows..filter-bar
    ========================================================= */
 
 /* =========================

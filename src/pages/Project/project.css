@@ -388,7 +388,7 @@
 
 .task-list-row {
     display: grid;
-    grid-template-columns: 1fr 120px 90px 110px;
+    /* grid-template-columns: 1fr 120px 90px 110px; */
     align-items: center;
     gap: var(--space-3);
     width: 100%;
@@ -583,15 +583,14 @@
 }
 
 .drawer-panel {
-    width: 420px;
-    max-width: 90vw;
+    width: 100%;
+    max-width: 672px;
     height: 100%;
     background-color: var(--color-surface);
     box-shadow: var(--shadow-lg);
     display: flex;
     flex-direction: column;
 }
-
 .drawer-header {
     display: flex;
     align-items: center;

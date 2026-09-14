@@ -151,7 +151,7 @@ button.panel-row:hover { background-color: var(--color-surface-hover); }
 /* =========================
    FILTER BAR
    ========================================================= */
-.filter-bar { display: flex; flex-direction: column; gap: 10px; margin-bottom: var(--space-4); }
+.filter-bar { display: flex;  gap: 10px; margin-bottom: var(--space-4); }
 .filter-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .filter-bar-row .input-icon-wrap { width: 100%; max-width: 220px; }
 .filter-bar-row .select-wrap { width: auto; min-width: 130px; }
