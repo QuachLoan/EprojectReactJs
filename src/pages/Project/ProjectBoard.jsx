@@ -8,7 +8,7 @@ import {
     fetchTasksByProject,
     fetchColumnsByProject,
     createTask,
-    updateTask // Hoặc moveTask API nếu có
+    updateTask
 } from './../../../api.jsx';
 import "./project.css";
 
