@@ -290,7 +290,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 <span className="project-color-dot" style={{ background: project?.color || '#4f46e5' }}></span>
                                 <h1>{project?.name || 'Dự án'}</h1>
                             </div>
-                            <p className="page-subtitle">{project?.description || 'Chưa có mô tả dự án.'}</p>
+                            <p className="page-subtitle">{project?.description}</p>
 
                             <div className="project-meta-row">
                                 <span className="project-meta-item">👥 {memberList.length} thành viên</span>
