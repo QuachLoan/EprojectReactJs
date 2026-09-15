@@ -12,6 +12,16 @@ import {
 } from './../../../api.jsx';
 import "./project.css";
 
+// Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa từ username/name
+const getInitials = (name) => {
+    if (!name) return '??';
+    const words = String(name).trim().split(/\s+/);
+    if (words.length === 1) {
+        return words[0].substring(0, 2).toUpperCase();
+    }
+    return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+};
+
 export default function ProjectBoard({ projectId: propProjectId }) {
     const { id: urlProjectId } = useParams();
     const activeProjectId = urlProjectId || propProjectId;
@@ -83,17 +93,15 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             }
         });
 
-        // Nếu column có taskOrderIds thì sắp xếp theo đúng thứ tự đó
         if (Array.isArray(column.taskOrderIds) && column.taskOrderIds.length > 0) {
             const sorted = [];
             column.taskOrderIds.forEach(id => {
                 const idStr = typeof id === 'object' ? id._id || id.toString() : String(id);
                 if (columnTaskMap.has(idStr)) {
                     sorted.push(columnTaskMap.get(idStr));
-                    columnTaskMap.delete(idStr); // Xóa khỏi map để tránh trùng
+                    columnTaskMap.delete(idStr);
                 }
             });
-            // Thêm các task chưa có trong taskOrderIds vào cuối
             return [...sorted, ...Array.from(columnTaskMap.values())];
         }
 
@@ -129,7 +137,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const handleOnDragEnd = async (result) => {
         const { destination, source, draggableId } = result;
 
-        // Vứt ra ngoài hoặc giữ nguyên vị trí cũ
         if (!destination) return;
         if (
             destination.droppableId === source.droppableId &&
@@ -141,7 +148,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         const sourceColId = source.droppableId;
         const destColId = destination.droppableId;
 
-        // 1. Cập nhật state local ngay lập tức (Optimistic Update)
         setColumns(prevColumns => {
             const newColumns = structuredClone(prevColumns);
             const sourceCol = newColumns.find(c => String(c._id) === String(sourceColId));
@@ -149,11 +155,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
             if (!sourceCol || !destCol) return prevColumns;
 
-            // Đảm bảo taskOrderIds tồn tại
             if (!sourceCol.taskOrderIds) sourceCol.taskOrderIds = [];
             if (!destCol.taskOrderIds) destCol.taskOrderIds = [];
 
-            // Nếu taskOrderIds rỗng, khởi tạo từ danh sách task hiện tại
             if (sourceCol.taskOrderIds.length === 0) {
                 sourceCol.taskOrderIds = getSortedTasksForColumn(sourceCol).map(t => t._id);
             }
@@ -162,13 +166,11 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             }
 
             if (sourceColId === destColId) {
-                // Kéo thả trong cùng 1 cột
                 const newOrder = Array.from(sourceCol.taskOrderIds.map(id => String(id)));
                 const [movedId] = newOrder.splice(source.index, 1);
                 newOrder.splice(destination.index, 0, movedId);
                 sourceCol.taskOrderIds = newOrder;
             } else {
-                // Kéo thả sang cột khác
                 const sourceOrder = Array.from(sourceCol.taskOrderIds.map(id => String(id)));
                 sourceOrder.splice(source.index, 1);
                 sourceCol.taskOrderIds = sourceOrder;
@@ -181,7 +183,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             return newColumns;
         });
 
-        // Cập nhật columnId trong state tasks nếu đổi cột
         if (sourceColId !== destColId) {
             setTasks(prevTasks =>
                 prevTasks.map(t =>
@@ -192,7 +193,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             );
         }
 
-        // 2. Gửi request cập nhật DB
         try {
             await updateTask(draggableId, {
                 sourceColumnId: sourceColId,
@@ -201,7 +201,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             });
         } catch (error) {
             console.error("Lỗi khi cập nhật vị trí Task trên server:", error);
-            // Rollback bằng cách fetch lại dữ liệu từ server nếu lỗi
             fetchBoardData();
         }
     };
@@ -211,16 +210,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setIsColumnFixed(isFixed);
         resetTaskForm();
         setActiveModal('quickCreateTaskModal');
-    };
-
-    const reloadTasks = async () => {
-        try {
-            const tasksData = await fetchTasksByProject(activeProjectId);
-            const realTasks = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
-            setTasks(realTasks);
-        } catch (error) {
-            console.error("Lỗi khi tải lại tasks:", error);
-        }
     };
 
     const handleCreateTask = async (e) => {
@@ -246,7 +235,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             };
 
             await createTask(payload);
-            await fetchBoardData(); // Fetch lại để cập nhật Kanban
+            await fetchBoardData();
             closeModal();
         } catch (error) {
             console.error("Lỗi khi tạo task mới:", error);
@@ -282,7 +271,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                     onOpenModal={(modal) => setActiveModal(modal)}
                 />
 
-                {/* PROJECT HEADER */}
                 <div className="project-header">
                     <div className="project-header-top">
                         <div>
@@ -308,7 +296,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                     </nav>
                 </div>
 
-                {/* MAIN KANBAN BOARD WITH DRAG & DROP */}
                 <main className="page-content">
                     <div className="filter-bar" style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
                         <div className="input-icon-wrap" style={{ width: '220px', flexShrink: 0 }}>
@@ -366,6 +353,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                             const taskDueDateFormatted = task.date
                                                                 ? new Date(task.date).toLocaleDateString('vi-VN')
                                                                 : 'N/A';
+                                                            const assignees = Array.isArray(task.assignees) ? task.assignees : [];
 
                                                             return (
                                                                 <Draggable
@@ -389,6 +377,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                             }}
                                                                         >
                                                                             <div className="task-card-title">{task.title}</div>
+
                                                                             <div className="task-card-bottom">
                                                                                 <div className="task-card-meta">
                                                                                     <span className="task-card-meta-item">
@@ -398,6 +387,30 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                         {task.priority || 'Medium'}
                                                                                     </span>
                                                                                 </div>
+
+                                                                                {/* 🟢 HIỂN THỊ LOGO AVATAR CÁC ASSIGNEE Ở GÓC DƯỚI BÊN PHẢI */}
+                                                                                {assignees.length > 0 && (
+                                                                                    <div className="task-assignees-group">
+                                                                                        {assignees.map((assignee, aIdx) => {
+                                                                                            const name = typeof assignee === 'object'
+                                                                                                ? (assignee.username || assignee.name || assignee.email || 'User')
+                                                                                                : 'User';
+                                                                                            const assigneeId = typeof assignee === 'object'
+                                                                                                ? (assignee._id || assignee.id || aIdx)
+                                                                                                : assignee;
+
+                                                                                            return (
+                                                                                                <div
+                                                                                                    key={assigneeId}
+                                                                                                    className="task-assignee-avatar"
+                                                                                                    title={name}
+                                                                                                >
+                                                                                                    {getInitials(name)}
+                                                                                                </div>
+                                                                                            );
+                                                                                        })}
+                                                                                    </div>
+                                                                                )}
                                                                             </div>
                                                                         </div>
                                                                     )}
@@ -425,7 +438,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 </main>
             </div>
 
-            {/* MODAL TẠO TASK */}
             {/* MODAL TẠO TASK */}
             {activeModal === 'quickCreateTaskModal' && (
                 <div className="modal-overlay" onClick={closeModal}>
@@ -491,7 +503,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                     </select>
                                 </div>
 
-                                {/* 🟢 DANH SÁCH MEMBERS CỦA PROJECT */}
                                 <div className="form-group">
                                     <label className="form-label">
                                         Assignees {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
@@ -505,7 +516,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                             memberList.map((member, idx) => {
                                                 const memberId = typeof member === 'object' ? (member._id || member.id) : member;
                                                 const displayName = typeof member === 'object' ? (member.username || member.name || member.email || 'User') : 'User';
-                                                const initials = displayName.slice(0, 2).toUpperCase();
+                                                const initials = getInitials(displayName);
 
                                                 return (
                                                     <label key={memberId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', borderRadius: '6px', cursor: 'pointer' }}>
@@ -516,8 +527,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                             onChange={() => toggleMemberSelection(memberId)}
                                                         />
                                                         <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '11px', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                {initials}
-                                            </span>
+                                                            {initials}
+                                                        </span>
                                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                                                             <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
                                                         </div>
