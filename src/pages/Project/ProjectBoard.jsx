@@ -25,6 +25,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [columns, setColumns] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [selectedMembers, setSelectedMembers] = useState([]);
 
     // UI & Modal States
     const [selectedTask, setSelectedTask] = useState(null);
@@ -97,6 +98,32 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         }
 
         return Array.from(columnTaskMap.values());
+    };
+
+    const getCurrentUserId = () => {
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        return currentUser._id || currentUser.id || null;
+    };
+
+    const resetTaskForm = () => {
+        setNewTaskTitle('');
+        setNewTaskDesc('');
+        setNewTaskPriority('Medium');
+        setNewTaskDate('');
+
+        const currentUserId = getCurrentUserId();
+        setSelectedMembers(currentUserId ? [currentUserId] : []);
+    };
+
+    const closeModal = () => {
+        setActiveModal(null);
+        resetTaskForm();
+    };
+
+    const toggleMemberSelection = (id) => {
+        setSelectedMembers((prev) =>
+            prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
+        );
     };
 
     const handleOnDragEnd = async (result) => {
@@ -182,10 +209,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const handleOpenCreateModal = (columnId = '', isFixed = false) => {
         setNewTaskColumnId(columnId || (columns[0]?._id || ''));
         setIsColumnFixed(isFixed);
-        setNewTaskTitle('');
-        setNewTaskDesc('');
-        setNewTaskPriority('Medium');
-        setNewTaskDate('');
+        resetTaskForm();
         setActiveModal('quickCreateTaskModal');
     };
 
@@ -208,18 +232,22 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
         try {
             setIsSubmitting(true);
+            const cleanMembers = selectedMembers.filter(id => Boolean(id));
+
             const payload = {
                 title: newTaskTitle,
                 description: newTaskDesc,
                 columnId: newTaskColumnId,
                 projectId: activeProjectId,
                 priority: newTaskPriority,
-                date: newTaskDate ? new Date(newTaskDate) : new Date()
+                date: newTaskDate ? new Date(newTaskDate) : new Date(),
+                assignees: cleanMembers,
+                members: cleanMembers
             };
 
             await createTask(payload);
-            await fetchBoardData(); // Fetch lại để cập nhật cả column.taskOrderIds
-            setActiveModal(null);
+            await fetchBoardData(); // Fetch lại để cập nhật Kanban
+            closeModal();
         } catch (error) {
             console.error("Lỗi khi tạo task mới:", error);
         } finally {
@@ -398,13 +426,14 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             </div>
 
             {/* MODAL TẠO TASK */}
+            {/* MODAL TẠO TASK */}
             {activeModal === 'quickCreateTaskModal' && (
-                <div className="modal-overlay" onClick={() => setActiveModal(null)}>
+                <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
                         <form onSubmit={handleCreateTask}>
                             <div className="modal-header">
                                 <h2>Add Task</h2>
-                                <button type="button" className="btn-icon" onClick={() => setActiveModal(null)}>✕</button>
+                                <button type="button" className="btn-icon" onClick={closeModal}>✕</button>
                             </div>
                             <div className="modal-body">
                                 <div className="form-group">
@@ -462,6 +491,43 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                     </select>
                                 </div>
 
+                                {/* 🟢 DANH SÁCH MEMBERS CỦA PROJECT */}
+                                <div className="form-group">
+                                    <label className="form-label">
+                                        Assignees {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
+                                    </label>
+                                    <div className="card" style={{ maxHeight: '144px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        {memberList.length === 0 ? (
+                                            <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>
+                                                Dự án chưa có thành viên nào.
+                                            </p>
+                                        ) : (
+                                            memberList.map((member, idx) => {
+                                                const memberId = typeof member === 'object' ? (member._id || member.id) : member;
+                                                const displayName = typeof member === 'object' ? (member.username || member.name || member.email || 'User') : 'User';
+                                                const initials = displayName.slice(0, 2).toUpperCase();
+
+                                                return (
+                                                    <label key={memberId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', borderRadius: '6px', cursor: 'pointer' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            className="checkbox"
+                                                            checked={selectedMembers.includes(memberId)}
+                                                            onChange={() => toggleMemberSelection(memberId)}
+                                                        />
+                                                        <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '11px', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                {initials}
+                                            </span>
+                                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                            <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
+                                                        </div>
+                                                    </label>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+
                                 <div className="form-group">
                                     <label className="form-label">Description</label>
                                     <textarea
@@ -473,7 +539,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             </div>
 
                             <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={() => setActiveModal(null)}>Cancel</button>
+                                <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
                                 <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
                                     {isSubmitting ? 'Adding...' : 'Add'}
                                 </button>
