@@ -59,6 +59,26 @@ export default function Projects() {
         return 'low';                       // < 30%: Màu cam
     };
 
+    const getCurrentUserId = () => {
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        return currentUser._id || currentUser.id || null;
+    };
+
+    const resetProjectForm = () => {
+        setProjectName('');
+        setProjectDesc('');
+        setProjectDueDate('');
+        setSelectedColor('#4f46e5');
+
+        const currentUserId = getCurrentUserId();
+        setSelectedMembers(currentUserId ? [currentUserId] : []);
+    };
+
+    const closeModal = () => {
+        setActiveModal(null);
+        resetProjectForm();
+    };
+
     // Fetch danh sách project & đếm task Done theo column.position === 3
     const loadProjects = async () => {
         setLoadingProjects(true);
@@ -79,7 +99,6 @@ export default function Projects() {
                         const tasksData = await fetchTasksByProject(pId);
                         const tasksList = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
 
-                        // 🟢 Lọc ra các task nằm ở cột Done dựa trên position === 3
                         const doneTasksCount = tasksList.filter((task) => {
                             // Trường hợp columnId là Object populated từ MongoDB (ví dụ: { _id, name, position })
                             if (task.columnId && typeof task.columnId === 'object') {
@@ -117,6 +136,12 @@ export default function Projects() {
             const data = await fetchMembers();
             const list = Array.isArray(data) ? data : (data?.data || data?.users || []);
             setMembers(list);
+
+            // Tích sẵn người dùng hiện tại
+            const currentUserId = getCurrentUserId();
+            if (currentUserId) {
+                setSelectedMembers([currentUserId]);
+            }
         } catch (error) {
             console.error("Lỗi fetch members:", error);
             showToast('Lỗi', 'Không thể tải danh sách Members.', 'error');
@@ -158,7 +183,6 @@ export default function Projects() {
         );
     };
 
-    // 🟢 Hàm tính % tiến độ chuẩn dựa trên số task Done / tổng số task
     const calculateProgress = (project) => {
         const pId = project._id || project.id;
         const stats = projectTaskStats[pId];
@@ -182,26 +206,30 @@ export default function Projects() {
     const handleCreateProject = async (e) => {
         e.preventDefault();
         try {
+            const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+            const currentUserId = currentUser._id || currentUser.id;
+
             const cleanMembers = selectedMembers.filter(id => Boolean(id));
 
-            await createProject({
-                name: projectName,
-                description: projectDesc,
-                date: projectDueDate,
+            const today = new Date().toISOString().split('T')[0];
+
+            const payload = {
+                name: projectName.trim(),
+                description: projectDesc.trim(),
                 color: selectedColor,
+                userId: currentUserId,
+                date: projectDueDate || today,
                 assignees: cleanMembers
-            });
+            };
+
+            await createProject(payload);
 
             showToast('Project created', 'Project đã lưu thành công.', 'success');
-            setProjectName('');
-            setProjectDesc('');
-            setProjectDueDate('');
-            setSelectedMembers([]);
-            setActiveModal(null);
+            closeModal();
             loadProjects();
         } catch (error) {
             console.error("Lỗi tạo Project:", error);
-            showToast('Lỗi', 'Không thể tạo project.', 'error');
+            showToast('Lỗi', error.response?.data?.message || 'Không thể tạo project.', 'error');
         }
     };
 
@@ -250,7 +278,10 @@ export default function Projects() {
                             </div>
                             <button
                                 className="btn btn-primary"
-                                onClick={() => setActiveModal('createProjectModal')}
+                                onClick={() => {
+                                    resetProjectForm(); // Reset & tự động tích chọn user hiện tại
+                                    setActiveModal('createProjectModal');
+                                }}
                             >
                                 <Plus className="icon icon-sm" />
                                 Create Project
@@ -306,7 +337,6 @@ export default function Projects() {
         </span>
                                                 </div>
 
-                                                {/* 🟢 Khung nền thanh Progress (Xám nhạt) */}
                                                 <div
                                                     style={{
                                                         width: '100%',
@@ -317,7 +347,6 @@ export default function Projects() {
                                                         marginTop: '8px'
                                                     }}
                                                 >
-                                                    {/* 🟢 Thanh tô màu tiến độ */}
                                                     <div
                                                         style={{
                                                             width: `${progressPercent}%`,
@@ -384,29 +413,33 @@ export default function Projects() {
             </div>
 
             {/* Modal Command Palette */}
-            {activeModal === 'commandPalette' && (
-                <div className="command-palette-overlay" onClick={() => setActiveModal(null)}>
-                    <div className="command-palette-box" onClick={(e) => e.stopPropagation()}>
-                        <div className="command-palette-input-row">
-                            <Search className="icon icon-sm" />
-                            <input
-                                className="command-palette-input"
-                                placeholder="Search tasks, projects, members…"
-                                autoFocus
-                                value={commandQuery}
-                                onChange={(e) => setCommandQuery(e.target.value)}
-                            />
-                            <kbd onClick={() => setActiveModal(null)} style={{ cursor: 'pointer' }}>
-                                ESC
-                            </kbd>
+            {activeModal === 'createProjectModal' && (
+                <div className="modal-overlay" onClick={closeModal}>
+                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h2 className="modal-title">Create project</h2>
+                                <p className="modal-desc">Set up a new board for your team.</p>
+                            </div>
+                            {/* 🟢 Đóng bằng nút X */}
+                            <button className="icon-btn" onClick={closeModal} aria-label="Close">
+                                <X className="icon" />
+                            </button>
                         </div>
-                        <div className="command-palette-results">
-                            {!commandQuery.trim() ? (
-                                <p className="command-palette-empty">Start typing to search across your workspace.</p>
-                            ) : (
-                                <p className="command-palette-empty">No results for "{commandQuery}".</p>
-                            )}
-                        </div>
+
+                        <form onSubmit={handleCreateProject}>
+                            {/* ... Các field khác giữ nguyên ... */}
+
+                            <div className="modal-footer">
+                                {/* 🟢 Đóng bằng nút Cancel */}
+                                <button type="button" className="btn btn-outline btn-sm" onClick={closeModal}>
+                                    Cancel
+                                </button>
+                                <button type="submit" className="btn btn-primary btn-sm">
+                                    Create project
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

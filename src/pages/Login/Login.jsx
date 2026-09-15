@@ -16,7 +16,6 @@ export default function LoginPage() {
     const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
 
-    // Xử lý submit form đăng nhập tới backend port 3000
     const handleFormSubmit = async (e) => {
         e.preventDefault();
         setErrorMessage('');

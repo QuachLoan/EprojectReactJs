@@ -71,7 +71,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         fetchBoardData();
     }, [activeProjectId]);
 
-    // 🟢 SỬA LỖI 1: Sắp xếp Task chính xác theo mảng taskOrderIds của Column
     const getSortedTasksForColumn = (column) => {
         const columnTaskMap = new Map();
 
@@ -100,7 +99,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         return Array.from(columnTaskMap.values());
     };
 
-    // 🟢 SỬA LỖI 2: Optimistic UI Update ngay khi thả
     const handleOnDragEnd = async (result) => {
         const { destination, source, draggableId } = result;
 
