@@ -14,6 +14,7 @@ import ProjectList from "./pages/Project/ProjectList.jsx";
 import ProjectCalendar from "./pages/Project/ProjectCalendar.jsx";
 import ProjectActivity from "./pages/Project/ProjectActivity.jsx";
 import ProjectSetting from "./pages/Project/ProjectSetting.jsx";
+import Register from './pages/Register/Register.jsx'
 function App() {
 
   return (
@@ -26,10 +27,10 @@ function App() {
           <Route path='/members' element ={<Members/>}/>
           <Route path='/adminuser' element ={<AdminUsers/>}/>
           <Route path='/adminmoderation' element ={<AdminMorder/>}/>
-
         </Route>
         <Route path = "/project" element={<Project/>}/>
           <Route path = "/Login" element={<Login/>}/>
+           <Route path = "/register" element={<Register/>}/>
           <Route path="/projectboard/:id" element={<ProjectBoard />} />
           <Route path = "/projectlist:id" element = {<ProjectList/>}/>
           <Route path = "/projectcalendar:id" element = {<ProjectCalendar/>}/>

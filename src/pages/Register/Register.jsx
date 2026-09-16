@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 function Register(){
     return(
         <div class="auth-wrap size-lg">
@@ -80,19 +82,11 @@ function Register(){
             <p class="field-error hidden" data-error-for="confirmPassword"></p>
           </div>
 
-          <div class="field">
-            <label class="checkbox-label">
-              <input type="checkbox" class="checkbox" id="agreeTerms" name="agreeTerms"/>
-              <span>I agree to the <a href="#" class="auth-inline-link">Terms</a> &amp; <a href="#" class="auth-inline-link">Privacy Policy</a></span>
-            </label>
-            <p class="field-error hidden" data-error-for="agreeTerms"></p>
-          </div>
-
-          <button type="submit" class="btn btn-primary btn-full">Sign up</button>
+          <button style={{marginTop:'20px'}} type="submit" class="btn btn-primary btn-full">Sign up</button>
         </form>
       </div>
 
-      <p class="auth-footer-text">Already have an account? <a href="login.html" class="auth-inline-link">Log in</a></p>
+      <p class="auth-footer-text">Already have an account? <Link to='/Login' class="auth-inline-link">Log in</Link></p>
 
     </div>
     )

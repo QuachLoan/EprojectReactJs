@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { KanbanSquare, ArrowRight, Lock, Mail } from 'lucide-react';
 
 const DEMO_USERS = [
@@ -155,8 +156,12 @@ export default function LoginPage() {
                     </button>
                 </form>
 
-                {/* Danh sách Demo Account */}
+                <p className="auth-footer-text"  style={{ textAlign: "center", fontSize: "14px", color: "#6b7280" }}>Don't have an account?{" "}
+                    <Link  to='/register'  className="auth-inline-link" style={{ color: "var(--color-primary-600)", fontWeight: 500, textDecoration: "none" }}> Sign up</Link>
+                </p>              
                 <div style={{ marginTop: '24px' }}>
+             
+
                     <p style={{ textAlign: 'center', marginBottom: '8px', fontSize: '12px', fontWeight: 500, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.04em' }}>
                         Or continue as a demo account
                     </p>
