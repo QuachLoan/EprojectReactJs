@@ -117,13 +117,25 @@ export const createTask = async (taskData) => {
     return handleResponse(res);
 };
 
-export const updateTask = async (taskId, updateData) => {
+export const moveTask = async (taskId, updateData) => {
     const res = await fetch(`${API_BASE_URL}/task/${taskId}/move`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify(updateData)
     });
     return handleResponse(res);
+};
+
+export const updateTask = async (taskId, fields) => {
+    const response = await fetch(`${API_BASE_URL}/task/${taskId}`, {
+        method: 'PUT', // Hoặc 'PATCH' tùy cấu hình Backend của bạn
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}` // Nếu có xài Auth
+        },
+        body: JSON.stringify(fields)
+    });
+    return handleResponse(response);
 };
 
 export const deleteTask = async (taskId) => {
@@ -178,3 +190,4 @@ export const fetchTaskActivities = async (taskId) => {
     });
     return handleResponse(res);
 };
+

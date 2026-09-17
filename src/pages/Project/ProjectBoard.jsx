@@ -8,7 +8,15 @@ import {
     fetchTasksByProject,
     fetchColumnsByProject,
     createTask,
-    updateTask
+    updateTask,
+    fetchTaskById,
+    deleteTask,
+    addChecklistItem,
+    toggleChecklistItem,
+    fetchTaskComments,
+    addComment,
+    fetchTaskActivities,
+    moveTask
 } from './../../../api.jsx';
 import "./project.css";
 
@@ -22,6 +30,459 @@ const getInitials = (name) => {
     return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 };
 
+// Hàm tìm kiếm thông tin user theo ID từ danh sách thành viên dự án
+const getUserInfo = (userOrId, projectMembers = []) => {
+    if (!userOrId) return null;
+
+    if (typeof userOrId === 'object' && (userOrId.username || userOrId.name)) {
+        return userOrId;
+    }
+
+    const targetId = typeof userOrId === 'object' ? (userOrId._id || userOrId.id) : userOrId;
+    const found = projectMembers.find(m => String(m._id || m.id) === String(targetId));
+
+    return found || userOrId;
+};
+
+// Hàm bóc tách chuẩn hoá columnId về dạng String ID
+const extractColumnId = (columnId) => {
+    if (!columnId) return '';
+    if (typeof columnId === 'object') {
+        return String(columnId._id || columnId.id || '');
+    }
+    return String(columnId);
+};
+
+// ==========================================
+// COMPONENT TASK DRAWER
+// ==========================================
+function TaskDrawer({
+                        taskId,
+                        isDrawerOpen,
+                        handleCloseDrawer,
+                        columns = [],
+                        projectMembers = [],
+                        onTaskUpdated,
+                        onTaskDeleted
+                    }) {
+    const [task, setTask] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+
+    // Dynamic states
+    const [checklistText, setChecklistText] = useState('');
+    const [comments, setComments] = useState([]);
+    const [commentText, setCommentText] = useState('');
+    const [activities, setActivities] = useState([]);
+
+    useEffect(() => {
+        if (isDrawerOpen && taskId) {
+            setLoading(true);
+            Promise.all([
+                fetchTaskById(taskId),
+                fetchTaskComments(taskId).catch(() => []),
+                fetchTaskActivities(taskId).catch(() => [])
+            ])
+                .then(([taskData, commentsData, activitiesData]) => {
+                    const realTask = taskData?.data || taskData;
+
+                    const formattedAssignees = Array.isArray(realTask.assignees)
+                        ? realTask.assignees.map(a => typeof a === 'object' ? (a._id || a.id) : a)
+                        : [];
+
+                    setTask({
+                        ...realTask,
+                        columnId: extractColumnId(realTask.columnId),
+                        date: realTask.date ? new Date(realTask.date).toISOString().split('T')[0] : '',
+                        assignees: formattedAssignees
+                    });
+                    setComments(Array.isArray(commentsData) ? commentsData : (commentsData?.data || []));
+                    setActivities(Array.isArray(activitiesData) ? activitiesData : (activitiesData?.data || []));
+                })
+                .catch((err) => console.error("Lỗi khi tải chi tiết task:", err))
+                .finally(() => setLoading(false));
+        }
+    }, [taskId, isDrawerOpen]);
+
+    if (!isDrawerOpen) return null;
+
+    // Cập nhật trường dữ liệu task
+    const handleUpdateTaskField = async (updatedFields) => {
+        if (!task || isSaving) return;
+
+        // Bóc tách trước columnId nếu có thay đổi Status
+        if (updatedFields.columnId) {
+            updatedFields.columnId = extractColumnId(updatedFields.columnId);
+        }
+
+        const previousTask = { ...task };
+        const updatedTaskLocal = { ...task, ...updatedFields };
+
+        // 1. Cập nhật UI local của Drawer ngay lập tức
+        setTask(updatedTaskLocal);
+
+        // 2. Cập nhật UI của Kanban Board ngoài ngay lập tức
+        if (onTaskUpdated) {
+            onTaskUpdated(updatedTaskLocal);
+        }
+
+        // 3. Gọi API lưu vào DB
+        try {
+            setIsSaving(true);
+            const updatedData = await updateTask(taskId, updatedFields);
+            const returnedTask = updatedData?.data || updatedData;
+
+            if (returnedTask) {
+                const finalTask = {
+                    ...updatedTaskLocal,
+                    ...returnedTask,
+                    columnId: extractColumnId(returnedTask.columnId) || updatedTaskLocal.columnId
+                };
+                setTask(finalTask);
+                if (onTaskUpdated) onTaskUpdated(finalTask);
+            }
+        } catch (error) {
+            console.error("Lỗi khi cập nhật task, đang hoàn tác:", error);
+            // Revert nếu lỗi
+            setTask(previousTask);
+            if (onTaskUpdated) onTaskUpdated(previousTask);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleInputChange = (field, value) => {
+        const updatedFields = { [field]: value };
+        setTask(prev => {
+            const nextState = { ...prev, ...updatedFields };
+            if (onTaskUpdated) onTaskUpdated(nextState);
+            return nextState;
+        });
+    };
+
+    const handleToggleAssignee = (memberId) => {
+        const currentAssignees = task.assignees || [];
+        let newAssignees;
+
+        if (currentAssignees.includes(memberId)) {
+            newAssignees = currentAssignees.filter(id => String(id) !== String(memberId));
+        } else {
+            newAssignees = [...currentAssignees, memberId];
+        }
+
+        handleUpdateTaskField({ assignees: newAssignees, members: newAssignees });
+    };
+
+    const handleDeleteTask = async () => {
+        if (!window.confirm("Bạn có chắc chắn muốn xóa task này?")) return;
+        try {
+            await deleteTask(taskId);
+            if (onTaskDeleted) onTaskDeleted(taskId);
+            handleCloseDrawer();
+        } catch (error) {
+            console.error("Lỗi khi xóa task:", error);
+        }
+    };
+
+    const handleAddChecklist = async () => {
+        if (!checklistText.trim()) return;
+        const tempItem = { _id: Date.now().toString(), text: checklistText, completed: false };
+        const updatedChecklist = [...(task.checklist || []), tempItem];
+
+        setTask(prev => ({ ...prev, checklist: updatedChecklist }));
+        setChecklistText('');
+
+        try {
+            const updatedTask = await addChecklistItem(taskId, checklistText);
+            const realTask = updatedTask?.data || updatedTask;
+            setTask(prev => ({ ...prev, checklist: realTask.checklist || [] }));
+        } catch (error) {
+            console.error("Lỗi khi thêm checklist:", error);
+        }
+    };
+
+    const handleToggleChecklist = async (itemId, completed) => {
+        const updatedChecklist = (task.checklist || []).map(item =>
+            String(item._id) === String(itemId) ? { ...item, completed: !completed } : item
+        );
+        setTask(prev => ({ ...prev, checklist: updatedChecklist }));
+
+        try {
+            const updatedTask = await toggleChecklistItem(taskId, itemId, !completed);
+            const realTask = updatedTask?.data || updatedTask;
+            setTask(prev => ({ ...prev, checklist: realTask.checklist || [] }));
+        } catch (error) {
+            console.error("Lỗi khi cập nhật checklist:", error);
+        }
+    };
+
+    const handleAddComment = async (e) => {
+        e.preventDefault();
+        if (!commentText.trim()) return;
+
+        const textToSend = commentText;
+        setCommentText('');
+
+        try {
+            const newComment = await addComment(taskId, textToSend);
+            setComments(prev => [...prev, newComment?.data || newComment]);
+        } catch (error) {
+            console.error("Lỗi khi gửi bình luận:", error);
+        }
+    };
+
+    const renderPriorityBadge = (priority) => {
+        const priorityConfig = {
+            Low: { color: '#2563eb', bg: '#eff6ff' },
+            Medium: { color: '#d97706', bg: '#fffbeb' },
+            High: { color: '#dc2626', bg: '#fef2f2' },
+            Urgent: { color: '#7c3aed', bg: '#f5f3ff' }
+        };
+        const config = priorityConfig[priority] || priorityConfig.Medium;
+
+        return (
+            <span className="priority-badge" style={{ color: config.color, background: config.bg, padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <span className="icon icon-xs">
+                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" strokeWidth="2">
+                        <path d="M12 5v14"></path>
+                        <path d="m19 12-7 7-7-7"></path>
+                    </svg>
+                </span>
+                <span>{priority}</span>
+            </span>
+        );
+    };
+
+    const totalChecklist = task?.checklist?.length || 0;
+    const completedChecklist = task?.checklist?.filter(item => item.completed)?.length || 0;
+    const progressPercent = totalChecklist > 0 ? Math.round((completedChecklist / totalChecklist) * 100) : 0;
+
+    return (
+        <div className={`drawer-overlay ${isDrawerOpen ? "" : "hidden"}`} id="taskDrawer">
+            <div className="drawer-panel">
+                <div className="drawer-header">
+                    <div className="drawer-header-meta" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {renderPriorityBadge(task?.priority || 'Medium')}
+                        <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                            {isSaving ? 'Đang lưu...' : (task?.updatedAt ? `Updated ${new Date(task.updatedAt).toLocaleDateString('vi-VN')}` : 'Recently')}
+                        </span>
+                    </div>
+                    <button className="icon-btn" onClick={handleCloseDrawer} aria-label="Close panel">
+                        <span className="icon">
+                            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none" strokeWidth="2">
+                                <path d="M18 6 6 18"></path>
+                                <path d="m6 6 12 12"></path>
+                            </svg>
+                        </span>
+                    </button>
+                </div>
+
+                {loading || !task ? (
+                    <div className="drawer-body" style={{ padding: '24px', textAlign: 'center' }}>Đang tải thông tin task...</div>
+                ) : (
+                    <div className="drawer-body">
+                        {/* Title */}
+                        <textarea
+                            className="drawer-title-input"
+                            rows="1"
+                            value={task.title || ''}
+                            onChange={(e) => handleInputChange('title', e.target.value)}
+                            onBlur={(e) => handleUpdateTaskField({ title: e.target.value })}
+                            placeholder="Nhập tên task..."
+                        />
+
+                        <div className="drawer-field-grid">
+                            {/* Column / Status */}
+                            <div>
+                                <span className="drawer-field-label">Status</span>
+                                <select
+                                    className="select"
+                                    value={extractColumnId(task.columnId)}
+                                    onChange={(e) => handleUpdateTaskField({ columnId: e.target.value })}
+                                >
+                                    {columns.map((col) => (
+                                        <option key={col._id} value={String(col._id)}>
+                                            {col.name || col.title}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Priority */}
+                            <div>
+                                <span className="drawer-field-label">Priority</span>
+                                <select
+                                    className="select"
+                                    value={task.priority || 'Medium'}
+                                    onChange={(e) => handleUpdateTaskField({ priority: e.target.value })}
+                                >
+                                    <option value="Low">Low</option>
+                                    <option value="Medium">Medium</option>
+                                    <option value="High">High</option>
+                                    <option value="Urgent">Urgent</option>
+                                </select>
+                            </div>
+
+                            {/* Due Date */}
+                            <div>
+                                <span className="drawer-field-label">Due date</span>
+                                <input
+                                    className="input"
+                                    type="date"
+                                    value={task.date || ''}
+                                    onChange={(e) => handleUpdateTaskField({ date: e.target.value })}
+                                />
+                            </div>
+
+                            {/* Assignees */}
+                            <div style={{ gridColumn: 'span 2' }}>
+                                <span className="drawer-field-label">Assignees</span>
+                                <div className="card" style={{ maxHeight: '120px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    {projectMembers.length === 0 ? (
+                                        <span style={{ fontSize: '13px', color: '#6b7280' }}>Chưa có thành viên dự án</span>
+                                    ) : (
+                                        projectMembers.map((member, idx) => {
+                                            const memberId = typeof member === 'object' ? (member._id || member.id) : member;
+                                            const name = typeof member === 'object' ? (member.username || member.name || member.email || 'User') : 'User';
+                                            const isChecked = task.assignees?.some(id => String(id) === String(memberId));
+
+                                            return (
+                                                <label key={memberId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        className="checkbox"
+                                                        checked={isChecked}
+                                                        onChange={() => handleToggleAssignee(memberId)}
+                                                    />
+                                                    <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '10px', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        {getInitials(name)}
+                                                    </span>
+                                                    <span>{name}</span>
+                                                </label>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Description */}
+                        <div>
+                            <span className="drawer-field-label">Description</span>
+                            <textarea
+                                className="textarea"
+                                rows="3"
+                                placeholder="Add a more detailed description…"
+                                value={task.description || ''}
+                                onChange={(e) => handleInputChange('description', e.target.value)}
+                                onBlur={(e) => handleUpdateTaskField({ description: e.target.value })}
+                            />
+                        </div>
+
+                        {/* Checklist Section */}
+                        <div className="drawer-section">
+                            <div className="checklist-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                <span className="comments-title">Checklist</span>
+                                <span className="checklist-count">{completedChecklist}/{totalChecklist}</span>
+                            </div>
+                            <div className="progress-bar" style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px', marginBottom: '12px', overflow: 'hidden' }}>
+                                <span
+                                    className="progress-bar-fill tone-success"
+                                    style={{ display: 'block', height: '100%', background: '#22c55e', width: `${progressPercent}%`, transition: 'width 0.3s' }}
+                                ></span>
+                            </div>
+                            <div className="checklist-items" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {task.checklist && task.checklist.map((item, index) => (
+                                    <label key={item._id || index} className="checklist-item" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            className="checkbox"
+                                            checked={item.completed || false}
+                                            onChange={() => handleToggleChecklist(item._id, item.completed)}
+                                        />
+                                        <span className={`checklist-text ${item.completed ? 'completed' : ''}`} style={{ textDecoration: item.completed ? 'line-through' : 'none', color: item.completed ? '#9ca3af' : 'inherit' }}>
+                                            {item.text}
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                            <div className="checklist-add-row" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                <input
+                                    className="input"
+                                    placeholder="Add checklist item…"
+                                    value={checklistText}
+                                    onChange={(e) => setChecklistText(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAddChecklist()}
+                                />
+                                <button className="checklist-add-btn btn btn-secondary" onClick={handleAddChecklist} aria-label="Add checklist item">
+                                    +
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Comments Section */}
+                        <div className="drawer-section">
+                            <p className="comments-title" style={{ fontWeight: 600, marginBottom: '8px' }}>Comments</p>
+                            <div className="comments-list" style={{ marginBottom: '12px' }}>
+                                {comments.length === 0 ? (
+                                    <div className="empty-state" style={{ padding: '16px 0', textAlign: 'center' }}>
+                                        <p className="empty-state-title" style={{ fontSize: '14px', color: '#6b7280' }}>No comments yet</p>
+                                    </div>
+                                ) : (
+                                    comments.map((comment, idx) => (
+                                        <div key={comment._id || idx} className="comment-item" style={{ marginBottom: '8px', fontSize: '14px' }}>
+                                            <strong>{comment.user?.username || comment.user?.name || 'User'}: </strong>
+                                            <span>{comment.text}</span>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                            <form className="comment-form" onSubmit={handleAddComment}>
+                                <textarea
+                                    className="textarea"
+                                    rows="2"
+                                    placeholder="Write a comment…"
+                                    value={commentText}
+                                    onChange={(e) => setCommentText(e.target.value)}
+                                />
+                                <div className="comment-form-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                                    <button type="submit" className="btn btn-primary btn-sm">Send</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        {/* Activity Section */}
+                        <div className="drawer-section">
+                            <p className="comments-title" style={{ fontWeight: 600, marginBottom: '8px' }}>Activity</p>
+                            <ol className="timeline" style={{ paddingLeft: '16px', fontSize: '13px', color: '#4b5563' }}>
+                                {activities.map((act, index) => (
+                                    <li key={act._id || index} className="timeline-item" style={{ marginBottom: '6px' }}>
+                                        <strong>{act.user?.username || act.user?.name || 'User'}</strong> {act.action || 'đã thao tác'}
+                                    </li>
+                                ))}
+                            </ol>
+                        </div>
+
+                        {/* Delete Task */}
+                        <div className="drawer-section" style={{ marginTop: '24px' }}>
+                            <button
+                                className="btn btn-outline btn-full"
+                                style={{ color: '#dc2626', borderColor: '#fca5a5', width: '100%' }}
+                                onClick={handleDeleteTask}
+                            >
+                                Delete task
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ==========================================
+// MAIN COMPONENT: PROJECT BOARD
+// ==========================================
 export default function ProjectBoard({ projectId: propProjectId }) {
     const { id: urlProjectId } = useParams();
     const activeProjectId = urlProjectId || propProjectId;
@@ -37,10 +498,13 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [loading, setLoading] = useState(true);
     const [selectedMembers, setSelectedMembers] = useState([]);
 
-    // UI & Modal States
-    const [selectedTask, setSelectedTask] = useState(null);
+    // UI & Modal / Drawer States
     const [activeModal, setActiveModal] = useState(null);
     const [isColumnFixed, setIsColumnFixed] = useState(false);
+
+    // State quản lý Task Drawer
+    const [selectedTaskId, setSelectedTaskId] = useState(null);
+    const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
     // Form Task State
     const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -87,7 +551,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
         tasks.forEach(task => {
             if (!task || !task.columnId) return;
-            const taskColId = typeof task.columnId === 'object' ? task.columnId._id : task.columnId;
+            const taskColId = extractColumnId(task.columnId);
             if (String(taskColId) === String(column._id)) {
                 columnTaskMap.set(String(task._id), task);
             }
@@ -132,6 +596,30 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setSelectedMembers((prev) =>
             prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
         );
+    };
+
+    // Handlers Mở / Đóng Drawer
+    const handleOpenTaskDrawer = (taskId) => {
+        setSelectedTaskId(taskId);
+        setIsDrawerOpen(true);
+    };
+
+    const handleCloseTaskDrawer = () => {
+        setIsDrawerOpen(false);
+        setSelectedTaskId(null);
+    };
+
+    const handleTaskUpdatedFromDrawer = (updatedTask) => {
+        setTasks(prevTasks =>
+            prevTasks.map(t => String(t._id) === String(updatedTask._id)
+                ? { ...t, ...updatedTask, columnId: extractColumnId(updatedTask.columnId) }
+                : t
+            )
+        );
+    };
+
+    const handleTaskDeletedFromDrawer = (deletedTaskId) => {
+        setTasks(prevTasks => prevTasks.filter(t => String(t._id) !== String(deletedTaskId)));
     };
 
     const handleOnDragEnd = async (result) => {
@@ -194,7 +682,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         }
 
         try {
-            await updateTask(draggableId, {
+            await moveTask(draggableId, {
                 sourceColumnId: sourceColId,
                 destColumnId: destColId,
                 destinationIndex: destination.index
@@ -367,13 +855,14 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                             ref={provided.innerRef}
                                                                             {...provided.draggableProps}
                                                                             {...provided.dragHandleProps}
-                                                                            onClick={() => setSelectedTask(task)}
+                                                                            onClick={() => handleOpenTaskDrawer(task._id)}
                                                                             style={{
                                                                                 ...provided.draggableProps.style,
                                                                                 opacity: snapshot.isDragging ? 0.8 : 1,
                                                                                 boxShadow: snapshot.isDragging
                                                                                     ? '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
-                                                                                    : 'none'
+                                                                                    : 'none',
+                                                                                cursor: 'pointer'
                                                                             }}
                                                                         >
                                                                             <div className="task-card-title">{task.title}</div>
@@ -388,13 +877,13 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                     </span>
                                                                                 </div>
 
-                                                                                {/* 🟢 HIỂN THỊ LOGO AVATAR CÁC ASSIGNEE Ở GÓC DƯỚI BÊN PHẢI */}
                                                                                 {assignees.length > 0 && (
                                                                                     <div className="task-assignees-group">
                                                                                         {assignees.map((assignee, aIdx) => {
-                                                                                            const name = typeof assignee === 'object'
-                                                                                                ? (assignee.username || assignee.name || assignee.email || 'User')
-                                                                                                : 'User';
+                                                                                            const userInfo = getUserInfo(assignee, memberList);
+                                                                                            const name = typeof userInfo === 'object'
+                                                                                                ? (userInfo.username || userInfo.name || userInfo.email || '')
+                                                                                                : '';
                                                                                             const assigneeId = typeof assignee === 'object'
                                                                                                 ? (assignee._id || assignee.id || aIdx)
                                                                                                 : assignee;
@@ -403,7 +892,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                                 <div
                                                                                                     key={assigneeId}
                                                                                                     className="task-assignee-avatar"
-                                                                                                    title={name}
+                                                                                                    title={name || 'User'}
                                                                                                 >
                                                                                                     {getInitials(name)}
                                                                                                 </div>
@@ -437,6 +926,17 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                     </DragDropContext>
                 </main>
             </div>
+
+            {/* TASK DRAWER CHI TIẾT & CHỈNH SỬA TASK */}
+            <TaskDrawer
+                taskId={selectedTaskId}
+                isDrawerOpen={isDrawerOpen}
+                handleCloseDrawer={handleCloseTaskDrawer}
+                columns={columns}
+                projectMembers={memberList}
+                onTaskUpdated={handleTaskUpdatedFromDrawer}
+                onTaskDeleted={handleTaskDeletedFromDrawer}
+            />
 
             {/* MODAL TẠO TASK */}
             {activeModal === 'quickCreateTaskModal' && (
