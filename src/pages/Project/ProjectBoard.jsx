@@ -186,33 +186,41 @@ function TaskDrawer({
 
     const handleAddChecklist = async () => {
         if (!checklistText.trim()) return;
-        const tempItem = { _id: Date.now().toString(), text: checklistText, completed: false };
-        const updatedChecklist = [...(task.checklist || []), tempItem];
 
-        setTask(prev => ({ ...prev, checklist: updatedChecklist }));
+        const textToSend = checklistText.trim();
         setChecklistText('');
 
         try {
-            const updatedTask = await addChecklistItem(taskId, checklistText);
-            const realTask = updatedTask?.data || updatedTask;
-            setTask(prev => ({ ...prev, checklist: realTask.checklist || [] }));
+            const response = await addChecklistItem(taskId, textToSend);
+            const realTask = response?.data || response;
+            if (realTask && realTask.checklist) {
+                setTask(prev => ({ ...prev, checklist: realTask.checklist }));
+            }
         } catch (error) {
             console.error("Lỗi khi thêm checklist:", error);
         }
     };
 
     const handleToggleChecklist = async (itemId, completed) => {
+        // 1. Toggle giao diện trước (Optimistic Update)
         const updatedChecklist = (task.checklist || []).map(item =>
             String(item._id) === String(itemId) ? { ...item, completed: !completed } : item
         );
         setTask(prev => ({ ...prev, checklist: updatedChecklist }));
 
+        // 2. Gọi API để lưu vào DB
         try {
-            const updatedTask = await toggleChecklistItem(taskId, itemId, !completed);
-            const realTask = updatedTask?.data || updatedTask;
-            setTask(prev => ({ ...prev, checklist: realTask.checklist || [] }));
+            const response = await toggleChecklistItem(taskId, itemId, completed);
+            const realTask = response?.data || response;
+
+            // Cập nhật lại State bằng dữ liệu thật từ Server
+            if (realTask && realTask.checklist) {
+                setTask(prev => ({ ...prev, checklist: realTask.checklist }));
+            }
         } catch (error) {
             console.error("Lỗi khi cập nhật checklist:", error);
+            // Nếu lỗi thì hoàn tác lại giao diện
+            setTask(prev => ({ ...prev, checklist: task.checklist }));
         }
     };
 
@@ -329,7 +337,7 @@ function TaskDrawer({
                                 <input
                                     className="input"
                                     type="date"
-                                    value={task.date || ''}
+                                    value={task.date ? String(task.date).split('T')[0] : ''}
                                     onChange={(e) => handleUpdateTaskField({ date: e.target.value })}
                                 />
                             </div>

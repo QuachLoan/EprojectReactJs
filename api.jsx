@@ -129,10 +129,7 @@ export const moveTask = async (taskId, updateData) => {
 export const updateTask = async (taskId, fields) => {
     const response = await fetch(`${API_BASE_URL}/task/${taskId}`, {
         method: 'PUT', // Hoặc 'PATCH' tùy cấu hình Backend của bạn
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}` // Nếu có xài Auth
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify(fields)
     });
     return handleResponse(response);
@@ -159,7 +156,7 @@ export const addChecklistItem = async (taskId, text) => {
 
 export const toggleChecklistItem = async (taskId, itemId, completed) => {
     const res = await fetch(`${API_BASE_URL}/task/${taskId}/checklist/${itemId}`, {
-        method: 'PATCH',
+        method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ completed })
     });
@@ -190,4 +187,6 @@ export const fetchTaskActivities = async (taskId) => {
     });
     return handleResponse(res);
 };
+
+
 
