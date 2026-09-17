@@ -1,6 +1,45 @@
+import { Target } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 function Register(){
+      const [formData, setFormData] = useState({
+        username: "",
+        email: "",
+        password: "",
+        confirmPassword: "",
+        role: "User"
+      })
+    function handleChange(e){
+      setFormData({
+        ...formData,
+        [e.target.name]:e.target.value
+      })
+    }
+    async function handleSubmit(e){
+      e.preventDefault();
+      if(formData.password !== formData.confirmPassword){
+        alert("Password do not match")
+        return;
+      }
+      try {
+        const res =  await fetch("http://localhost:3000/api/user/register",{
+          method: "POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify(formData)
+      });
+        const data= await res.json();
+        if(res.ok){
+          alert("Register success");
+          navigate("/Login");  
+        }else{
+          alert(data.message || "register failed")
+        }
+      } catch (error) {
+        console.log(error);
+        alert("Error")
+      }
+    }
     return(
         <div class="auth-wrap size-lg">
 
@@ -34,36 +73,23 @@ function Register(){
 
         <div class="auth-divider"><span></span><p>or sign up with email</p><span></span></div>
 
-        <form id="registerForm" novalidate="">
-          <div class="grid-2">
+        <form id="registerForm" novalidate="" onSubmit={handleSubmit}>
             <div class="field">
-              <label class="field-label" for="firstName">First name</label>
-              <input class="input" type="text" id="firstName" name="firstName" placeholder="Nguyễn" autocomplete="given-name" required=""/>
-              <p class="field-error hidden" data-error-for="firstName"></p>
-            </div>
-            <div class="field">
-              <label class="field-label" for="lastName">Last name</label>
-              <input class="input" type="text" id="lastName" name="lastName" placeholder="Văn A" autocomplete="family-name" required=""/>
-              <p class="field-error hidden" data-error-for="lastName"></p>
-            </div>
-          </div>
-
-          <div class="field">
-            <label class="field-label" for="registerEmail">Email</label>
-            <input class="input" type="email" id="registerEmail" name="registerEmail" placeholder="you@teamflow.dev" autocomplete="email" required=""/>
+            <label class="field-label" for="registerEmail">UserName</label>
+            <input class="input" type="text" id="UserName" name="username" onChange={handleChange} placeholder="Your Name" autocomplete="email" required=""/>
             <p class="field-error hidden" data-error-for="registerEmail"></p>
           </div>
 
-          <div class="field">
-            <label class="field-label" for="registerPhone">Phone number</label>
-            <input class="input" type="tel" id="registerPhone" name="registerPhone" placeholder="09xxxxxxxx" autocomplete="tel" required=""/>
-            <p class="field-error hidden" data-error-for="registerPhone"></p>
-          </div>
 
+          <div class="field">
+            <label class="field-label" for="registerEmail">Email</label>
+            <input class="input" type="email" id="registerEmail" name="email" onChange={handleChange} placeholder="you@teamflow.dev" autocomplete="email" required=""/>
+            <p class="field-error hidden" data-error-for="registerEmail"></p>
+          </div>
           <div class="field">
             <label class="field-label" for="registerPassword">Password</label>
             <div class="password-field-wrap">
-              <input class="input" type="password" id="registerPassword" name="registerPassword" placeholder="At least 8 characters" autocomplete="new-password" required=""/>
+              <input class="input" type="password" id="registerPassword" value={formData.password} onChange={handleChange} name="password" placeholder="At least 8 characters" autocomplete="new-password" required=""/>
               <button type="button" class="password-toggle-btn icon-btn icon-btn-sm" data-password-toggle="registerPassword" aria-label="Show password">
                 <span class="icon icon-sm" data-icon="eye"><svg viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg></span>
               </button>
@@ -74,7 +100,7 @@ function Register(){
           <div class="field">
             <label class="field-label" for="confirmPassword">Confirm password</label>
             <div class="password-field-wrap">
-              <input class="input" type="password" id="confirmPassword" name="confirmPassword" placeholder="Re-enter your password" autocomplete="new-password" required=""/>
+              <input class="input" type="password"  id="confirmPassword" value={formData.confirmPassword} onChange={handleChange} name="confirmPassword" placeholder="Re-enter your password" autocomplete="new-password" required=""/>
               <button type="button" class="password-toggle-btn icon-btn icon-btn-sm" data-password-toggle="confirmPassword" aria-label="Show password">
                 <span class="icon icon-sm" data-icon="eye"><svg viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg></span>
               </button>

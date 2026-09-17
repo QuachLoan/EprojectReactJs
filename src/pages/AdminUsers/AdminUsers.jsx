@@ -12,9 +12,6 @@ function AdminUsers(){
         <>
         <main class="page-content">
         <div class="page-content-inner">
-          <div class="page-header">
-            <button class="btn btn-primary" data-open-modal="inviteMemberModal"><span class="icon icon-sm" data-icon="plus"><svg viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg></span>Register</button>
-          </div>
 
           <div style={{display:'flex', alignItems:'center', gap:'8px', marginBottom:'4px'}}>
             <span class="icon icon-lg" data-icon="shieldCheck" style={{color:'var(--color-primary-600)'}}><svg viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path><path d="m9 12 2 2 4-4"></path></svg></span>
@@ -33,7 +30,7 @@ function AdminUsers(){
                 <span class="avatar avatar-sm" style={{background:'#db2777'}}>{user.username.charAt(0).toUpperCase()}</span>
                 <div class="member-identity-text"><p class="member-name">{user.username}</p><p class="member-email">ngoc.khanh@teamflow.dev</p></div>
               </div>
-              <span className={`badge ${user.role ==="Leader" ? "badge-primary": user.role ==="Member" ? "badge-neutral": user.role ==="Manager" ? "badge-warning" : "badge-danger"}`}>{user.role}</span>
+              <span className={`badge ${user.role ==="User" ? "badge-primary": "badge-danger"}`}>{user.role}</span>
               <span className= {user.role ==="Admin"?"hidden":"badge badge-success"}>active</span>
               <span className= {user.role ==="Admin"?"hidden":"admin-user-joined"}>
                 Joined { new Date(user.createdAt).toLocaleDateString("en-GB", {
@@ -46,7 +43,7 @@ function AdminUsers(){
                    <button className={`suspend-btn ${user.role ==="Admin" ? "hidden" :""}`} onclick="showToast('User suspended', null, 'success')"><span class="icon icon-sm" data-icon="userX"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="17" x2="22" y1="8" y2="13"></line><line x1="22" x2="17" y1="8" y2="13"></line></svg></span>Suspend</button>
 
                 )
-              }            
+              }           
            {/* <button class="suspend-btn" onclick="showToast('User suspended', null, 'success')"><span class="icon icon-sm" data-icon="userX"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="17" x2="22" y1="8" y2="13"></line><line x1="22" x2="17" y1="8" y2="13"></line></svg></span>Suspend</button> */}
               </div>
             ))}
