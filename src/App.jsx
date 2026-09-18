@@ -32,10 +32,10 @@ function App() {
           <Route path = "/Login" element={<Login/>}/>
            <Route path = "/register" element={<Register/>}/>
           <Route path="/projectboard/:id" element={<ProjectBoard />} />
-          <Route path = "/projectlist:id" element = {<ProjectList/>}/>
-          <Route path = "/projectcalendar:id" element = {<ProjectCalendar/>}/>
-          <Route path = "/projectactivity:id" element = {<ProjectActivity/>}/>
-          <Route path = "/projectsetting:id" element = {<ProjectSetting/>}/>
+          <Route path = "/projectlist/:id" element = {<ProjectList/>}/>
+          <Route path = "/projectcalendar/:id" element = {<ProjectCalendar/>}/>
+          <Route path = "/projectactivity/:id" element = {<ProjectActivity/>}/>
+          <Route path = "/projectsetting/:id" element = {<ProjectSetting/>}/>
       </Routes>
       </> 
   )

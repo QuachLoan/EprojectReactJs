@@ -9,23 +9,29 @@ import {
     Calendar,
     Activity,
     Settings,
-    UsersRound,
-    ListChecks,
-    CalendarClock,
     Plus,
-    X,
     Loader2,
-    CheckCircle2,
-    Clock,
-    AlertCircle
+    ArrowRightCircle,
+    UserPlus,
+    Check
 } from 'lucide-react';
 
 import {
     fetchProjectById,
-    fetchMembers,
     fetchTasksByProject,
-    createQuickTask
-} from '../../../api';
+    fetchColumnsByProject,
+    createTask,
+    updateTask,
+    moveTask
+} from '../../../api.jsx';
+
+const getInitials = (name) => {
+    if (!name) return '??';
+    const words = String(name).trim().split(/\s+/);
+    return words.length === 1
+        ? words[0].substring(0, 2).toUpperCase()
+        : (words[0][0] + words[words.length - 1][0]).toUpperCase();
+};
 
 export default function ProjectList() {
     const { id: projectId } = useParams();
@@ -35,61 +41,187 @@ export default function ProjectList() {
     const [activeModal, setActiveModal] = useState(null);
 
     const [project, setProject] = useState({});
-    const [members, setMembers] = useState([]);
-    const [tasks, setTasks] = useState([]);
+    const [columns, setColumns] = useState([]);
+    const [tasks, setTasks] = useState([]); // ONLY UNASSIGNED BACKLOG TASKS
     const [loading, setLoading] = useState(true);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const [taskTitle, setTaskTitle] = useState('');
-    const [taskColumn, setTaskColumn] = useState('Todo');
+    // Assignee Menu Popup State
+    const [assigneeMenu, setAssigneeMenu] = useState({ open: false, taskId: null, pos: { top: 0, left: 0 } });
 
-    useEffect(() => {
-        loadData();
-    }, [projectId]);
+    // Task Modal Form State
+    const [newTaskTitle, setNewTaskTitle] = useState('');
+    const [newTaskPriority, setNewTaskPriority] = useState('Medium');
+    const [newTaskDesc, setNewTaskDesc] = useState('');
+    const [newTaskDate, setNewTaskDate] = useState('');
+    const [newTaskColumnId, setNewTaskColumnId] = useState('');
+    const [selectedMembers, setSelectedMembers] = useState([]);
+
+    const memberList = Array.isArray(project?.assignees) ? project.assignees : [];
+
+    const getCurrentUserId = () => {
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        return currentUser._id || currentUser.id || null;
+    };
 
     const loadData = async () => {
         try {
             setLoading(true);
-            const [pData, mems, tskList] = await Promise.all([
+            const [pData, colsData, tskList] = await Promise.all([
                 fetchProjectById(projectId).catch(() => ({})),
-                fetchMembers(projectId).catch(() => []),
+                fetchColumnsByProject(projectId).catch(() => []),
                 fetchTasksByProject(projectId).catch(() => [])
             ]);
-            setProject(pData || {});
-            setMembers(mems || []);
-            setTasks(tskList || []);
+
+            const realProject = pData?.data || pData || {};
+            const realColumns = Array.isArray(colsData) ? colsData : (colsData?.data || []);
+            const realTasks = Array.isArray(tskList) ? tskList : (tskList?.data || []);
+
+            realColumns.sort((a, b) => (a.position || 0) - (b.position || 0));
+
+            // FILTER OUT ALL TASKS THAT ARE ALREADY ON THE BOARD
+            const validColumnIds = new Set(realColumns.map(c => String(c._id)));
+            const unassignedTasks = realTasks.filter(t => {
+                const cId = typeof t.columnId === 'object' ? t.columnId?._id : t.columnId;
+                return !cId || !validColumnIds.has(String(cId));
+            });
+
+            setProject(realProject);
+            setColumns(realColumns);
+            setTasks(unassignedTasks);
         } catch (err) {
-            console.error('Lỗi khi tải dữ liệu list:', err);
+            console.error('Error loading data:', err);
         } finally {
             setLoading(false);
         }
     };
 
+    useEffect(() => {
+        loadData();
+    }, [projectId]);
+
+    const handleOpenCreateModal = () => {
+        setNewTaskTitle('');
+        setNewTaskDesc('');
+        setNewTaskPriority('Medium');
+        setNewTaskDate('');
+        setNewTaskColumnId('');
+        const currentUserId = getCurrentUserId();
+        setSelectedMembers(currentUserId ? [currentUserId] : []);
+        setActiveModal('quickCreateTaskModal');
+    };
+
+    const closeModal = () => {
+        setActiveModal(null);
+    };
+
+    const toggleMemberSelection = (id) => {
+        setSelectedMembers((prev) =>
+            prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
+        );
+    };
+
+    // Create New Task (Backlog)
     const handleCreateTask = async (e) => {
         e.preventDefault();
+        if (!newTaskTitle.trim()) return;
+
         try {
-            await createQuickTask({ title: taskTitle, column: taskColumn, projectId });
-            setActiveModal(null);
-            setTaskTitle('');
-            loadData();
-        } catch (err) {
-            console.error('Lỗi khi tạo task:', err);
+            setIsSubmitting(true);
+
+            const payload = {
+                title: newTaskTitle,
+                description: newTaskDesc,
+                columnId: null, // Đưa thẳng vào Backlog
+                projectId: projectId, // Đảm bảo truyền đúng ID project
+                priority: newTaskPriority,
+                date: newTaskDate ? new Date(newTaskDate) : new Date(),
+                assignees: [],
+                members: []
+            };
+
+            // 1. Thêm task qua API
+            const response = await createTask(payload);
+            const createdTask = response?.data || response;
+
+            // 2. Cập nhật trực tiếp State tasks tại React
+            if (createdTask) {
+                setTasks(prevTasks => [createdTask, ...prevTasks]);
+            }
+
+            // 3. Đóng modal và reset form
+            closeModal();
+        } catch (error) {
+            console.error("Lỗi khi tạo task:", error);
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
-    const getStatusBadge = (status) => {
-        switch (status?.toLowerCase()) {
-            case 'done':
-            case 'completed':
-                return <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 font-medium"><CheckCircle2 className="w-3 h-3"/> Done</span>;
-            case 'in progress':
-                return <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-600 font-medium"><Clock className="w-3 h-3"/> In Progress</span>;
-            default:
-                return <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 font-medium"><AlertCircle className="w-3 h-3"/> Todo</span>;
+    // Open Assignee Menu safely with Fixed Position
+    const handleOpenAssigneeMenu = (e, taskId) => {
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const topPos = spaceBelow < 200
+            ? rect.top + window.scrollY - 180
+            : rect.bottom + window.scrollY + 4;
+
+        setAssigneeMenu({
+            open: true,
+            taskId,
+            pos: {
+                top: topPos,
+                left: rect.left + window.scrollX - 140
+            }
+        });
+    };
+
+    // Toggle Assignee
+    const handleToggleTaskAssignee = async (task, memberId) => {
+        const currentAssignees = Array.isArray(task.assignees)
+            ? task.assignees.map(a => typeof a === 'object' ? (a._id || a.id) : a)
+            : [];
+
+        let updatedAssignees = currentAssignees.includes(memberId)
+            ? currentAssignees.filter(id => String(id) !== String(memberId))
+            : [...currentAssignees, memberId];
+
+        setTasks(prev => prev.map(t => t._id === task._id ? { ...t, assignees: updatedAssignees } : t));
+
+        try {
+            await updateTask(task._id, { assignees: updatedAssignees, members: updatedAssignees });
+        } catch (err) {
+            console.error('Error updating assignee:', err);
+            loadData();
+        }
+    };
+
+    // Push Task into Todo Column on the Board
+    const handlePushToBoard = async (task) => {
+        const todoColumn = columns[0];
+        if (!todoColumn) {
+            alert('Project does not have a Todo column on the Board yet!');
+            return;
+        }
+
+        try {
+            setTasks(prev => prev.filter(t => t._id !== task._id));
+
+            await moveTask(task._id, {
+                sourceColumnId: null,
+                destColumnId: todoColumn._id,
+                destinationIndex: 0
+            });
+        } catch (err) {
+            console.error('Error pushing task to board:', err);
+            loadData();
         }
     };
 
     return (
-        <div className="app-shell">
+        <div className="app-shell" onClick={() => setAssigneeMenu({ open: false, taskId: null, pos: {} })}>
             <Sidebar
                 collapsed={sidebarCollapsed}
                 setCollapsed={setSidebarCollapsed}
@@ -103,32 +235,16 @@ export default function ProjectList() {
                     onOpenModal={(modal) => setActiveModal(modal)}
                 />
 
-                {/* Project Header Info */}
                 <div className="project-header">
                     <div className="project-header-top">
                         <div style={{ minWidth: 0 }}>
                             <div className="project-title-row">
                                 <span className="project-color-dot" style={{ background: project.color || '#4f46e5' }}></span>
-                                <h1>{project.name || 'TeamFlow Platform'}</h1>
-                            </div>
-                            <p className="page-subtitle" style={{ maxWidth: '640px' }}>
-                                {project.desc || project.description || 'Kanban team task management system.'}
-                            </p>
-                            <div className="project-meta-row">
-                                <span className="project-meta-item"><UsersRound className="icon icon-sm" />{members.length} members</span>
-                                <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
-                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />Due {project.dueDate || 'Sep 15, 2026'}</span>
+                                <h1>{project.name || 'Project'}</h1>
                             </div>
                         </div>
                         <div className="project-header-actions">
-                            <span className="avatar-group">
-                                {members.slice(0, 4).map((m, idx) => (
-                                    <span key={m._id || m.id || idx} className="avatar avatar-sm" style={{ background: '#4f46e5' }}>
-                                        {m.name ? m.name.substring(0, 2).toUpperCase() : 'U'}
-                                    </span>
-                                ))}
-                            </span>
-                            <Link to={`/projectsetting/${projectId}`} className="icon-btn icon-btn-outline" aria-label="Project settings">
+                            <Link to={`/projectsetting/${projectId}`} className="icon-btn icon-btn-outline">
                                 <Settings className="icon" />
                             </Link>
                         </div>
@@ -150,44 +266,120 @@ export default function ProjectList() {
                     </nav>
                 </div>
 
-                {/* Main List Content Area */}
-                <main className="page-content" style={{ padding: 'var(--space-6)' }}>
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-lg font-bold">Task List</h2>
-                        <button onClick={() => setActiveModal('quickCreateTaskModal')} className="btn btn-primary btn-sm flex items-center gap-1">
+                <main className="page-content" style={{ padding: '20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                        <div>
+                            <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#0f172a' }}>Pending Backlog Tasks</h2>
+                        </div>
+                        <button onClick={handleOpenCreateModal} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <Plus className="w-4 h-4" /> Add Task
                         </button>
                     </div>
 
                     {loading ? (
-                        <div className="flex items-center justify-center py-12 text-gray-500 gap-2">
-                            <Loader2 className="w-5 h-5 animate-spin" /> Đang tải công việc...
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 0', color: '#64748b', gap: '8px' }}>
+                            <Loader2 className="w-5 h-5 animate-spin" /> Loading tasks...
                         </div>
                     ) : (
-                        <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
-                            <table className="w-full text-left text-sm border-collapse">
-                                <thead className="bg-gray-50 border-b text-gray-500 font-medium">
+                        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'visible' }}>
+                            <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: '14px' }}>
+                                <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontWeight: 600 }}>
                                 <tr>
-                                    <th className="p-3">Task Name</th>
-                                    <th className="p-3">Status</th>
-                                    <th className="p-3">Assignee</th>
-                                    <th className="p-3">Due Date</th>
+                                    <th style={{ padding: '12px 16px' }}>Task Title</th>
+                                    <th style={{ padding: '12px 16px' }}>Priority</th>
+                                    <th style={{ padding: '12px 16px' }}>Assignees</th>
+                                    <th style={{ padding: '12px 16px' }}>Due Date</th>
+                                    <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>
                                 </tr>
                                 </thead>
-                                <tbody className="divide-y divide-gray-100">
+                                <tbody>
                                 {tasks.length > 0 ? (
-                                    tasks.map((task) => (
-                                        <tr key={task._id || task.id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="p-3 font-medium text-gray-800">{task.title}</td>
-                                            <td className="p-3">{getStatusBadge(task.status || task.column)}</td>
-                                            <td className="p-3 text-gray-600">{task.assigneeName || 'Unassigned'}</td>
-                                            <td className="p-3 text-gray-500">{task.dueDate || 'No due date'}</td>
-                                        </tr>
-                                    ))
+                                    tasks.map((task, index) => {
+                                        // 1. Tạo KEY an toàn tuyệt đối cho <tr> để tránh lỗi React Warning
+                                        const taskId = task._id || task.id || `task-fallback-${index}`;
+
+                                        // 2. Lấy danh sách Assignees an toàn
+                                        const taskAssignees = Array.isArray(task.assignees) ? task.assignees : [];
+
+                                        // 3. Xử lý Due Date an toàn (đọc cả task.date lẫn task.dueDate)
+                                        const rawDate = task.date || task.dueDate;
+                                        let formattedDate = 'No date';
+                                        if (rawDate) {
+                                            const parsedDate = new Date(rawDate);
+                                            if (!isNaN(parsedDate.getTime())) {
+                                                formattedDate = parsedDate.toLocaleDateString('vi-VN');
+                                            }
+                                        }
+
+                                        // 4. Bóc tách Title an toàn (đề phòng backend trả về name thay vì title)
+                                        const displayTitle = task.title || task.name || 'Untitled Task';
+
+                                        return (
+                                            <tr key={taskId} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                <td style={{ padding: '12px 16px', fontWeight: 500, color: '#1e293b' }}>
+                                                    <div>{displayTitle}</div>
+                                                    {task.description && (
+                                                        <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '320px' }}>
+                                                            {task.description}
+                                                        </div>
+                                                    )}
+                                                </td>
+
+                                                <td style={{ padding: '12px 16px' }}>
+                    <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, background: '#fffbeb', color: '#d97706' }}>
+                        {task.priority || 'Medium'}
+                    </span>
+                                                </td>
+
+                                                {/* Assignee Box */}
+                                                <td style={{ padding: '12px 16px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        {taskAssignees.map((assignee, aIdx) => {
+                                                            const memberId = typeof assignee === 'object' ? (assignee._id || assignee.id) : assignee;
+                                                            const found = memberList.find(m => String(m._id || m.id) === String(memberId));
+                                                            const name = found ? (found.username || found.name) : 'User';
+
+                                                            // Key an toàn cho Avatar Assignee
+                                                            const avatarKey = memberId ? `assignee-${memberId}-${aIdx}` : `assignee-idx-${aIdx}`;
+
+                                                            return (
+                                                                <span key={avatarKey} title={name} style={{ background: '#4f46e5', color: '#fff', fontSize: '10px', width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {getInitials(name)}
+                                </span>
+                                                            );
+                                                        })}
+                                                        <button
+                                                            onClick={(e) => handleOpenAssigneeMenu(e, taskId)}
+                                                            style={{ border: '1px dashed #cbd5e1', borderRadius: '50%', width: '26px', height: '26px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: '#fff' }}
+                                                            title="Assign member"
+                                                        >
+                                                            <UserPlus className="w-3.5 h-3.5 text-slate-500" />
+                                                        </button>
+                                                    </div>
+                                                </td>
+
+                                                {/* Due Date hiển thị chuẩn xác */}
+                                                <td style={{ padding: '12px 16px', color: '#64748b', fontSize: '13px' }}>
+                                                    {formattedDate}
+                                                </td>
+
+                                                <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                                                    <button
+                                                        onClick={() => handlePushToBoard(task)}
+                                                        className="btn btn-primary btn-sm"
+                                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+                                                    >
+                                                        <ArrowRightCircle className="w-3.5 h-3.5" />
+                                                        Push to Board
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
                                 ) : (
                                     <tr>
-                                        <td colSpan="4" className="p-6 text-center text-gray-400">
-                                            Chưa có công việc nào trong dự án này.
+                                        <td colSpan="5" style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                                            No pending backlog tasks.
                                         </td>
                                     </tr>
                                 )}
@@ -198,40 +390,106 @@ export default function ProjectList() {
                 </main>
             </div>
 
-            {/* Modal Quick Create Task */}
+            {/* FIXED ASSIGNEE SELECTION POPUP */}
+            {assigneeMenu.open && (
+                <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                        position: 'fixed',
+                        top: `${assigneeMenu.pos.top}px`,
+                        left: `${assigneeMenu.pos.left}px`,
+                        zIndex: 99999,
+                        background: '#fff',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '8px',
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2)',
+                        width: '200px',
+                        padding: '6px',
+                    }}
+                >
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', padding: '4px 6px' }}>Assign Members:</div>
+                    {memberList.map((m) => {
+                        const mId = m._id || m.id;
+                        const currentTask = tasks.find(t => t._id === assigneeMenu.taskId);
+                        const taskAssignees = Array.isArray(currentTask?.assignees) ? currentTask.assignees : [];
+                        const isChecked = taskAssignees.some(a => String(typeof a === 'object' ? (a._id || a.id) : a) === String(mId));
+
+                        return (
+                            <div
+                                key={mId}
+                                onClick={() => handleToggleTaskAssignee(currentTask, mId)}
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}
+                                className="hover:bg-slate-100"
+                            >
+                                <span>{m.username || m.name}</span>
+                                {isChecked && <Check className="w-4 h-4 text-indigo-600" />}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* QUICK CREATE TASK MODAL */}
             {activeModal === 'quickCreateTaskModal' && (
-                <div className="modal-overlay" onClick={() => setActiveModal(null)}>
+                <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2 className="modal-title">Create Task</h2>
-                            <button className="icon-btn" onClick={() => setActiveModal(null)}><X className="icon" /></button>
-                        </div>
                         <form onSubmit={handleCreateTask}>
-                            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                                <div className="field">
-                                    <label className="field-label">Title</label>
+                            <div className="modal-header">
+                                <h2>Add Task to Backlog</h2>
+                                <button type="button" className="btn-icon" onClick={closeModal}>✕</button>
+                            </div>
+                            <div className="modal-body">
+                                <div className="form-group">
+                                    <label className="form-label">Title *</label>
                                     <input
-                                        type="text"
-                                        required
                                         className="input"
-                                        value={taskTitle}
-                                        onChange={(e) => setTaskTitle(e.target.value)}
-                                        placeholder="e.g. Implement user login"
+                                        placeholder="e.g: My task"
+                                        value={newTaskTitle}
+                                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                                        required
                                     />
                                 </div>
-                                <div className="field">
-                                    <label className="field-label">Column</label>
-                                    <select value={taskColumn} onChange={(e) => setTaskColumn(e.target.value)} className="select">
-                                        <option value="Todo">Todo</option>
-                                        <option value="In Progress">In Progress</option>
-                                        <option value="Review">Review</option>
-                                        <option value="Done">Done</option>
+
+                                <div className="form-group">
+                                    <label className="form-label">Due Date</label>
+                                    <input
+                                        type="date"
+                                        className="input"
+                                        value={newTaskDate}
+                                        onChange={(e) => setNewTaskDate(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label className="form-label">Priority</label>
+                                    <select
+                                        className="select"
+                                        value={newTaskPriority}
+                                        onChange={(e) => setNewTaskPriority(e.target.value)}
+                                    >
+                                        <option value="Low">Low</option>
+                                        <option value="Medium">Medium</option>
+                                        <option value="High">High</option>
+                                        <option value="Urgent">Urgent</option>
                                     </select>
                                 </div>
+
+                                <div className="form-group">
+                                    <label className="form-label">Description</label>
+                                    <textarea
+                                        className="textarea"
+                                        placeholder="Add task description..."
+                                        value={newTaskDesc}
+                                        onChange={(e) => setNewTaskDesc(e.target.value)}
+                                    />
+                                </div>
                             </div>
+
                             <div className="modal-footer">
-                                <button type="button" onClick={() => setActiveModal(null)} className="btn btn-outline btn-sm">Cancel</button>
-                                <button type="submit" className="btn btn-primary btn-sm">Create Task</button>
+                                <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
+                                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                                    {isSubmitting ? 'Adding...' : 'Add'}
+                                </button>
                             </div>
                         </form>
                     </div>

@@ -19,6 +19,7 @@ import {
     moveTask
 } from './../../../api.jsx';
 import "./project.css";
+import {Settings} from "lucide-react";
 
 // Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa từ username/name
 const getInitials = (name) => {
@@ -782,7 +783,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 <span className="project-meta-item">📅 Hạn: {formattedDueDate}</span>
                             </div>
                         </div>
-                        <Link to="/projectsetting" className="btn-icon" title="Cài đặt dự án">⚙️</Link>
+                        <Link to={`/projectsetting/${activeProjectId}`} className="icon-btn icon-btn-outline">
+                            <Settings className="icon" />
+                        </Link>
                     </div>
                     <nav className="project-tabs">
                         <Link to={`/projectboard/${activeProjectId}`} className="project-tab active">Board</Link>
