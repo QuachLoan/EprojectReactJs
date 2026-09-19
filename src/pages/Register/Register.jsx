@@ -79,8 +79,6 @@ function Register(){
             <input class="input" type="text" id="UserName" name="username" onChange={handleChange} placeholder="Your Name" autocomplete="email" required=""/>
             <p class="field-error hidden" data-error-for="registerEmail"></p>
           </div>
-
-
           <div class="field">
             <label class="field-label" for="registerEmail">Email</label>
             <input class="input" type="email" id="registerEmail" name="email" onChange={handleChange} placeholder="you@teamflow.dev" autocomplete="email" required=""/>

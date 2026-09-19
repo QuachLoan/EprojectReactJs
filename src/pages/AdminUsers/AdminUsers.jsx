@@ -2,12 +2,43 @@ import { use, useEffect, useState } from "react";
 
 function AdminUsers(){
   const [users,setUsers] = useState([]);
+  const [showToats,setShowToast] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("")
+  const filteredUsers = users.filter(
+    (user) =>
+      user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
   useEffect(()=>{
     fetch("http://localhost:3000/api/user/GetUsers")
     .then((res)=> res.json())
     .then((data)=>setUsers(data))
     .catch((err) => console.error(" Fetch error:", err));
   },[]);
+
+
+  const handleToggleStatus = async (userId, currentStatus) => {
+    const newStatus = currentStatus === "Active" ? "Inactive" : "Active";
+    try {
+      await fetch(`http://localhost:3000/api/user/updateUser/${userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      setUsers((prev) =>
+        prev.map((u) =>
+          u._id === userId ? { ...u, status: newStatus } : u
+        )
+      );
+
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 1500);
+    } catch (err) {
+      console.error("Update status error:", err);
+    }
+  };
+
     return(
         <>
         <main class="page-content">
@@ -20,18 +51,18 @@ function AdminUsers(){
           <p class="page-subtitle" style={{marginBottom:'var(--space-6)'}}>Manage accounts across the whole platform.</p>
 
           <div class="filter-bar-row" style={{marginBottom:'var(--space-4)'}}>
-            <div class="input-icon-wrap" style={{maxWidth:'320px'}}><span class="icon icon-sm" data-icon="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"></path><circle cx="11" cy="11" r="8"></circle></svg></span><input class="input" placeholder="Search by name or email…" data-filter-input="adminUsers"/></div>
-            <select class="select" style={{width:'auto', minWidth:'150px'}}><option>Role: All</option><option>Member</option><option>Team Leader</option><option>Admin</option></select>
+            <div class="input-icon-wrap" style={{maxWidth:'320px'}}><span class="icon icon-sm" data-icon="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"></path><circle cx="11" cy="11" r="8"></circle></svg></span><input onChange={(e)=>setSearchTerm(e.target.value)} class="input" placeholder="Search by name or email…" data-filter-input="adminUsers"/></div>
+            <select class="select" style={{width:'auto', minWidth:'150px'}}><option>Role: All</option><option>User</option><option>Admin</option></select>
           </div>
           <div class="card">
-            {users.map((user) => (
+            {filteredUsers.map((user) => (
              <div class="admin-user-row" data-filter-target="adminUsers" data-filter-text="Khánh Ngọc ngoc.khanh@teamflow.dev">
               <div class="admin-user-identity">
                 <span class="avatar avatar-sm" style={{background:'#db2777'}}>{user.username.charAt(0).toUpperCase()}</span>
-                <div class="member-identity-text"><p class="member-name">{user.username}</p><p class="member-email">ngoc.khanh@teamflow.dev</p></div>
+                <div class="member-identity-text"><p class="member-name">{user.username}</p><p class="member-email">{user.email}</p></div>
               </div>
-              <span className={`badge ${user.role ==="User" ? "badge-primary": "badge-danger"}`}>{user.role}</span>
-              <span className= {user.role ==="Admin"?"hidden":"badge badge-success"}>active</span>
+              <span className={`badge ${user.role ==="User" ? "badge-primary": "badge-warning"}`}>{user.role}</span>
+              <span className= {user.role ==="Admin"?"hidden": user.status ==="Active" ? "badge badge-success":"badge badge-danger" }>{user.status}</span>
               <span className= {user.role ==="Admin"?"hidden":"admin-user-joined"}>
                 Joined { new Date(user.createdAt).toLocaleDateString("en-GB", {
                   day: "2-digit",
@@ -40,17 +71,35 @@ function AdminUsers(){
                 })}
               </span>{
                 user.role && (
-                   <button className={`suspend-btn ${user.role ==="Admin" ? "hidden" :""}`} onclick="showToast('User suspended', null, 'success')"><span class="icon icon-sm" data-icon="userX"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="17" x2="22" y1="8" y2="13"></line><line x1="22" x2="17" y1="8" y2="13"></line></svg></span>Suspend</button>
+                   <button onClick={()=>handleToggleStatus(user._id, user.status)} className={`suspend-btn ${user.role ==="Admin" ? "hidden" :""}`} >
 
+                    <span class="icon icon-sm" data-icon="userX">
+                      {user.status ==="Active" ? 
+                      <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="17" x2="22" y1="8" y2="13"></line><line x1="22" x2="17" y1="8" y2="13"></line></svg>
+                      :
+                        <svg viewBox="0 0 24 24">
+                        <path d="m16 11 2 2 4-4"></path>
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                      </svg>
+                      }
+                       
+                    
+                    </span>{user.status ==="Active" ? "Suspend" :"Reactive"}</button>
                 )
               }           
-           {/* <button class="suspend-btn" onclick="showToast('User suspended', null, 'success')"><span class="icon icon-sm" data-icon="userX"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="17" x2="22" y1="8" y2="13"></line><line x1="22" x2="17" y1="8" y2="13"></line></svg></span>Suspend</button> */}
               </div>
             ))}
 
           </div>
         </div>
       </main>
+      {showToats && (
+       <div class="toast-viewport"><div class="toast variant-success"><span class="toast-icon icon" data-icon="checkCircle2"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="m16 9-5.5 5.5L8 12"></path></svg></span><div class="toast-body">
+
+        <p class="toast-title">Changed success</p>
+        </div><button class="toast-close icon icon-sm"  onClick={() => setShowToast(false)} data-icon="x" aria-label="Dismiss"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button></div></div>
+      )}
         </>
     )
 }
