@@ -3,12 +3,17 @@ import { use, useEffect, useState } from "react";
 function AdminUsers(){
   const [users,setUsers] = useState([]);
   const [showToats,setShowToast] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("")
-  const filteredUsers = users.filter(
-    (user) =>
-      user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedRole, setSelectedRole] = useState("All");
+const filteredUsers = users.filter((user) => {
+  const matchSearch =
+    user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.email.toLowerCase().includes(searchTerm.toLowerCase());
+
+  const matchRole =selectedRole === "All" ? true : user.role === selectedRole;
+
+  return matchSearch && matchRole;
+});
   useEffect(()=>{
     fetch("http://localhost:3000/api/user/GetUsers")
     .then((res)=> res.json())
@@ -52,7 +57,7 @@ function AdminUsers(){
 
           <div class="filter-bar-row" style={{marginBottom:'var(--space-4)'}}>
             <div class="input-icon-wrap" style={{maxWidth:'320px'}}><span class="icon icon-sm" data-icon="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"></path><circle cx="11" cy="11" r="8"></circle></svg></span><input onChange={(e)=>setSearchTerm(e.target.value)} class="input" placeholder="Search by name or email…" data-filter-input="adminUsers"/></div>
-            <select class="select" style={{width:'auto', minWidth:'150px'}}><option>Role: All</option><option>User</option><option>Admin</option></select>
+            <select  onChange={(e) => setSelectedRole(e.target.value)} class="select" style={{width:'auto', minWidth:'150px'}}><option value="All" >Role: All</option><option value="User">User</option><option value="Admin">Admin</option></select>
           </div>
           <div class="card">
             {filteredUsers.map((user) => (

@@ -1,8 +1,18 @@
 import { useState } from "react";
 
 function Members(){
+  const [member,setMember]= useState([]);
   const [openDropdown, setOpenDropdown] = useState(null);
-
+ const [openModel, setOpenModel] = useState(false);
+ const [searchMember,setSearchMember]= useState("");
+ const filterMemer = member.filter(
+  (member) => 
+    member.username.toLowerCase().includes(searchMember.toLowerCase()) ||
+    member.email.toLowerCase().includes(searchMember.toLowerCase())
+ )
+ const toggleModel =()=>{
+  setOpenModel(true);
+ }
   const toggleDropdown = (id) => {
     setOpenDropdown(openDropdown === id ? null : id);
   }; 
@@ -12,7 +22,7 @@ function Members(){
         <div class="page-content-inner">
           <div class="page-header">
             <div><h1>Members</h1><p class="page-subtitle">Everyone with access to this workspace.</p></div>
-            <button class="btn btn-primary" data-open-modal="inviteMemberModal"><span class="icon icon-sm" data-icon="plus"><svg viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg></span>Invite</button>
+            <button onClick={() => toggleModel()} class="btn btn-primary" data-open-modal="inviteMemberModal"><span class="icon icon-sm" data-icon="plus"><svg viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg></span>Invite</button>
           </div>
 
           <div class="input-icon-wrap" style={{maxWidth:'320px', marginBottom:'var(--space-4)'}}>
@@ -77,7 +87,37 @@ function Members(){
             </div>
           </div>
         </div>
-      </main>    </>
+      </main>  
+{
+  openModel && (
+  <div class="modal-overlay " id="inviteMemberModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div><h2 class="modal-title">Invite a member</h2><p class="modal-desc">Add a new person to this workspace.</p></div>
+      <button onClick={()=>setOpenModel(false)} class="icon-btn" data-close-modal="inviteMemberModal" aria-label="Close"><span class="icon" data-icon="x"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></span></button>      </div>
+      <div class="modal-body" style={{display:'flex', flexDirection:'column', gap:'var(--space-4)'}}>
+        <div class="pill-tabs">
+          <button class="pill-tab active" data-tab-group="invite" data-tab="email">Email</button>
+          <button class="pill-tab" data-tab-group="invite" data-tab="code">Invitation Code</button>
+        </div>
+        <div data-tab-panel="invite" data-tab="email" style={{display:'flex', flexDirection:'column', gap:'var(--space-4)'}}>
+          <div class="field"><label class="field-label">Email</label><input class="input" type="email" placeholder="teammate@company.com"/></div>
+          <div class="field"><label class="field-label">Role</label><select class="select"><option>Member</option><option>Team Leader</option></select></div>
+          <button class="btn btn-primary" style={{alignSelf:'flex-start'}} onclick="showToast('Invitation sent', null, 'success')">Send Invitation</button>
+        </div>
+        <div data-tab-panel="invite" data-tab="code" class="hidden" style={{display:'flex', flexDirection:'column', alignItems:'center', gap:'12px', border:'1px dashed var(--color-border-strong)', borderRadius:'var(--radius-lg)', padding:'24px 0'}}>
+          <p style={{fontSize:'22px', fontWeight:'600', letterSpacing:'.1em'}}>TF-8X92-KLQ1</p>
+          <button class="btn btn-outline btn-sm" onclick="showToast('Copied', null, 'success')"><span class="icon icon-sm" data-icon="copy"></span>Copy code</button>
+          <p class="field-hint" style={{textAlign:'center', maxWidth:'280px'}}>Share this code with your teammate — they can use it to join this workspace.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  )
+}
+       </>
+       
     )
 }
 export default Members;
