@@ -19,7 +19,7 @@ import {
     moveTask
 } from './../../../api.jsx';
 import "./project.css";
-import {Calendar, LayoutGrid, List, Settings} from "lucide-react";
+import {Calendar, CalendarClock, LayoutGrid, List, ListChecks, Settings, UsersRound} from "lucide-react";
 
 // Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa từ username/name
 const getInitials = (name) => {
@@ -775,12 +775,12 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 <span className="project-color-dot" style={{ background: project?.color || '#4f46e5' }}></span>
                                 <h1>{project?.name || 'Dự án'}</h1>
                             </div>
-                            <p className="page-subtitle">{project?.description}</p>
+                            <p className="page-subtitle">{project?.description}no description</p>
 
                             <div className="project-meta-row">
-                                <span className="project-meta-item">👥 {memberList.length} members</span>
-                                <span className="project-meta-item">📋 {tasks.length} task</span>
-                                <span className="project-meta-item">📅 end date: {formattedDueDate}</span>
+                                <span className="project-meta-item"><UsersRound className="icon icon-sm" />{memberList.length} members</span>
+                                <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
+                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {project.dueDate || 'Chưa đặt'}</span>
                             </div>
                         </div>
                         <Link to={`/projectsetting/${activeProjectId}`} className="icon-btn icon-btn-outline">

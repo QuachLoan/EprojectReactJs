@@ -32,22 +32,6 @@ export const fetchProjects = async () => {
     return handleResponse(res);
 };
 
-// src/api.jsx
-
-export const createQuickTask = async (taskData) => {
-    // Thay đổi URL API tương ứng với Backend của bạn
-    const response = await fetch('/api/task', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(taskData)
-    });
-    if (!response.ok) {
-        throw new Error('Lỗi khi tạo task nhanh');
-    }
-
-    return await response.json();
-};
-
 export const fetchProjectById = async (id) => {
     const res = await fetch(`${API_BASE_URL}/project/${id}`, {
         headers: getAuthHeaders()
@@ -60,6 +44,25 @@ export const createProject = async (projectData) => {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(projectData)
+    });
+    return handleResponse(res);
+};
+
+// -- BỔ SUNG: Cập nhật thông tin dự án --
+export const updateProject = async (projectId, projectData) => {
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}`, {
+        method: 'PUT', // Đổi thành 'PATCH' nếu Backend của bạn yêu cầu PATCH
+        headers: getAuthHeaders(),
+        body: JSON.stringify(projectData)
+    });
+    return handleResponse(res);
+};
+
+// -- BỔ SUNG: Xóa dự án --
+export const deleteProject = async (projectId) => {
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
     });
     return handleResponse(res);
 };
@@ -86,13 +89,23 @@ export const fetchColumns = async (projectId) => {
 };
 
 export const fetchColumnsByProject = async (projectId) => {
-    const response = await fetch(`${API_BASE_URL}/column/project/${projectId}`,{
+    const res = await fetch(`${API_BASE_URL}/column/project/${projectId}`, {
         headers: getAuthHeaders()
     });
-    return await response.json();
+    return handleResponse(res);
 };
 
 // ==================== TASKS ====================
+
+// -- ĐÃ SỬA: Đưa API_BASE_URL và handleResponse vào createQuickTask --
+export const createQuickTask = async (taskData) => {
+    const res = await fetch(`${API_BASE_URL}/task`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(taskData)
+    });
+    return handleResponse(res);
+};
 
 export const fetchTasksByProject = async (projectId) => {
     const res = await fetch(`${API_BASE_URL}/task/project/${projectId}`, {
@@ -127,12 +140,12 @@ export const moveTask = async (taskId, updateData) => {
 };
 
 export const updateTask = async (taskId, fields) => {
-    const response = await fetch(`${API_BASE_URL}/task/${taskId}`, {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}`, {
         method: 'PUT', // Hoặc 'PATCH' tùy cấu hình Backend của bạn
         headers: getAuthHeaders(),
         body: JSON.stringify(fields)
     });
-    return handleResponse(response);
+    return handleResponse(res);
 };
 
 export const deleteTask = async (taskId) => {
@@ -187,6 +200,3 @@ export const fetchTaskActivities = async (taskId) => {
     });
     return handleResponse(res);
 };
-
-
-

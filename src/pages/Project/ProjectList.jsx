@@ -13,7 +13,7 @@ import {
     Loader2,
     ArrowRightCircle,
     UserPlus,
-    Check
+    Check, UsersRound, ListChecks, CalendarClock
 } from 'lucide-react';
 
 import {
@@ -276,13 +276,13 @@ export default function ProjectList() {
                                 <span className="project-color-dot" style={{ background: project.color || '#4f46e5' }}></span>
                                 <h1>{project.name || 'Project'}</h1>
                             </div>
-                            <p className="page-subtitle">{project.description}</p>
+                            <p className="page-subtitle">{project.description || 'no description'}</p>
 
                             {/* Bổ sung dòng thông tin Members, Tasks và End Date giống ProjectBoard */}
                             <div className="project-meta-row" style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '13px', color: '#64748b' }}>
-                                <span className="project-meta-item">👥 {memberList.length} members</span>
-                                <span className="project-meta-item">📋 {tasks.length} task</span>
-                                <span className="project-meta-item">📅 end date: {formattedDueDate}</span>
+                                <span className="project-meta-item"><UsersRound className="icon icon-sm" />{memberList.length} members</span>
+                                <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
+                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {project.dueDate || 'Chưa đặt'}</span>
                             </div>
                         </div>
                         <div className="project-header-actions">
