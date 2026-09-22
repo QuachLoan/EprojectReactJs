@@ -79,18 +79,27 @@ export default function ProjectList() {
 
             realColumns.sort((a, b) => (a.position || 0) - (b.position || 0));
 
-            // FILTER OUT ALL TASKS THAT ARE ALREADY ON THE BOARD
-            const validColumnIds = new Set(realColumns.map(c => String(c._id)));
-            const unassignedTasks = realTasks.filter(t => {
-                const cId = typeof t.columnId === 'object' ? t.columnId?._id : t.columnId;
+            // 1. Tạo danh sách tất cả Column ID hiện có trên Board
+            const validColumnIds = new Set(
+                realColumns.map(c => String(c._id || c.id)).filter(Boolean)
+            );
+
+            // 2. Lọc chỉ lấy Task ở Backlog (Không thuộc bất kỳ cột nào trên Board)
+            const backlogTasks = realTasks.filter(t => {
+                const rawCol = t.columnId;
+                const cId = typeof rawCol === 'object' && rawCol !== null
+                    ? (rawCol._id || rawCol.id)
+                    : rawCol;
+
+                // Nằm ở Backlog nếu không có columnId HOẶC columnId không khớp với các cột trên Board
                 return !cId || !validColumnIds.has(String(cId));
             });
 
             setProject(realProject);
             setColumns(realColumns);
-            setTasks(unassignedTasks);
+            setTasks(backlogTasks); // Lưu danh sách Backlog vào state để hiển thị
         } catch (err) {
-            console.error('Error loading data:', err);
+            console.error('Error loading backlog tasks:', err);
         } finally {
             setLoading(false);
         }
@@ -115,12 +124,6 @@ export default function ProjectList() {
         setActiveModal(null);
     };
 
-    const toggleMemberSelection = (id) => {
-        setSelectedMembers((prev) =>
-            prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
-        );
-    };
-
     // Create New Task (Backlog)
     const handleCreateTask = async (e) => {
         e.preventDefault();
@@ -129,30 +132,30 @@ export default function ProjectList() {
         try {
             setIsSubmitting(true);
 
+            if (!projectId) {
+                return;
+            }
+
             const payload = {
                 title: newTaskTitle,
                 description: newTaskDesc,
-                columnId: null, // Đưa thẳng vào Backlog
-                projectId: projectId, // Đảm bảo truyền đúng ID project
+                projectId: projectId, // ID lấy từ useParams()
                 priority: newTaskPriority,
                 date: newTaskDate ? new Date(newTaskDate) : new Date(),
-                assignees: [],
-                members: []
+                assignees: []
             };
 
-            // 1. Thêm task qua API
             const response = await createTask(payload);
             const createdTask = response?.data || response;
 
-            // 2. Cập nhật trực tiếp State tasks tại React
-            if (createdTask) {
+            if (createdTask && (createdTask._id || createdTask.id)) {
                 setTasks(prevTasks => [createdTask, ...prevTasks]);
+                closeModal();
+            } else {
             }
-
-            // 3. Đóng modal và reset form
-            closeModal();
         } catch (error) {
-            console.error("Lỗi khi tạo task:", error);
+            console.error("Lỗi tạo task ở Frontend:", error);
+            const errMsg = error.response?.data?.message || error.response?.data?.error || error.message;
         } finally {
             setIsSubmitting(false);
         }
@@ -178,45 +181,66 @@ export default function ProjectList() {
         });
     };
 
-    // Toggle Assignee
-    const handleToggleTaskAssignee = async (task, memberId) => {
-        const currentAssignees = Array.isArray(task.assignees)
-            ? task.assignees.map(a => typeof a === 'object' ? (a._id || a.id) : a)
-            : [];
-
-        let updatedAssignees = currentAssignees.includes(memberId)
-            ? currentAssignees.filter(id => String(id) !== String(memberId))
-            : [...currentAssignees, memberId];
-
-        setTasks(prev => prev.map(t => t._id === task._id ? { ...t, assignees: updatedAssignees } : t));
-
-        try {
-            await updateTask(task._id, { assignees: updatedAssignees, members: updatedAssignees });
-        } catch (err) {
-            console.error('Error updating assignee:', err);
-            loadData();
-        }
-    };
-
-    // Push Task into Todo Column on the Board
+    // Push Task từ Backlog vào cột Todo trên Board
     const handlePushToBoard = async (task) => {
+        // 1. Tìm cột Todo (thường là cột có vị trí 0)
         const todoColumn = columns[0];
         if (!todoColumn) {
-            alert('Project does not have a Todo column on the Board yet!');
             return;
         }
 
-        try {
-            setTasks(prev => prev.filter(t => t._id !== task._id));
+        const taskId = task._id || task.id;
+        const todoColumnId = todoColumn._id || todoColumn.id;
 
-            await moveTask(task._id, {
+        try {
+            // 2. Ẩn ngay task khỏi bảng Backlog trên UI
+            setTasks(prev => prev.filter(t => (t._id || t.id) !== taskId));
+
+            // 3. Gọi API chuyển task từ Backlog (columnId: null) sang Cột Todo
+            await moveTask(taskId, {
                 sourceColumnId: null,
-                destColumnId: todoColumn._id,
+                destColumnId: todoColumnId,
                 destinationIndex: 0
             });
+
         } catch (err) {
-            console.error('Error pushing task to board:', err);
-            loadData();
+            console.error('Lỗi khi push task sang board:', err);
+            loadData(); // Lỗi thì khôi phục lại dữ liệu
+        }
+    };
+
+    // Toggle Assignee (Đã được sửa để không làm mất task)
+    const handleToggleTaskAssignee = async (task, memberId) => {
+        if (!task) return;
+
+        const taskId = task._id || task.id;
+
+        // Chuẩn hóa danh sách ID hiện tại
+        const currentAssignees = Array.isArray(task.assignees)
+            ? task.assignees
+                .map(a => typeof a === 'object' ? (a._id || a.id) : a)
+                .filter(Boolean)
+                .map(id => String(id))
+            : [];
+
+        const targetMemberId = String(memberId);
+
+        const updatedAssignees = currentAssignees.includes(targetMemberId)
+            ? currentAssignees.filter(id => id !== targetMemberId)
+            : [...currentAssignees, targetMemberId];
+
+        // Optimistic UI Update
+        setTasks(prev => prev.map(t => {
+            const tId = t._id || t.id;
+            return String(tId) === String(taskId) ? { ...t, assignees: updatedAssignees } : t;
+        }));
+
+        try {
+            // Chỉ gửi đúng 1 key assignees chuẩn dạng mảng string
+            await updateTask(taskId, { assignees: updatedAssignees });
+        } catch (err) {
+            console.error('Error updating assignee:', err);
+            // Nhớ comment hoặc bỏ loadData() ở đây để giao diện KHÔNG BỊ DISAPPEAR/RESET khi backend báo lỗi
         }
     };
 
@@ -295,13 +319,9 @@ export default function ProjectList() {
                                 <tbody>
                                 {tasks.length > 0 ? (
                                     tasks.map((task, index) => {
-                                        // 1. Tạo KEY an toàn tuyệt đối cho <tr> để tránh lỗi React Warning
                                         const taskId = task._id || task.id || `task-fallback-${index}`;
-
-                                        // 2. Lấy danh sách Assignees an toàn
                                         const taskAssignees = Array.isArray(task.assignees) ? task.assignees : [];
 
-                                        // 3. Xử lý Due Date an toàn (đọc cả task.date lẫn task.dueDate)
                                         const rawDate = task.date || task.dueDate;
                                         let formattedDate = 'No date';
                                         if (rawDate) {
@@ -311,7 +331,6 @@ export default function ProjectList() {
                                             }
                                         }
 
-                                        // 4. Bóc tách Title an toàn (đề phòng backend trả về name thay vì title)
                                         const displayTitle = task.title || task.name || 'Untitled Task';
 
                                         return (
@@ -326,9 +345,9 @@ export default function ProjectList() {
                                                 </td>
 
                                                 <td style={{ padding: '12px 16px' }}>
-                    <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, background: '#fffbeb', color: '#d97706' }}>
-                        {task.priority || 'Medium'}
-                    </span>
+                                                    <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, background: '#fffbeb', color: '#d97706' }}>
+                                                        {task.priority || 'Medium'}
+                                                    </span>
                                                 </td>
 
                                                 {/* Assignee Box */}
@@ -339,13 +358,12 @@ export default function ProjectList() {
                                                             const found = memberList.find(m => String(m._id || m.id) === String(memberId));
                                                             const name = found ? (found.username || found.name) : 'User';
 
-                                                            // Key an toàn cho Avatar Assignee
                                                             const avatarKey = memberId ? `assignee-${memberId}-${aIdx}` : `assignee-idx-${aIdx}`;
 
                                                             return (
                                                                 <span key={avatarKey} title={name} style={{ background: '#4f46e5', color: '#fff', fontSize: '10px', width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    {getInitials(name)}
-                                </span>
+                                                                    {getInitials(name)}
+                                                                </span>
                                                             );
                                                         })}
                                                         <button
@@ -358,7 +376,6 @@ export default function ProjectList() {
                                                     </div>
                                                 </td>
 
-                                                {/* Due Date hiển thị chuẩn xác */}
                                                 <td style={{ padding: '12px 16px', color: '#64748b', fontSize: '13px' }}>
                                                     {formattedDate}
                                                 </td>
@@ -410,14 +427,17 @@ export default function ProjectList() {
                     <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', padding: '4px 6px' }}>Assign Members:</div>
                     {memberList.map((m) => {
                         const mId = m._id || m.id;
-                        const currentTask = tasks.find(t => t._id === assigneeMenu.taskId);
+                        const currentTask = tasks.find(t => String(t._id || t.id) === String(assigneeMenu.taskId));
                         const taskAssignees = Array.isArray(currentTask?.assignees) ? currentTask.assignees : [];
                         const isChecked = taskAssignees.some(a => String(typeof a === 'object' ? (a._id || a.id) : a) === String(mId));
 
                         return (
                             <div
                                 key={mId}
-                                onClick={() => handleToggleTaskAssignee(currentTask, mId)}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleTaskAssignee(currentTask, mId);
+                                }}
                                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}
                                 className="hover:bg-slate-100"
                             >
