@@ -141,9 +141,6 @@ export default function ProjectSetting() {
                         <Link to={`/projectcalendar/${projectId}`} className="project-tab">
                             <Calendar className="icon icon-sm" /> Calendar
                         </Link>
-                        <Link to={`/projectactivity/${projectId}`} className="project-tab">
-                            <Activity className="icon icon-sm" /> Activity
-                        </Link>
                     </nav>
                 </div>
 

@@ -19,7 +19,7 @@ import {
     moveTask
 } from './../../../api.jsx';
 import "./project.css";
-import {Settings} from "lucide-react";
+import {Calendar, LayoutGrid, List, Settings} from "lucide-react";
 
 // Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa từ username/name
 const getInitials = (name) => {
@@ -778,9 +778,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             <p className="page-subtitle">{project?.description}</p>
 
                             <div className="project-meta-row">
-                                <span className="project-meta-item">👥 {memberList.length} thành viên</span>
+                                <span className="project-meta-item">👥 {memberList.length} members</span>
                                 <span className="project-meta-item">📋 {tasks.length} task</span>
-                                <span className="project-meta-item">📅 Hạn: {formattedDueDate}</span>
+                                <span className="project-meta-item">📅 end date: {formattedDueDate}</span>
                             </div>
                         </div>
                         <Link to={`/projectsetting/${activeProjectId}`} className="icon-btn icon-btn-outline">
@@ -788,10 +788,15 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                         </Link>
                     </div>
                     <nav className="project-tabs">
-                        <Link to={`/projectboard/${activeProjectId}`} className="project-tab active">Board</Link>
-                        <Link to={`/projectlist/${activeProjectId}`} className="project-tab">List</Link>
-                        <Link to={`/projectcalendar/${activeProjectId}`} className="project-tab">Calendar</Link>
-                        <Link to={`/projectactivity/${activeProjectId}`} className="project-tab">Activity</Link>
+                        <Link to={`/projectboard/${activeProjectId}`} className="project-tab active">
+                            <LayoutGrid className="icon icon-sm" /> Board
+                        </Link>
+                        <Link to={`/projectlist/${activeProjectId}`} className="project-tab">
+                            <List className="icon icon-sm" /> List
+                        </Link>
+                        <Link to={`/projectcalendar/${activeProjectId}`} className="project-tab">
+                            <Calendar className="icon icon-sm" /> Calendar
+                        </Link>
                     </nav>
                 </div>
 

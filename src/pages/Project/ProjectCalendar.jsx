@@ -134,9 +134,6 @@ export default function ProjectCalendar() {
                         <Link to={`/projectcalendar/${projectId}`} className="project-tab active">
                             <Calendar className="icon icon-sm" /> Calendar
                         </Link>
-                        <Link to={`/projectactivity/${projectId}`} className="project-tab">
-                            <Activity className="icon icon-sm" /> Activity
-                        </Link>
                     </nav>
                 </div>
 

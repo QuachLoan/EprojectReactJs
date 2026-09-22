@@ -25,12 +25,27 @@ import {
     moveTask
 } from '../../../api.jsx';
 
+// Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa từ username/name
 const getInitials = (name) => {
     if (!name) return '??';
     const words = String(name).trim().split(/\s+/);
     return words.length === 1
         ? words[0].substring(0, 2).toUpperCase()
         : (words[0][0] + words[words.length - 1][0]).toUpperCase();
+};
+
+// Hàm tìm kiếm thông tin user theo ID hoặc Object từ danh sách thành viên dự án
+const getUserInfo = (userOrId, projectMembers = []) => {
+    if (!userOrId) return null;
+
+    if (typeof userOrId === 'object' && (userOrId.username || userOrId.name)) {
+        return userOrId;
+    }
+
+    const targetId = typeof userOrId === 'object' ? (userOrId._id || userOrId.id) : userOrId;
+    const found = projectMembers.find(m => String(m._id || m.id) === String(targetId));
+
+    return found || userOrId;
 };
 
 export default function ProjectList() {
@@ -151,11 +166,9 @@ export default function ProjectList() {
             if (createdTask && (createdTask._id || createdTask.id)) {
                 setTasks(prevTasks => [createdTask, ...prevTasks]);
                 closeModal();
-            } else {
             }
         } catch (error) {
             console.error("Lỗi tạo task ở Frontend:", error);
-            const errMsg = error.response?.data?.message || error.response?.data?.error || error.message;
         } finally {
             setIsSubmitting(false);
         }
@@ -183,7 +196,6 @@ export default function ProjectList() {
 
     // Push Task từ Backlog vào cột Todo trên Board
     const handlePushToBoard = async (task) => {
-        // 1. Tìm cột Todo (thường là cột có vị trí 0)
         const todoColumn = columns[0];
         if (!todoColumn) {
             return;
@@ -193,10 +205,8 @@ export default function ProjectList() {
         const todoColumnId = todoColumn._id || todoColumn.id;
 
         try {
-            // 2. Ẩn ngay task khỏi bảng Backlog trên UI
             setTasks(prev => prev.filter(t => (t._id || t.id) !== taskId));
 
-            // 3. Gọi API chuyển task từ Backlog (columnId: null) sang Cột Todo
             await moveTask(taskId, {
                 sourceColumnId: null,
                 destColumnId: todoColumnId,
@@ -205,17 +215,16 @@ export default function ProjectList() {
 
         } catch (err) {
             console.error('Lỗi khi push task sang board:', err);
-            loadData(); // Lỗi thì khôi phục lại dữ liệu
+            loadData();
         }
     };
 
-    // Toggle Assignee (Đã được sửa để không làm mất task)
+    // Toggle Assignee
     const handleToggleTaskAssignee = async (task, memberId) => {
         if (!task) return;
 
         const taskId = task._id || task.id;
 
-        // Chuẩn hóa danh sách ID hiện tại
         const currentAssignees = Array.isArray(task.assignees)
             ? task.assignees
                 .map(a => typeof a === 'object' ? (a._id || a.id) : a)
@@ -229,20 +238,21 @@ export default function ProjectList() {
             ? currentAssignees.filter(id => id !== targetMemberId)
             : [...currentAssignees, targetMemberId];
 
-        // Optimistic UI Update
         setTasks(prev => prev.map(t => {
             const tId = t._id || t.id;
             return String(tId) === String(taskId) ? { ...t, assignees: updatedAssignees } : t;
         }));
 
         try {
-            // Chỉ gửi đúng 1 key assignees chuẩn dạng mảng string
             await updateTask(taskId, { assignees: updatedAssignees });
         } catch (err) {
             console.error('Error updating assignee:', err);
-            // Nhớ comment hoặc bỏ loadData() ở đây để giao diện KHÔNG BỊ DISAPPEAR/RESET khi backend báo lỗi
         }
     };
+
+    const formattedDueDate = (project?.date)
+        ? new Date(project.date).toLocaleDateString('vi-VN')
+        : 'N/A';
 
     return (
         <div className="app-shell" onClick={() => setAssigneeMenu({ open: false, taskId: null, pos: {} })}>
@@ -266,6 +276,14 @@ export default function ProjectList() {
                                 <span className="project-color-dot" style={{ background: project.color || '#4f46e5' }}></span>
                                 <h1>{project.name || 'Project'}</h1>
                             </div>
+                            <p className="page-subtitle">{project.description}</p>
+
+                            {/* Bổ sung dòng thông tin Members, Tasks và End Date giống ProjectBoard */}
+                            <div className="project-meta-row" style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '13px', color: '#64748b' }}>
+                                <span className="project-meta-item">👥 {memberList.length} members</span>
+                                <span className="project-meta-item">📋 {tasks.length} task</span>
+                                <span className="project-meta-item">📅 end date: {formattedDueDate}</span>
+                            </div>
                         </div>
                         <div className="project-header-actions">
                             <Link to={`/projectsetting/${projectId}`} className="icon-btn icon-btn-outline">
@@ -283,9 +301,6 @@ export default function ProjectList() {
                         </Link>
                         <Link to={`/projectcalendar/${projectId}`} className="project-tab">
                             <Calendar className="icon icon-sm" /> Calendar
-                        </Link>
-                        <Link to={`/projectactivity/${projectId}`} className="project-tab">
-                            <Activity className="icon icon-sm" /> Activity
                         </Link>
                     </nav>
                 </div>
@@ -354,21 +369,47 @@ export default function ProjectList() {
                                                 <td style={{ padding: '12px 16px' }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                         {taskAssignees.map((assignee, aIdx) => {
-                                                            const memberId = typeof assignee === 'object' ? (assignee._id || assignee.id) : assignee;
-                                                            const found = memberList.find(m => String(m._id || m.id) === String(memberId));
-                                                            const name = found ? (found.username || found.name) : 'User';
-
-                                                            const avatarKey = memberId ? `assignee-${memberId}-${aIdx}` : `assignee-idx-${aIdx}`;
+                                                            const userInfo = getUserInfo(assignee, memberList);
+                                                            const name = typeof userInfo === 'object'
+                                                                ? (userInfo.username || userInfo.name || userInfo.email || '')
+                                                                : '';
+                                                            const memberId = typeof assignee === 'object'
+                                                                ? (assignee._id || assignee.id || aIdx)
+                                                                : assignee;
 
                                                             return (
-                                                                <span key={avatarKey} title={name} style={{ background: '#4f46e5', color: '#fff', fontSize: '10px', width: '26px', height: '26px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                <span
+                                                                    key={`assignee-${memberId}-${aIdx}`}
+                                                                    title={name || 'User'}
+                                                                    style={{
+                                                                        background: '#4f46e5',
+                                                                        color: '#fff',
+                                                                        fontSize: '10px',
+                                                                        width: '26px',
+                                                                        height: '26px',
+                                                                        borderRadius: '50%',
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        justifyContent: 'center'
+                                                                    }}
+                                                                >
                                                                     {getInitials(name)}
                                                                 </span>
                                                             );
                                                         })}
                                                         <button
                                                             onClick={(e) => handleOpenAssigneeMenu(e, taskId)}
-                                                            style={{ border: '1px dashed #cbd5e1', borderRadius: '50%', width: '26px', height: '26px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: '#fff' }}
+                                                            style={{
+                                                                border: '1px dashed #cbd5e1',
+                                                                borderRadius: '50%',
+                                                                width: '26px',
+                                                                height: '26px',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                cursor: 'pointer',
+                                                                background: '#fff'
+                                                            }}
                                                             title="Assign member"
                                                         >
                                                             <UserPlus className="w-3.5 h-3.5 text-slate-500" />

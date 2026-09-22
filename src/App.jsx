@@ -12,7 +12,6 @@ import AdminUsers from './pages/AdminUsers/AdminUsers.jsx'
 import AdminMorder from './pages/AdminMorder/AdminMorder.jsx'
 import ProjectList from "./pages/Project/ProjectList.jsx";
 import ProjectCalendar from "./pages/Project/ProjectCalendar.jsx";
-import ProjectActivity from "./pages/Project/ProjectActivity.jsx";
 import ProjectSetting from "./pages/Project/ProjectSetting.jsx";
 import Register from './pages/Register/Register.jsx'
 function App() {
@@ -34,7 +33,6 @@ function App() {
           <Route path="/projectboard/:id" element={<ProjectBoard />} />
           <Route path = "/projectlist/:id" element = {<ProjectList/>}/>
           <Route path = "/projectcalendar/:id" element = {<ProjectCalendar/>}/>
-          <Route path = "/projectactivity/:id" element = {<ProjectActivity/>}/>
           <Route path = "/projectsetting/:id" element = {<ProjectSetting/>}/>
       </Routes>
       </> 
