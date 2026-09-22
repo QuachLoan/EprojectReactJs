@@ -1,9 +1,21 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 
 function Nav() {
-    // Hàm xử lý class active chuẩn React Router
+
+   const [currentUserRole, setCurrentUserRole] = useState(""); 
     const getNavClass = ({ isActive }) => (isActive ? "nav-item active" : "nav-item");
 
+ useEffect(() => {
+ const token = localStorage.getItem("token"); // lấy token đã lưu
+  if (!token) return;
+  fetch("http://localhost:3000/api/user/currentUser", {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+      .then((res) => res.json())
+      .then((data) => setCurrentUserRole(data.role))
+      .catch((err) => console.error("Fetch error:", err));
+  }, []);
     return (
         <nav className="sidebar-nav">
             {/* Dashboard */}
@@ -38,23 +50,32 @@ function Nav() {
                 <span className="nav-label">Members</span>
             </NavLink>
 
-            <p className="sidebar-section-label">Admin</p>
+           
 
             {/* Admin Users */}
-            <NavLink to="/adminuser" className={getNavClass}>
+            {
+              
+              currentUserRole === "Admin" && (
+                <>
+                 <p className="sidebar-section-label">Admin</p>
+                 <NavLink to="/adminuser" className={getNavClass}>
         <span className="icon" data-icon="shieldCheck">
           <svg viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path><path d="m9 12 2 2 4-4"></path></svg>
         </span>
                 <span className="nav-label">Users</span>
             </NavLink>
 
-            {/* Admin Moderation */}
             <NavLink to="/adminmoderation" className={getNavClass}>
         <span className="icon" data-icon="flag">
           <svg viewBox="0 0 24 24"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"></path></svg>
         </span>
                 <span className="nav-label">Moderation</span>
             </NavLink>
+                </>
+           
+              )
+            }
+
         </nav>
     );
 }

@@ -3,6 +3,7 @@ import { use, useEffect, useState } from "react";
 function AdminUsers(){
   const [users,setUsers] = useState([]);
   const [showToats,setShowToast] = useState(false);
+ const [currentUserRole, setCurrentUserRole] = useState(""); 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("All");
 const filteredUsers = users.filter((user) => {
@@ -21,7 +22,7 @@ const filteredUsers = users.filter((user) => {
     .catch((err) => console.error(" Fetch error:", err));
   },[]);
 
-
+  
   const handleToggleStatus = async (userId, currentStatus) => {
     const newStatus = currentStatus === "Active" ? "Inactive" : "Active";
     try {
