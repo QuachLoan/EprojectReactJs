@@ -6,8 +6,7 @@ import {
     X,
     ListChecks,
     UsersRound,
-    CalendarClock,
-    Search
+    CalendarClock
 } from 'lucide-react';
 import SideBar from './../../components/layout/SideBar/SideBar';
 import Header from './../../components/layout/Header/Header';
@@ -28,7 +27,6 @@ const COLOR_OPTIONS = [
 export default function Projects() {
     const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
     const [activeModal, setActiveModal] = useState(null);
-    const [commandQuery, setCommandQuery] = useState('');
 
     const [projects, setProjects] = useState([]);
     const [members, setMembers] = useState([]);
@@ -52,12 +50,6 @@ export default function Projects() {
     const [taskDueDate, setTaskDueDate] = useState('');
 
     const [toasts, setToasts] = useState([]);
-
-    const getProgressColorClass = (percent) => {
-        if (percent >= 80) return 'high';   // >= 80%: Xanh lá
-        if (percent >= 30) return 'medium'; // 30% - 79%: Xanh dương
-        return 'low';                       // < 30%: Màu cam
-    };
 
     const getCurrentUserId = () => {
         const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
@@ -100,11 +92,9 @@ export default function Projects() {
                         const tasksList = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
 
                         const doneTasksCount = tasksList.filter((task) => {
-                            // Trường hợp columnId là Object populated từ MongoDB (ví dụ: { _id, name, position })
                             if (task.columnId && typeof task.columnId === 'object') {
                                 return task.columnId.position === 3;
                             }
-                            // Trường hợp task.position chính là position của column
                             if (task.position === 3) {
                                 return true;
                             }
@@ -137,7 +127,6 @@ export default function Projects() {
             const list = Array.isArray(data) ? data : (data?.data || data?.users || []);
             setMembers(list);
 
-            // Tích sẵn người dùng hiện tại
             const currentUserId = getCurrentUserId();
             if (currentUserId) {
                 setSelectedMembers([currentUserId]);
@@ -194,7 +183,6 @@ export default function Projects() {
         return 0;
     };
 
-    // Hàm lấy tổng số task
     const getTaskCount = (project) => {
         const pId = project._id || project.id;
         if (projectTaskStats[pId] !== undefined) {
@@ -209,7 +197,10 @@ export default function Projects() {
             const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
             const currentUserId = currentUser._id || currentUser.id;
 
-            const cleanMembers = selectedMembers.filter(id => Boolean(id));
+            // Lọc kỹ mảng selectedMembers: chỉ giữ lại ID hợp lệ (chuỗi có độ dài > 0)
+            const validAssignees = selectedMembers.filter(
+                (id) => typeof id === 'string' && id.trim().length > 0
+            );
 
             const today = new Date().toISOString().split('T')[0];
 
@@ -219,8 +210,10 @@ export default function Projects() {
                 color: selectedColor,
                 userId: currentUserId,
                 date: projectDueDate || today,
-                assignees: cleanMembers
+                assignees: validAssignees // Gửi mảng ID đã làm sạch
             };
+
+            console.log("Payload gửi lên Backend:", payload); // Log ra để kiểm tra trước khi gửi
 
             await createProject(payload);
 
@@ -229,7 +222,7 @@ export default function Projects() {
             loadProjects();
         } catch (error) {
             console.error("Lỗi tạo Project:", error);
-            showToast('Lỗi', error.response?.data?.message || 'Không thể tạo project.', 'error');
+            showToast('Lỗi', error.response?.data?.message || error.message || 'Không thể tạo project.', 'error');
         }
     };
 
@@ -279,7 +272,7 @@ export default function Projects() {
                             <button
                                 className="btn btn-primary"
                                 onClick={() => {
-                                    resetProjectForm(); // Reset & tự động tích chọn user hiện tại
+                                    resetProjectForm();
                                     setActiveModal('createProjectModal');
                                 }}
                             >
@@ -327,14 +320,13 @@ export default function Projects() {
                                             <p className="project-card-desc">{project.description || project.desc}</p>
                                             <div>
                                                 <div className="project-card-progress-row">
-        <span className="icon-inline">
-            <ListChecks className="icon icon-sm" />
-            {totalTask} {totalTask === 1 ? 'task' : 'tasks'}
-        </span>
-                                                    {/* Tô đậm số % */}
+                                                    <span className="icon-inline">
+                                                        <ListChecks className="icon icon-sm" />
+                                                        {totalTask} {totalTask === 1 ? 'task' : 'tasks'}
+                                                    </span>
                                                     <span style={{ fontWeight: 700, color: '#0f172a' }}>
-            {progressPercent}%
-        </span>
+                                                        {progressPercent}%
+                                                    </span>
                                                 </div>
 
                                                 <div
@@ -351,7 +343,6 @@ export default function Projects() {
                                                         style={{
                                                             width: `${progressPercent}%`,
                                                             height: '100%',
-                                                            // Đổi màu đậm theo %: 100% Xanh lá, >=50% Xanh dương, <50% Màu cam
                                                             backgroundColor: progressPercent === 100
                                                                 ? '#10b981'
                                                                 : progressPercent >= 50
@@ -411,38 +402,6 @@ export default function Projects() {
                     </div>
                 </main>
             </div>
-
-            {/* Modal Command Palette */}
-            {activeModal === 'createProjectModal' && (
-                <div className="modal-overlay" onClick={closeModal}>
-                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <div>
-                                <h2 className="modal-title">Create project</h2>
-                                <p className="modal-desc">Set up a new board for your team.</p>
-                            </div>
-                            {/* 🟢 Đóng bằng nút X */}
-                            <button className="icon-btn" onClick={closeModal} aria-label="Close">
-                                <X className="icon" />
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleCreateProject}>
-                            {/* ... Các field khác giữ nguyên ... */}
-
-                            <div className="modal-footer">
-                                {/* 🟢 Đóng bằng nút Cancel */}
-                                <button type="button" className="btn btn-outline btn-sm" onClick={closeModal}>
-                                    Cancel
-                                </button>
-                                <button type="submit" className="btn btn-primary btn-sm">
-                                    Create project
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
 
             {/* Modal Create Task */}
             {activeModal === 'quickCreateTaskModal' && (
@@ -519,14 +478,14 @@ export default function Projects() {
 
             {/* Modal Create Project */}
             {activeModal === 'createProjectModal' && (
-                <div className="modal-overlay" onClick={() => setActiveModal(null)}>
+                <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <div>
                                 <h2 className="modal-title">Create project</h2>
                                 <p className="modal-desc">Set up a new board for your team.</p>
                             </div>
-                            <button className="icon-btn" onClick={() => setActiveModal(null)} aria-label="Close">
+                            <button className="icon-btn" onClick={closeModal} aria-label="Close">
                                 <X className="icon" />
                             </button>
                         </div>
@@ -618,7 +577,7 @@ export default function Projects() {
                                 </div>
                             </div>
                             <div className="modal-footer">
-                                <button type="button" className="btn btn-outline btn-sm" onClick={() => setActiveModal(null)}>
+                                <button type="button" className="btn btn-outline btn-sm" onClick={closeModal}>
                                     Cancel
                                 </button>
                                 <button type="submit" className="btn btn-primary btn-sm">
