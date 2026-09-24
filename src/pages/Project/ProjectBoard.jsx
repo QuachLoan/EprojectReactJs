@@ -712,7 +712,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const handleCreateTask = async (e) => {
         e.preventDefault();
         if (!newTaskTitle.trim() || !newTaskColumnId) {
-            alert('Vui lòng nhập tên công việc và chọn cột!');
             return;
         }
 
@@ -775,12 +774,12 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 <span className="project-color-dot" style={{ background: project?.color || '#4f46e5' }}></span>
                                 <h1>{project?.name || 'Dự án'}</h1>
                             </div>
-                            <p className="page-subtitle">{project?.description}no description</p>
+                            <p className="page-subtitle">{project?.description || 'No description'}</p>
 
                             <div className="project-meta-row">
                                 <span className="project-meta-item"><UsersRound className="icon icon-sm" />{memberList.length} members</span>
                                 <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
-                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {project.dueDate || 'Chưa đặt'}</span>
+                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate || 'Chưa đặt'}</span>
                             </div>
                         </div>
                         <Link to={`/projectsetting/${activeProjectId}`} className="icon-btn icon-btn-outline">

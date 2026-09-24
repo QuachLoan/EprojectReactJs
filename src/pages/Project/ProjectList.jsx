@@ -282,7 +282,7 @@ export default function ProjectList() {
                             <div className="project-meta-row" style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '13px', color: '#64748b' }}>
                                 <span className="project-meta-item"><UsersRound className="icon icon-sm" />{memberList.length} members</span>
                                 <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
-                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {project.dueDate || 'Chưa đặt'}</span>
+                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate || 'Chưa đặt'}</span>
                             </div>
                         </div>
                         <div className="project-header-actions">
