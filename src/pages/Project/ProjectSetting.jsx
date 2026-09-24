@@ -20,7 +20,8 @@ import {
     fetchProjectById,
     fetchTasksByProject,
     updateProject,
-    deleteProject
+    deleteProject,
+    fetchMembers
 } from '../../../api';
 
 export default function ProjectSetting() {
@@ -34,16 +35,20 @@ export default function ProjectSetting() {
     // State quản lý tab navigation trong Cài đặt
     const [activeTab, setActiveTab] = useState('general');
 
-    // State lưu dữ liệu hiển thị gốc từ API
+    // State lưu dữ liệu dự án gốc
     const [project, setProject] = useState(null);
 
-    // State form nhập liệu
+    // State form nhập liệu cài đặt dự án
     const [formData, setFormData] = useState({
         name: '',
         description: '',
         color: '#4f46e5',
         dueDate: ''
     });
+
+    // State danh sách Users và mảng ID thành viên được chọn (Checkbox)
+    const [members, setMembers] = useState([]);
+    const [selectedMembers, setSelectedMembers] = useState([]);
 
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -69,18 +74,23 @@ export default function ProjectSetting() {
     const loadData = async () => {
         try {
             setLoading(true);
-            const [projectData, tskList] = await Promise.all([
+
+            const [projectData, tskList, usersData] = await Promise.all([
                 fetchProjectById(projectId).catch(() => null),
-                fetchTasksByProject(projectId).catch(() => [])
+                fetchTasksByProject(projectId).catch(() => []),
+                fetchMembers().catch(() => [])
             ]);
 
             const realProject = projectData?.data || projectData || {};
             const realTasks = Array.isArray(tskList) ? tskList : (tskList?.data || []);
+            const realUsers = Array.isArray(usersData) ? usersData : (usersData?.data || usersData?.users || []);
 
             const rawDate = realProject.date || realProject.dueDate || realProject.endDate;
             const formattedDate = formatDateForInput(rawDate);
 
             setProject(realProject);
+            setMembers(realUsers);
+
             setFormData({
                 name: realProject.name || '',
                 description: realProject.description || realProject.desc || '',
@@ -88,6 +98,13 @@ export default function ProjectSetting() {
                 dueDate: formattedDate
             });
 
+            // Lấy danh sách ID assignees hiện tại của project để gán vào Checkbox state
+            const currentAssignees = Array.isArray(realProject?.assignees) ? realProject.assignees : [];
+            const initialSelectedIds = currentAssignees
+                .map(m => (typeof m === 'object' ? String(m._id || m.id) : String(m)))
+                .filter(id => id && id.length === 24);
+
+            setSelectedMembers(initialSelectedIds);
             setTasks(realTasks);
         } catch (err) {
             console.error('Lỗi khi tải cài đặt dự án:', err);
@@ -96,29 +113,57 @@ export default function ProjectSetting() {
         }
     };
 
-    const handleSaveSettings = async (e) => {
+    // Toggle chọn/bỏ chọn member dạng Checkbox
+    const toggleMemberSelection = (id) => {
+        setSelectedMembers((prev) =>
+            prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
+        );
+    };
+
+    // 1. Hàm lưu Cài đặt thông tin chung
+    const handleSaveGeneralSettings = async (e) => {
         e.preventDefault();
         try {
             setSaving(true);
 
             const payload = {
-                name: formData.name,
-                description: formData.description,
+                name: formData.name.trim(),
+                description: formData.description.trim(),
                 color: formData.color,
-                date: formData.dueDate ? new Date(formData.dueDate) : null,
-                dueDate: formData.dueDate ? new Date(formData.dueDate) : null,
-                endDate: formData.dueDate ? new Date(formData.dueDate) : null
+                date: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
+                dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
+                endDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null
             };
 
             await updateProject(projectId, payload);
-
-            setProject(prev => ({
-                ...prev,
-                ...payload,
-                date: payload.date
-            }));
+            await loadData();
         } catch (err) {
-            console.error('Lỗi khi lưu dự án:', err);
+            console.error('Lỗi khi lưu thông tin chung:', err);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // 2. Hàm lưu Thành viên (CHỈ gửi duy nhất field assignees để tránh lỗi "no change detected")
+    const handleSaveMembers = async () => {
+        try {
+            setSaving(true);
+
+            // Chuẩn hóa lọc sạch mảng ObjectId hợp lệ (24 ký tự)
+            const validAssignees = selectedMembers
+                .map(id => String(id).trim())
+                .filter(id => id.length === 24);
+
+            const payload = {
+                assignees: validAssignees
+            };
+
+            console.log("Payload assignees gửi đi:", payload);
+
+            await updateProject(projectId, payload);
+            await loadData();
+        } catch (err) {
+            console.error('Lỗi khi cập nhật thành viên:', err);
         } finally {
             setSaving(false);
         }
@@ -135,7 +180,8 @@ export default function ProjectSetting() {
         }
     };
 
-    const memberList = Array.isArray(project?.assignees) ? project.assignees : [];
+    // Danh sách hiển thị ở Header
+    const currentMemberList = Array.isArray(project?.assignees) ? project.assignees : [];
 
     const headerDueDate = (project?.date || project?.dueDate || project?.endDate)
         ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
@@ -170,7 +216,7 @@ export default function ProjectSetting() {
 
                             <div className="project-meta-row">
                                 <span className="project-meta-item">
-                                    <UsersRound className="icon icon-sm" />{memberList.length} members
+                                    <UsersRound className="icon icon-sm" />{currentMemberList.length} members
                                 </span>
                                 <span className="project-meta-item">
                                     <ListChecks className="icon icon-sm" />{tasks.length} tasks
@@ -201,7 +247,7 @@ export default function ProjectSetting() {
                     </nav>
                 </div>
 
-                {/* Main Settings Layout theo CSS mới */}
+                {/* Main Settings Layout */}
                 <main className="page-content" style={{ padding: 'var(--space-6)' }}>
                     {loading ? (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 0', color: 'var(--color-text-subtle)', gap: '8px' }}>
@@ -209,7 +255,7 @@ export default function ProjectSetting() {
                         </div>
                     ) : (
                         <div className="settings-layout">
-                            {/* Thanh Sidebar Settings bên trái */}
+                            {/* Navigation Sidebar bên trái */}
                             <nav className="settings-nav">
                                 <button
                                     type="button"
@@ -223,7 +269,7 @@ export default function ProjectSetting() {
                                     className={`settings-nav-item ${activeTab === 'members' ? 'active' : ''}`}
                                     onClick={() => setActiveTab('members')}
                                 >
-                                    Members
+                                    Members ({selectedMembers.length})
                                 </button>
                                 <button
                                     type="button"
@@ -234,12 +280,12 @@ export default function ProjectSetting() {
                                 </button>
                             </nav>
 
-                            {/* Khung Nội dung Settings bên phải */}
+                            {/* Content bên phải */}
                             <div className="settings-content">
-                                {/* Section 1: General */}
+                                {/* Tab General */}
                                 <div className={`settings-section ${activeTab === 'general' ? 'active' : ''}`}>
                                     <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: 'var(--space-4)' }}>General Settings</h2>
-                                    <form onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                                    <form onSubmit={handleSaveGeneralSettings} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                                         <div className="field">
                                             <label className="field-label">Project name</label>
                                             <input
@@ -290,35 +336,83 @@ export default function ProjectSetting() {
                                                 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
                                             >
                                                 {saving ? <Loader2 className="icon" style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} /> : <Save className="icon" style={{ width: 16, height: 16 }} />}
-                                                Save project
+                                                Save general info
                                             </button>
                                         </div>
                                     </form>
                                 </div>
 
-                                {/* Section 2: Members */}
+                                {/* Tab Members */}
                                 <div className={`settings-section ${activeTab === 'members' ? 'active' : ''}`}>
-                                    <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: 'var(--space-4)' }}>Project Members ({memberList.length})</h2>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                                        {memberList.length === 0 ? (
-                                            <p style={{ fontSize: '13px', color: 'var(--color-text-subtle)' }}>No members found in this project.</p>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+                                        <div>
+                                            <h2 style={{ fontSize: '18px', fontWeight: 700 }}>Members</h2>
+                                            <p style={{ fontSize: '13px', color: 'var(--text-muted, #64748b)' }}>
+                                                Select members to include in this project {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveMembers}
+                                            disabled={saving}
+                                            className="btn btn-primary btn-sm"
+                                            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                                        >
+                                            {saving ? <Loader2 className="icon" style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} /> : <Save className="icon" style={{ width: 16, height: 16 }} />}
+                                            Save Members
+                                        </button>
+                                    </div>
+
+                                    {/* Danh sách Checkbox Member */}
+                                    <div className="card" style={{ maxHeight: '360px', overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', border: '1px solid var(--color-border)' }}>
+                                        {members.length === 0 ? (
+                                            <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>Không có thành viên nào.</p>
                                         ) : (
-                                            memberList.map((member, idx) => {
-                                                const displayName = typeof member === 'object' ? (member.username || member.name || member.email || 'User') : 'User';
+                                            members.map((member) => {
+                                                const memberId = String(member._id || member.id);
+                                                const displayName = member.username || member.email || 'User';
+                                                const initials = displayName.slice(0, 2).toUpperCase();
+                                                const isChecked = selectedMembers.includes(memberId);
+
                                                 return (
-                                                    <div key={member._id || member.id || idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
-                                                        <span className="avatar avatar-sm" style={{ background: '#4f46e5', color: '#fff', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', width: '32px', height: '32px' }}>
-                                                            {displayName.substring(0, 2).toUpperCase()}
+                                                    <label
+                                                        key={memberId}
+                                                        style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '12px',
+                                                            padding: '8px 10px',
+                                                            borderRadius: '6px',
+                                                            cursor: 'pointer',
+                                                            backgroundColor: isChecked ? 'var(--color-bg-subtle, #f8fafc)' : 'transparent',
+                                                            border: '1px solid',
+                                                            borderColor: isChecked ? 'var(--color-primary-light, #e0e7ff)' : 'transparent'
+                                                        }}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            className="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => toggleMemberSelection(memberId)}
+                                                        />
+                                                        <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', width: '28px', height: '28px' }}>
+                                                            {initials}
                                                         </span>
-                                                        <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
-                                                    </div>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                                                            <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
+                                                            <span style={{ fontSize: '11px', color: 'var(--text-muted, #64748b)' }}>{member.email || member.role || 'Member'}</span>
+                                                        </div>
+                                                        {isChecked && (
+                                                            <span style={{ fontSize: '12px', color: '#4f46e5', fontWeight: 600 }}>Added</span>
+                                                        )}
+                                                    </label>
                                                 );
                                             })
                                         )}
                                     </div>
                                 </div>
 
-                                {/* Section 3: Danger Zone */}
+                                {/* Tab Danger Zone */}
                                 <div className={`settings-section ${activeTab === 'danger' ? 'active' : ''}`}>
                                     <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--color-danger, #dc2626)', marginBottom: 'var(--space-2)' }}>Danger Zone</h2>
                                     <p style={{ fontSize: '13px', color: 'var(--color-text-subtle)', marginBottom: 'var(--space-4)' }}>
