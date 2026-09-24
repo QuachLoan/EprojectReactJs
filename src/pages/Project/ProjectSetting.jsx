@@ -31,6 +31,9 @@ export default function ProjectSetting() {
     const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
     const [activeModal, setActiveModal] = useState(null);
 
+    // State quản lý tab navigation trong Cài đặt
+    const [activeTab, setActiveTab] = useState('general');
+
     // State lưu dữ liệu hiển thị gốc từ API
     const [project, setProject] = useState(null);
 
@@ -198,80 +201,141 @@ export default function ProjectSetting() {
                     </nav>
                 </div>
 
-                {/* Main Form Area: Đã sửa chiều rộng max-w-md và bố trí 2 nút sang 2 bên */}
+                {/* Main Settings Layout theo CSS mới */}
                 <main className="page-content" style={{ padding: 'var(--space-6)' }}>
-                    <div className="max-w-md mx-auto bg-white border rounded-lg p-6 shadow-sm">
-                        <h2 className="text-xl font-bold mb-6 border-b pb-3">Project setting</h2>
+                    {loading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 0', color: 'var(--color-text-subtle)', gap: '8px' }}>
+                            <Loader2 className="icon" style={{ width: 20, height: 20, animation: 'spin 1s linear infinite' }} /> Loading...
+                        </div>
+                    ) : (
+                        <div className="settings-layout">
+                            {/* Thanh Sidebar Settings bên trái */}
+                            <nav className="settings-nav">
+                                <button
+                                    type="button"
+                                    className={`settings-nav-item ${activeTab === 'general' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('general')}
+                                >
+                                    General
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`settings-nav-item ${activeTab === 'members' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('members')}
+                                >
+                                    Members
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`settings-nav-item ${activeTab === 'danger' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('danger')}
+                                >
+                                    Danger Zone
+                                </button>
+                            </nav>
 
-                        {loading ? (
-                            <div className="flex items-center justify-center py-12 text-gray-500 gap-2">
-                                <Loader2 className="w-5 h-5 animate-spin" /> Loading...
-                            </div>
-                        ) : (
-                            <form onSubmit={handleSaveSettings} className="space-y-4">
-                                <div className="field">
-                                    <label className="field-label">Project name</label>
-                                    <input
-                                        type="text"
-                                        className="input"
-                                        value={formData.name}
-                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                        required
-                                    />
+                            {/* Khung Nội dung Settings bên phải */}
+                            <div className="settings-content">
+                                {/* Section 1: General */}
+                                <div className={`settings-section ${activeTab === 'general' ? 'active' : ''}`}>
+                                    <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: 'var(--space-4)' }}>General Settings</h2>
+                                    <form onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                                        <div className="field">
+                                            <label className="field-label">Project name</label>
+                                            <input
+                                                type="text"
+                                                className="input"
+                                                value={formData.name}
+                                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                                required
+                                            />
+                                        </div>
+
+                                        <div className="field">
+                                            <label className="field-label">Description</label>
+                                            <textarea
+                                                className="textarea"
+                                                rows="3"
+                                                value={formData.description}
+                                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                            />
+                                        </div>
+
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+                                            <div className="field">
+                                                <label className="field-label">Color</label>
+                                                <input
+                                                    type="color"
+                                                    style={{ height: '38px', width: '100%', padding: '2px', cursor: 'pointer', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}
+                                                    value={formData.color}
+                                                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                                                />
+                                            </div>
+                                            <div className="field">
+                                                <label className="field-label">End date</label>
+                                                <input
+                                                    type="date"
+                                                    className="input"
+                                                    value={formData.dueDate}
+                                                    onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end' }}>
+                                            <button
+                                                type="submit"
+                                                disabled={saving}
+                                                className="btn btn-primary btn-sm"
+                                                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                                            >
+                                                {saving ? <Loader2 className="icon" style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} /> : <Save className="icon" style={{ width: 16, height: 16 }} />}
+                                                Save project
+                                            </button>
+                                        </div>
+                                    </form>
                                 </div>
 
-                                <div className="field">
-                                    <label className="field-label">Description</label>
-                                    <textarea
-                                        className="input min-h-[90px]"
-                                        value={formData.description}
-                                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                    />
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="field">
-                                        <label className="field-label">Color</label>
-                                        <input
-                                            type="color"
-                                            className="h-10 w-full rounded border p-1 cursor-pointer"
-                                            value={formData.color}
-                                            onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                                        />
+                                {/* Section 2: Members */}
+                                <div className={`settings-section ${activeTab === 'members' ? 'active' : ''}`}>
+                                    <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: 'var(--space-4)' }}>Project Members ({memberList.length})</h2>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                                        {memberList.length === 0 ? (
+                                            <p style={{ fontSize: '13px', color: 'var(--color-text-subtle)' }}>No members found in this project.</p>
+                                        ) : (
+                                            memberList.map((member, idx) => {
+                                                const displayName = typeof member === 'object' ? (member.username || member.name || member.email || 'User') : 'User';
+                                                return (
+                                                    <div key={member._id || member.id || idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
+                                                        <span className="avatar avatar-sm" style={{ background: '#4f46e5', color: '#fff', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', width: '32px', height: '32px' }}>
+                                                            {displayName.substring(0, 2).toUpperCase()}
+                                                        </span>
+                                                        <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
+                                                    </div>
+                                                );
+                                            })
+                                        )}
                                     </div>
-                                    <div className="field">
-                                        <label className="field-label">End date</label>
-                                        <input
-                                            type="date"
-                                            className="input"
-                                            value={formData.dueDate}
-                                            onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                                        />
-                                    </div>
                                 </div>
 
-                                {/* Nút Delete nằm bên TRÁI, nút Save nằm bên PHẢI */}
-                                <div className="pt-4 flex items-center justify-between border-t mt-6 w-full">
+                                {/* Section 3: Danger Zone */}
+                                <div className={`settings-section ${activeTab === 'danger' ? 'active' : ''}`}>
+                                    <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--color-danger, #dc2626)', marginBottom: 'var(--space-2)' }}>Danger Zone</h2>
+                                    <p style={{ fontSize: '13px', color: 'var(--color-text-subtle)', marginBottom: 'var(--space-4)' }}>
+                                        Once you delete a project, there is no going back. Please be certain.
+                                    </p>
                                     <button
                                         type="button"
                                         onClick={handleDeleteProject}
-                                        className="btn bg-red-50 text-red-600 hover:bg-red-100 btn-sm flex items-center gap-1"
+                                        className="btn"
+                                        style={{ backgroundColor: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5', display: 'flex', alignItems: 'center', gap: '6px' }}
                                     >
-                                        <Trash2 className="w-4 h-4" /> Delete project
-                                    </button>
-
-                                    <button
-                                        type="submit"
-                                        disabled={saving}
-                                        className="btn btn-primary btn-sm flex items-center gap-1"
-                                    >
-                                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                        Save project
+                                        <Trash2 className="icon" style={{ width: 16, height: 16 }} /> Delete project
                                     </button>
                                 </div>
-                            </form>
-                        )}
-                    </div>
+                            </div>
+                        </div>
+                    )}
                 </main>
             </div>
         </div>

@@ -24,7 +24,7 @@ import {
     createQuickTask
 } from '../../../api';
 
-// Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa từ username/name (giống ProjectBoard)
+// Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa từ username/name
 const getInitials = (name) => {
     if (!name) return '??';
     const words = String(name).trim().split(/\s+/);
@@ -89,14 +89,14 @@ export default function ProjectCalendar() {
         }
     };
 
-    // Lấy danh sách thành viên giống ProjectBoard
+    // Lấy danh sách thành viên
     const memberList = useMemo(() => {
         if (Array.isArray(project?.assignees)) return project.assignees;
         if (Array.isArray(project?.members)) return project.members;
         return [];
     }, [project]);
 
-    // Định dạng End Date/Due Date giống ProjectBoard
+    // Định dạng End Date/Due Date
     const formattedDueDate = useMemo(() => {
         const rawDate = project?.date || project?.endDate || project?.dueDate;
         return rawDate ? new Date(rawDate).toLocaleDateString('vi-VN') : 'Chưa đặt';
@@ -314,36 +314,40 @@ export default function ProjectCalendar() {
 
                 {/* Main Calendar Area */}
                 <main className="page-content" style={{ padding: 'var(--space-6)' }}>
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-lg font-bold">
+                    <div className="calendar-nav">
+                        <h2 style={{ fontSize: '18px', fontWeight: 700 }}>
                             {currentMonthName} {currentYear}
                         </h2>
-                        <div className="flex items-center gap-2">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <button onClick={handlePrevMonth} className="icon-btn icon-btn-outline">
-                                <ChevronLeft className="w-4 h-4" />
+                                <ChevronLeft className="icon" style={{ width: 16, height: 16 }} />
                             </button>
                             <button onClick={handleToday} className="btn btn-outline btn-sm">
                                 Today
                             </button>
                             <button onClick={handleNextMonth} className="icon-btn icon-btn-outline">
-                                <ChevronRight className="w-4 h-4" />
+                                <ChevronRight className="icon" style={{ width: 16, height: 16 }} />
                             </button>
                         </div>
                     </div>
 
                     {loading ? (
-                        <div className="flex items-center justify-center py-12 text-gray-500 gap-2">
-                            <Loader2 className="w-5 h-5 animate-spin" /> Đang tải dữ liệu từ server...
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 0', color: 'var(--color-text-subtle)', gap: '8px' }}>
+                            <Loader2 className="icon" style={{ width: 20, height: 20, animation: 'spin 1s linear infinite' }} /> Đang tải dữ liệu từ server...
                         </div>
                     ) : (
-                        <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
-                            <div className="grid grid-cols-7 border-b bg-gray-50 text-center font-medium text-xs text-gray-500 py-2">
+                        <div>
+                            {/* Headings thứ trong tuần */}
+                            <div className="calendar-grid">
                                 {daysOfWeek.map((day) => (
-                                    <div key={day}>{day}</div>
+                                    <div key={day} className="calendar-weekday">
+                                        {day}
+                                    </div>
                                 ))}
                             </div>
 
-                            <div className="grid grid-cols-7 auto-rows-fr border-collapse">
+                            {/* Lưới hiển thị các ngày */}
+                            <div className="calendar-grid">
                                 {monthDays.map((cell, index) => {
                                     const dayTasks = tasksByDate[cell.dateString] || [];
                                     const isToday = todayStr === cell.dateString;
@@ -351,50 +355,32 @@ export default function ProjectCalendar() {
                                     return (
                                         <div
                                             key={index}
-                                            className={`min-h-[110px] border-b border-r p-1.5 transition-colors relative group ${
-                                                cell.isCurrentMonth ? 'bg-white' : 'bg-gray-50/50 text-gray-400'
-                                            }`}
+                                            className={`calendar-cell ${!cell.isCurrentMonth ? 'outside' : ''} ${isToday ? 'today' : ''}`}
                                         >
-                                            <div className="flex items-center justify-between mb-1">
-                                                <span
-                                                    className={`text-xs font-semibold inline-flex items-center justify-center w-6 h-6 rounded-full ${
-                                                        isToday
-                                                            ? 'bg-indigo-600 text-white'
-                                                            : cell.isCurrentMonth
-                                                                ? 'text-gray-700'
-                                                                : 'text-gray-400'
-                                                    }`}
-                                                >
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                                <span className="calendar-date-num">
                                                     {cell.dayNumber}
                                                 </span>
 
                                                 <button
                                                     onClick={() => handleOpenCreateModalForDate(cell.dateString)}
-                                                    className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-200 rounded text-gray-500"
+                                                    className="icon-btn"
+                                                    style={{ padding: '2px', opacity: 0.6, cursor: 'pointer', border: 'none', background: 'transparent' }}
                                                     title="Tạo task cho ngày này"
                                                 >
-                                                    <Plus className="w-3.5 h-3.5" />
+                                                    <Plus style={{ width: 14, height: 14 }} />
                                                 </button>
                                             </div>
 
                                             {/* Render Tasks */}
-                                            <div className="space-y-1 overflow-y-auto max-h-[80px]">
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', overflowY: 'auto', maxHeight: '70px' }}>
                                                 {dayTasks.map((task) => {
-                                                    const col = (task.column || task.status || '').toLowerCase();
-                                                    const isDone = col === 'done' || col === 'completed';
-                                                    const isInProgress = col === 'in progress' || col === 'doing';
                                                     const taskTitleDisplay = task.title || task.name || task.taskName || 'Untitled Task';
 
                                                     return (
                                                         <div
                                                             key={task._id || task.id}
-                                                            className={`text-[11px] p-1 px-1.5 rounded border truncate cursor-pointer font-medium ${
-                                                                isDone
-                                                                    ? 'bg-green-50 text-green-700 border-green-200 line-through'
-                                                                    : isInProgress
-                                                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                                        : 'bg-gray-100 text-gray-700 border-gray-200'
-                                                            }`}
+                                                            className="calendar-task-chip"
                                                             title={taskTitleDisplay}
                                                         >
                                                             {taskTitleDisplay}
