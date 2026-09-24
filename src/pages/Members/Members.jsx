@@ -9,11 +9,11 @@ function Members(){
  const [inviteRole, setInviteRole] = useState("Member");
   const [invitePosition, setInvitePosition] = useState("None");
 
- const filterMemer = member.filter(
-  (member) => 
-    member.username.toLowerCase().includes(searchMember.toLowerCase()) ||
-    member.email.toLowerCase().includes(searchMember.toLowerCase())
- )
+//  const filterMemer = member.filter(
+//   (member) => 
+//     member.username.toLowerCase().includes(searchMember.toLowerCase()) ||
+//     member.email.toLowerCase().includes(searchMember.toLowerCase())
+//  )
  const toggleModel =()=>{
   setOpenModel(true);
  }
@@ -21,8 +21,11 @@ function Members(){
     setOpenDropdown(openDropdown === id ? null : id);
   }; 
  useEffect(()=>{
-
- })
+     fetch("http://localhost:3000/api/member/getAll")
+     .then((res)=>res.json())
+      .then((data)=>setMember(data))
+    .catch((err) => console.error(" Fetch error:", err));
+ },[])
 const handleInvite = async()=>{
 
   try {
@@ -65,14 +68,19 @@ const handleInvite = async()=>{
               <span>Member</span><span>Role</span><span>Project Role</span><span>Assigned Tasks</span><span>Workload</span><span>Status</span>
             </div>
 
-            <div class="member-row" data-filter-target="team" data-filter-text="Cao Sơn" data-team-role="leader" style={{ gridTemplateColumns: "1.6fr 110px 130px 100px 90px 90px" }}>
-              <div class="member-identity"><span class="avatar avatar-sm" style={{background:'#4f46e5'}}>CS</span><div class="member-identity-text"><p class="member-name">Cao Sơn</p><p class="member-email">caosonhs@gmail.com</p></div></div>
-              <span><span class="badge badge-success">leader</span></span>
-              <span style={{fontSize:'13px'}}>Scrum Leader</span>
+
+            {
+              member.map(x=>(
+              <div class="member-row" data-filter-target="team" data-filter-text="Cao Sơn" data-team-role="leader" style={{ gridTemplateColumns: "1.6fr 110px 130px 100px 90px 90px" }}>
+              <div class="member-identity"><span class="avatar avatar-sm" style={{background:'#4f46e5'}}>CS</span><div class="member-identity-text"><p class="member-name">{x.userId?.username}</p><p class="member-email">{x.userId?.email}</p></div></div>
+              <span><span class="badge badge-success">{x.role}</span></span>
+              <span style={{fontSize:'13px'}}>{x.position}</span>
               <span style={{fontSize:'14px'}}>4 tasks</span>
               <span class="text-muted" style={{fontSize:'13px'}}>—</span>
-              <span><span class="badge badge-success">Active</span></span>
+              <span><span >Action</span></span>
             </div>
+              ))
+            }
 
             {/* <div class="member-row" data-filter-target="team" data-filter-text="Khánh Ngọc" data-team-role="manager"style={{ gridTemplateColumns: "1.6fr 110px 130px 100px 90px 90px" }}>
               <div class="member-identity"><span class="avatar avatar-sm" style={{background:'#db2777'}}>KN</span><div class="member-identity-text"><p class="member-name">Khánh Ngọc</p><p class="member-email">ngoc.khanh@teamflow.dev</p></div></div>
