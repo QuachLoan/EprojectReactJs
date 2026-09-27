@@ -13,15 +13,6 @@ function Header({ onOpenSidebar, onOpenModal }) {
                 <Menu className="icon" />
             </button>
 
-            <button
-                className="header-search"
-                onClick={() => onOpenModal && onOpenModal("commandPalette")}
-            >
-                <Search className="icon icon-sm" />
-                <span className="search-label">Search anything…</span>
-                <kbd>Ctrl K</kbd>
-            </button>
-
             <DropdownHeader onOpenModal={onOpenModal} />
         </header>
     );

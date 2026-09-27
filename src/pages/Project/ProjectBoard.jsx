@@ -523,6 +523,14 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [newTaskDate, setNewTaskDate] = useState('');
 
+    // Lấy thông tin user & vai trò từ localStorage
+    const getCurrentUser = () => {
+        return JSON.parse(localStorage.getItem('user') || '{}');
+    };
+
+    const currentUser = getCurrentUser();
+    const isLeader = currentUser?.role === 'Leader'; // Kiểm tra vai trò Leader
+
     const fetchBoardData = async () => {
         if (!activeProjectId) return;
 
@@ -582,7 +590,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     };
 
     const getCurrentUserId = () => {
-        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
         return currentUser._id || currentUser.id || null;
     };
 
@@ -703,6 +710,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     };
 
     const handleOpenCreateModal = (columnId = '', isFixed = false) => {
+        if (!isLeader) return; // Chỉ cho phép Leader tạo task
         setNewTaskColumnId(columnId || (columns[0]?._id || ''));
         setIsColumnFixed(isFixed);
         resetTaskForm();
@@ -711,7 +719,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
     const handleCreateTask = async (e) => {
         e.preventDefault();
-        if (!newTaskTitle.trim() || !newTaskColumnId) {
+        if (!isLeader || !newTaskTitle.trim() || !newTaskColumnId) {
             return;
         }
 
@@ -806,13 +814,16 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             <input className="input" placeholder="Search..." style={{ width: '100%' }} />
                         </div>
 
-                        <button
-                            className="btn btn-primary"
-                            style={{ marginLeft: 'auto', flexShrink: 0 }}
-                            onClick={() => handleOpenCreateModal('', false)}
-                        >
-                            + Add Task
-                        </button>
+                        {/* CHỈ LEADER MỚI HIỂN THỊ NÚT ADD TASK TỔNG */}
+                        {isLeader && (
+                            <button
+                                className="btn btn-primary"
+                                style={{ marginLeft: 'auto', flexShrink: 0 }}
+                                onClick={() => handleOpenCreateModal('', false)}
+                            >
+                                + Add Task
+                            </button>
+                        )}
                     </div>
 
                     <DragDropContext onDragEnd={handleOnDragEnd}>
@@ -824,14 +835,17 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                         <div className="board-column-header">
                                             <span className="board-column-title">{column.name || column.title}</span>
                                             <span className="board-column-count">{columnTasks.length}</span>
-                                            <button
-                                                className="btn-icon"
-                                                style={{ marginLeft: 'auto' }}
-                                                onClick={() => handleOpenCreateModal(column._id, true)}
-                                                title="Thêm task vào cột này"
-                                            >
-                                                +
-                                            </button>
+                                            {/* CHỈ LEADER MỚI HIỂN THỊ NÚT + TRÊN HEADER CỘT */}
+                                            {isLeader && (
+                                                <button
+                                                    className="btn-icon"
+                                                    style={{ marginLeft: 'auto' }}
+                                                    onClick={() => handleOpenCreateModal(column._id, true)}
+                                                    title="Thêm task vào cột này"
+                                                >
+                                                    +
+                                                </button>
+                                            )}
                                         </div>
 
                                         <Droppable droppableId={String(column._id)}>
@@ -927,13 +941,16 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                             )}
                                         </Droppable>
 
-                                        <button
-                                            className="add-task-btn"
-                                            style={{ width: '260px' }}
-                                            onClick={() => handleOpenCreateModal(column._id, true)}
-                                        >
-                                            + Add Task
-                                        </button>
+                                        {/* CHỈ LEADER MỚI HIỂN THỊ NÚT ADD TASK Ở ĐÁY CỘT */}
+                                        {isLeader && (
+                                            <button
+                                                className="add-task-btn"
+                                                style={{ width: '260px' }}
+                                                onClick={() => handleOpenCreateModal(column._id, true)}
+                                            >
+                                                + Add Task
+                                            </button>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -953,8 +970,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 onTaskDeleted={handleTaskDeletedFromDrawer}
             />
 
-            {/* MODAL TẠO TASK */}
-            {activeModal === 'quickCreateTaskModal' && (
+            {/* MODAL TẠO TASK (CHỈ DÀNH CHO LEADER) */}
+            {isLeader && activeModal === 'quickCreateTaskModal' && (
                 <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
                         <form onSubmit={handleCreateTask}>

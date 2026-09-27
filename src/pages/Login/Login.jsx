@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { KanbanSquare, ArrowRight, Lock, Mail } from 'lucide-react';
 
@@ -16,6 +16,11 @@ export default function LoginPage() {
     const [errorMessage, setErrorMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
+
+    useEffect(() => {
+        setEmail("");
+        setPassword("");
+    },[]);
 
     const handleFormSubmit = async (e) => {
         e.preventDefault();

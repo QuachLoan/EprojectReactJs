@@ -31,42 +31,6 @@ function DropdownHeader({ onOpenModal }) {
 
     return (
         <div className="header-actions">
-            {/* Nút Create */}
-            <div className="dropdown">
-                <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => toggleDropdown("create")}
-                    data-dropdown-trigger
-                >
-                    <Plus className="icon icon-sm" />
-                    <span className="create-btn-label">Create</span>
-                </button>
-
-                {activeDropdown === "create" && (
-                    <div className="dropdown-menu" data-dropdown-menu>
-                        <button
-                            className="dropdown-item"
-                            onClick={() => {
-                                onOpenModal && onOpenModal("quickCreateTaskModal");
-                                setActiveDropdown(null);
-                            }}
-                        >
-                            <ListPlus className="icon icon-sm" />
-                            New Task
-                        </button>
-                        <button
-                            className="dropdown-item"
-                            onClick={() => {
-                                onOpenModal && onOpenModal("createProjectModal");
-                                setActiveDropdown(null);
-                            }}
-                        >
-                            <FolderPlus className="icon icon-sm" />
-                            New Project
-                        </button>
-                    </div>
-                )}
-            </div>
 
             {/* Nút User Avatar */}
             <div className="dropdown">

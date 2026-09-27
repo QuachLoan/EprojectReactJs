@@ -17,17 +17,11 @@ function SideBar() {
 
             <div className="sidebar-workspace">
                 <p className="sidebar-workspace-label">WORK SPACE</p>
-                <p className="sidebar-workspace-name">Aptech Capstone Team</p>
+                <p className="sidebar-workspace-name">Nang Cao Team</p>
             </div>
 
             <Nav />
 
-            <div className="sidebar-collapse-btn">
-                <button data-action="toggle-sidebar">
-                    <span className="icon icon-sm" data-icon="chevronsLeft"></span>
-                    <span>Collapse</span>
-                </button>
-            </div>
         </aside>
     );
 }

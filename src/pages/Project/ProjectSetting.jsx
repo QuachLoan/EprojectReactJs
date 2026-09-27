@@ -46,13 +46,21 @@ export default function ProjectSetting() {
         dueDate: ''
     });
 
-    // State danh sách Users và mảng ID thành viên được chọn (Checkbox)
+    // State danh sách Users và mảng ID thành viên được chọn
     const [members, setMembers] = useState([]);
     const [selectedMembers, setSelectedMembers] = useState([]);
 
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+
+    // Kiểm tra vai trò của User hiện tại từ localStorage
+    const getCurrentUser = () => {
+        return JSON.parse(localStorage.getItem('user') || '{}');
+    };
+    const currentUser = getCurrentUser();
+    const userRole = currentUser?.role || 'Member';
+    const isManager = userRole === 'Manager'; // Chỉ Manager có quyền sửa và thấy Danger Zone
 
     // Định dạng YYYY-MM-DD cho `<input type="date">`
     const formatDateForInput = (dateValue) => {
@@ -98,7 +106,7 @@ export default function ProjectSetting() {
                 dueDate: formattedDate
             });
 
-            // Lấy danh sách ID assignees hiện tại của project để gán vào Checkbox state
+            // Lấy danh sách ID assignees hiện tại của project
             const currentAssignees = Array.isArray(realProject?.assignees) ? realProject.assignees : [];
             const initialSelectedIds = currentAssignees
                 .map(m => (typeof m === 'object' ? String(m._id || m.id) : String(m)))
@@ -113,8 +121,9 @@ export default function ProjectSetting() {
         }
     };
 
-    // Toggle chọn/bỏ chọn member dạng Checkbox
+    // Toggle chọn/bỏ chọn member
     const toggleMemberSelection = (id) => {
+        if (!isManager) return; // Khóa không cho Leader/Member thao tác
         setSelectedMembers((prev) =>
             prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
         );
@@ -123,6 +132,8 @@ export default function ProjectSetting() {
     // 1. Hàm lưu Cài đặt thông tin chung
     const handleSaveGeneralSettings = async (e) => {
         e.preventDefault();
+        if (!isManager) return;
+
         try {
             setSaving(true);
 
@@ -144,21 +155,18 @@ export default function ProjectSetting() {
         }
     };
 
-    // 2. Hàm lưu Thành viên (CHỈ gửi duy nhất field assignees để tránh lỗi "no change detected")
+    // 2. Hàm lưu Thành viên
     const handleSaveMembers = async () => {
+        if (!isManager) return;
+
         try {
             setSaving(true);
 
-            // Chuẩn hóa lọc sạch mảng ObjectId hợp lệ (24 ký tự)
             const validAssignees = selectedMembers
                 .map(id => String(id).trim())
                 .filter(id => id.length === 24);
 
-            const payload = {
-                assignees: validAssignees
-            };
-
-            console.log("Payload assignees gửi đi:", payload);
+            const payload = { assignees: validAssignees };
 
             await updateProject(projectId, payload);
             await loadData();
@@ -170,6 +178,8 @@ export default function ProjectSetting() {
     };
 
     const handleDeleteProject = async () => {
+        if (!isManager) return;
+
         if (window.confirm('Bạn có chắc chắn muốn xóa dự án này không? Hành động này không thể hoàn tác.')) {
             try {
                 await deleteProject(projectId);
@@ -180,12 +190,16 @@ export default function ProjectSetting() {
         }
     };
 
-    // Danh sách hiển thị ở Header
     const currentMemberList = Array.isArray(project?.assignees) ? project.assignees : [];
 
     const headerDueDate = (project?.date || project?.dueDate || project?.endDate)
         ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
         : 'Chưa đặt';
+
+    // Đánh danh sách hiển thị members ở tab Members (Nếu là Member/Leader thì lọc ra các member đã add)
+    const displayedMembers = isManager
+        ? members
+        : members.filter(m => selectedMembers.includes(String(m._id || m.id)));
 
     return (
         <div className="app-shell">
@@ -271,13 +285,17 @@ export default function ProjectSetting() {
                                 >
                                     Members ({selectedMembers.length})
                                 </button>
-                                <button
-                                    type="button"
-                                    className={`settings-nav-item ${activeTab === 'danger' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('danger')}
-                                >
-                                    Danger Zone
-                                </button>
+
+                                {/* CHỈ MANAGER MỚI THẤY TAB DANGER ZONE */}
+                                {isManager && (
+                                    <button
+                                        type="button"
+                                        className={`settings-nav-item ${activeTab === 'danger' ? 'active' : ''}`}
+                                        onClick={() => setActiveTab('danger')}
+                                    >
+                                        Danger Zone
+                                    </button>
+                                )}
                             </nav>
 
                             {/* Content bên phải */}
@@ -293,6 +311,7 @@ export default function ProjectSetting() {
                                                 className="input"
                                                 value={formData.name}
                                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                                disabled={!isManager}
                                                 required
                                             />
                                         </div>
@@ -304,6 +323,7 @@ export default function ProjectSetting() {
                                                 rows="3"
                                                 value={formData.description}
                                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                                disabled={!isManager}
                                             />
                                         </div>
 
@@ -312,9 +332,10 @@ export default function ProjectSetting() {
                                                 <label className="field-label">Color</label>
                                                 <input
                                                     type="color"
-                                                    style={{ height: '38px', width: '100%', padding: '2px', cursor: 'pointer', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}
+                                                    style={{ height: '38px', width: '100%', padding: '2px', cursor: isManager ? 'pointer' : 'not-allowed', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}
                                                     value={formData.color}
                                                     onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                                                    disabled={!isManager}
                                                 />
                                             </div>
                                             <div className="field">
@@ -324,21 +345,25 @@ export default function ProjectSetting() {
                                                     className="input"
                                                     value={formData.dueDate}
                                                     onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                                                    disabled={!isManager}
                                                 />
                                             </div>
                                         </div>
 
-                                        <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end' }}>
-                                            <button
-                                                type="submit"
-                                                disabled={saving}
-                                                className="btn btn-primary btn-sm"
-                                                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                                            >
-                                                {saving ? <Loader2 className="icon" style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} /> : <Save className="icon" style={{ width: 16, height: 16 }} />}
-                                                Save general info
-                                            </button>
-                                        </div>
+                                        {/* CHỈ MANAGER MỚI CÓ NÚT SAVE GENERAL INFO */}
+                                        {isManager && (
+                                            <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end' }}>
+                                                <button
+                                                    type="submit"
+                                                    disabled={saving}
+                                                    className="btn btn-primary btn-sm"
+                                                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                                                >
+                                                    {saving ? <Loader2 className="icon" style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} /> : <Save className="icon" style={{ width: 16, height: 16 }} />}
+                                                    Save general info
+                                                </button>
+                                            </div>
+                                        )}
                                     </form>
                                 </div>
 
@@ -348,27 +373,33 @@ export default function ProjectSetting() {
                                         <div>
                                             <h2 style={{ fontSize: '18px', fontWeight: 700 }}>Members</h2>
                                             <p style={{ fontSize: '13px', color: 'var(--text-muted, #64748b)' }}>
-                                                Select members to include in this project {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
+                                                {isManager
+                                                    ? `Select members to include in this project (${selectedMembers.length} selected)`
+                                                    : `Project members list (${selectedMembers.length} members)`
+                                                }
                                             </p>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={handleSaveMembers}
-                                            disabled={saving}
-                                            className="btn btn-primary btn-sm"
-                                            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                                        >
-                                            {saving ? <Loader2 className="icon" style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} /> : <Save className="icon" style={{ width: 16, height: 16 }} />}
-                                            Save Members
-                                        </button>
+                                        {/* CHỈ MANAGER MỚI CÓ NÚT SAVE MEMBERS */}
+                                        {isManager && (
+                                            <button
+                                                type="button"
+                                                onClick={handleSaveMembers}
+                                                disabled={saving}
+                                                className="btn btn-primary btn-sm"
+                                                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                                            >
+                                                {saving ? <Loader2 className="icon" style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} /> : <Save className="icon" style={{ width: 16, height: 16 }} />}
+                                                Save Members
+                                            </button>
+                                        )}
                                     </div>
 
-                                    {/* Danh sách Checkbox Member */}
+                                    {/* Danh sách Member */}
                                     <div className="card" style={{ maxHeight: '360px', overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', border: '1px solid var(--color-border)' }}>
-                                        {members.length === 0 ? (
+                                        {displayedMembers.length === 0 ? (
                                             <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>Không có thành viên nào.</p>
                                         ) : (
-                                            members.map((member) => {
+                                            displayedMembers.map((member) => {
                                                 const memberId = String(member._id || member.id);
                                                 const displayName = member.username || member.email || 'User';
                                                 const initials = displayName.slice(0, 2).toUpperCase();
@@ -383,18 +414,21 @@ export default function ProjectSetting() {
                                                             gap: '12px',
                                                             padding: '8px 10px',
                                                             borderRadius: '6px',
-                                                            cursor: 'pointer',
+                                                            cursor: isManager ? 'pointer' : 'default',
                                                             backgroundColor: isChecked ? 'var(--color-bg-subtle, #f8fafc)' : 'transparent',
                                                             border: '1px solid',
                                                             borderColor: isChecked ? 'var(--color-primary-light, #e0e7ff)' : 'transparent'
                                                         }}
                                                     >
-                                                        <input
-                                                            type="checkbox"
-                                                            className="checkbox"
-                                                            checked={isChecked}
-                                                            onChange={() => toggleMemberSelection(memberId)}
-                                                        />
+                                                        {/* Ẩn checkbox nếu không phải Manager */}
+                                                        {isManager && (
+                                                            <input
+                                                                type="checkbox"
+                                                                className="checkbox"
+                                                                checked={isChecked}
+                                                                onChange={() => toggleMemberSelection(memberId)}
+                                                            />
+                                                        )}
                                                         <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', width: '28px', height: '28px' }}>
                                                             {initials}
                                                         </span>
@@ -412,21 +446,23 @@ export default function ProjectSetting() {
                                     </div>
                                 </div>
 
-                                {/* Tab Danger Zone */}
-                                <div className={`settings-section ${activeTab === 'danger' ? 'active' : ''}`}>
-                                    <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--color-danger, #dc2626)', marginBottom: 'var(--space-2)' }}>Danger Zone</h2>
-                                    <p style={{ fontSize: '13px', color: 'var(--color-text-subtle)', marginBottom: 'var(--space-4)' }}>
-                                        Once you delete a project, there is no going back. Please be certain.
-                                    </p>
-                                    <button
-                                        type="button"
-                                        onClick={handleDeleteProject}
-                                        className="btn"
-                                        style={{ backgroundColor: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                    >
-                                        <Trash2 className="icon" style={{ width: 16, height: 16 }} /> Delete project
-                                    </button>
-                                </div>
+                                {/* Tab Danger Zone (Chỉ hiển thị với Manager) */}
+                                {isManager && (
+                                    <div className={`settings-section ${activeTab === 'danger' ? 'active' : ''}`}>
+                                        <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--color-danger, #dc2626)', marginBottom: 'var(--space-2)' }}>Danger Zone</h2>
+                                        <p style={{ fontSize: '13px', color: 'var(--color-text-subtle)', marginBottom: 'var(--space-4)' }}>
+                                            Once you delete a project, there is no going back. Please be certain.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={handleDeleteProject}
+                                            className="btn"
+                                            style={{ backgroundColor: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                        >
+                                            <Trash2 className="icon" style={{ width: 16, height: 16 }} /> Delete project
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

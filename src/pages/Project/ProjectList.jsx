@@ -7,7 +7,6 @@ import {
     LayoutGrid,
     List,
     Calendar,
-    Activity,
     Settings,
     Plus,
     Loader2,
@@ -25,7 +24,6 @@ import {
     moveTask
 } from '../../../api.jsx';
 
-// Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa từ username/name
 const getInitials = (name) => {
     if (!name) return '??';
     const words = String(name).trim().split(/\s+/);
@@ -34,17 +32,13 @@ const getInitials = (name) => {
         : (words[0][0] + words[words.length - 1][0]).toUpperCase();
 };
 
-// Hàm tìm kiếm thông tin user theo ID hoặc Object từ danh sách thành viên dự án
 const getUserInfo = (userOrId, projectMembers = []) => {
     if (!userOrId) return null;
-
     if (typeof userOrId === 'object' && (userOrId.username || userOrId.name)) {
         return userOrId;
     }
-
     const targetId = typeof userOrId === 'object' ? (userOrId._id || userOrId.id) : userOrId;
     const found = projectMembers.find(m => String(m._id || m.id) === String(targetId));
-
     return found || userOrId;
 };
 
@@ -57,27 +51,29 @@ export default function ProjectList() {
 
     const [project, setProject] = useState({});
     const [columns, setColumns] = useState([]);
-    const [tasks, setTasks] = useState([]); // ONLY UNASSIGNED BACKLOG TASKS
+    const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Assignee Menu Popup State
     const [assigneeMenu, setAssigneeMenu] = useState({ open: false, taskId: null, pos: { top: 0, left: 0 } });
 
-    // Task Modal Form State
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
     const [newTaskDesc, setNewTaskDesc] = useState('');
     const [newTaskDate, setNewTaskDate] = useState('');
-    const [newTaskColumnId, setNewTaskColumnId] = useState('');
     const [selectedMembers, setSelectedMembers] = useState([]);
 
     const memberList = Array.isArray(project?.assignees) ? project.assignees : [];
 
-    const getCurrentUserId = () => {
-        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-        return currentUser._id || currentUser.id || null;
+    // Lấy thông tin user & role từ localStorage
+    const getCurrentUser = () => {
+        return JSON.parse(localStorage.getItem('user') || '{}');
     };
+
+    const currentUser = getCurrentUser();
+    const userRole = currentUser?.role || 'Member'; // Mặc định là Member
+    const isManager = userRole === 'Manager';
+    const isLeader = userRole === 'Leader';
 
     const loadData = async () => {
         try {
@@ -94,25 +90,21 @@ export default function ProjectList() {
 
             realColumns.sort((a, b) => (a.position || 0) - (b.position || 0));
 
-            // 1. Tạo danh sách tất cả Column ID hiện có trên Board
             const validColumnIds = new Set(
                 realColumns.map(c => String(c._id || c.id)).filter(Boolean)
             );
 
-            // 2. Lọc chỉ lấy Task ở Backlog (Không thuộc bất kỳ cột nào trên Board)
             const backlogTasks = realTasks.filter(t => {
                 const rawCol = t.columnId;
                 const cId = typeof rawCol === 'object' && rawCol !== null
                     ? (rawCol._id || rawCol.id)
                     : rawCol;
-
-                // Nằm ở Backlog nếu không có columnId HOẶC columnId không khớp với các cột trên Board
                 return !cId || !validColumnIds.has(String(cId));
             });
 
             setProject(realProject);
             setColumns(realColumns);
-            setTasks(backlogTasks); // Lưu danh sách Backlog vào state để hiển thị
+            setTasks(backlogTasks);
         } catch (err) {
             console.error('Error loading backlog tasks:', err);
         } finally {
@@ -125,12 +117,12 @@ export default function ProjectList() {
     }, [projectId]);
 
     const handleOpenCreateModal = () => {
+        if (!isManager) return; // Chỉ Manager được mở
         setNewTaskTitle('');
         setNewTaskDesc('');
         setNewTaskPriority('Medium');
         setNewTaskDate('');
-        setNewTaskColumnId('');
-        const currentUserId = getCurrentUserId();
+        const currentUserId = currentUser._id || currentUser.id;
         setSelectedMembers(currentUserId ? [currentUserId] : []);
         setActiveModal('quickCreateTaskModal');
     };
@@ -139,22 +131,18 @@ export default function ProjectList() {
         setActiveModal(null);
     };
 
-    // Create New Task (Backlog)
     const handleCreateTask = async (e) => {
         e.preventDefault();
-        if (!newTaskTitle.trim()) return;
+        if (!isManager || !newTaskTitle.trim()) return;
 
         try {
             setIsSubmitting(true);
-
-            if (!projectId) {
-                return;
-            }
+            if (!projectId) return;
 
             const payload = {
                 title: newTaskTitle,
                 description: newTaskDesc,
-                projectId: projectId, // ID lấy từ useParams()
+                projectId: projectId,
                 priority: newTaskPriority,
                 date: newTaskDate ? new Date(newTaskDate) : new Date(),
                 assignees: []
@@ -168,14 +156,14 @@ export default function ProjectList() {
                 closeModal();
             }
         } catch (error) {
-            console.error("Lỗi tạo task ở Frontend:", error);
+            console.error("Lỗi tạo task:", error);
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    // Open Assignee Menu safely with Fixed Position
     const handleOpenAssigneeMenu = (e, taskId) => {
+        if (!isLeader) return; // Chỉ Leader mở được menu chọn assignee
         e.stopPropagation();
         const rect = e.currentTarget.getBoundingClientRect();
 
@@ -194,12 +182,10 @@ export default function ProjectList() {
         });
     };
 
-    // Push Task từ Backlog vào cột Todo trên Board
     const handlePushToBoard = async (task) => {
+        if (!isLeader) return; // Chỉ Leader mới có quyền Push to Board
         const todoColumn = columns[0];
-        if (!todoColumn) {
-            return;
-        }
+        if (!todoColumn) return;
 
         const taskId = task._id || task.id;
         const todoColumnId = todoColumn._id || todoColumn.id;
@@ -212,28 +198,21 @@ export default function ProjectList() {
                 destColumnId: todoColumnId,
                 destinationIndex: 0
             });
-
         } catch (err) {
             console.error('Lỗi khi push task sang board:', err);
             loadData();
         }
     };
 
-    // Toggle Assignee
     const handleToggleTaskAssignee = async (task, memberId) => {
-        if (!task) return;
+        if (!isLeader || !task) return; // Chỉ Leader chỉnh sửa assignee
 
         const taskId = task._id || task.id;
-
         const currentAssignees = Array.isArray(task.assignees)
-            ? task.assignees
-                .map(a => typeof a === 'object' ? (a._id || a.id) : a)
-                .filter(Boolean)
-                .map(id => String(id))
+            ? task.assignees.map(a => typeof a === 'object' ? (a._id || a.id) : a).filter(Boolean).map(id => String(id))
             : [];
 
         const targetMemberId = String(memberId);
-
         const updatedAssignees = currentAssignees.includes(targetMemberId)
             ? currentAssignees.filter(id => id !== targetMemberId)
             : [...currentAssignees, targetMemberId];
@@ -278,7 +257,6 @@ export default function ProjectList() {
                             </div>
                             <p className="page-subtitle">{project.description || 'no description'}</p>
 
-                            {/* Bổ sung dòng thông tin Members, Tasks và End Date giống ProjectBoard */}
                             <div className="project-meta-row" style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '13px', color: '#64748b' }}>
                                 <span className="project-meta-item"><UsersRound className="icon icon-sm" />{memberList.length} members</span>
                                 <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
@@ -310,9 +288,12 @@ export default function ProjectList() {
                         <div>
                             <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#0f172a' }}>Pending Backlog Tasks</h2>
                         </div>
-                        <button onClick={handleOpenCreateModal} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Plus className="w-4 h-4" /> Add Task
-                        </button>
+                        {/* CHỈ HIỂN THỊ NÚT ADD TASK CHO MANAGER */}
+                        {isManager && (
+                            <button onClick={handleOpenCreateModal} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Plus className="w-4 h-4" /> Add Task
+                            </button>
+                        )}
                     </div>
 
                     {loading ? (
@@ -397,23 +378,27 @@ export default function ProjectList() {
                                                                 </span>
                                                             );
                                                         })}
-                                                        <button
-                                                            onClick={(e) => handleOpenAssigneeMenu(e, taskId)}
-                                                            style={{
-                                                                border: '1px dashed #cbd5e1',
-                                                                borderRadius: '50%',
-                                                                width: '26px',
-                                                                height: '26px',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center',
-                                                                cursor: 'pointer',
-                                                                background: '#fff'
-                                                            }}
-                                                            title="Assign member"
-                                                        >
-                                                            <UserPlus className="w-3.5 h-3.5 text-slate-500" />
-                                                        </button>
+
+                                                        {/* CHỈ LEADER MỚI HIỂN THỊ NÚT THÊM ASSIGNEE */}
+                                                        {isLeader && (
+                                                            <button
+                                                                onClick={(e) => handleOpenAssigneeMenu(e, taskId)}
+                                                                style={{
+                                                                    border: '1px dashed #cbd5e1',
+                                                                    borderRadius: '50%',
+                                                                    width: '26px',
+                                                                    height: '26px',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    cursor: 'pointer',
+                                                                    background: '#fff'
+                                                                }}
+                                                                title="Assign member"
+                                                            >
+                                                                <UserPlus className="w-3.5 h-3.5 text-slate-500" />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </td>
 
@@ -422,14 +407,17 @@ export default function ProjectList() {
                                                 </td>
 
                                                 <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                                                    <button
-                                                        onClick={() => handlePushToBoard(task)}
-                                                        className="btn btn-primary btn-sm"
-                                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
-                                                    >
-                                                        <ArrowRightCircle className="w-3.5 h-3.5" />
-                                                        Push to Board
-                                                    </button>
+                                                    {/* CHỈ LEADER MỚI HIỂN THỊ NÚT PUSH TO BOARD */}
+                                                    {isLeader && (
+                                                        <button
+                                                            onClick={() => handlePushToBoard(task)}
+                                                            className="btn btn-primary btn-sm"
+                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+                                                        >
+                                                            <ArrowRightCircle className="w-3.5 h-3.5" />
+                                                            Push to Board
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );
@@ -448,8 +436,8 @@ export default function ProjectList() {
                 </main>
             </div>
 
-            {/* FIXED ASSIGNEE SELECTION POPUP */}
-            {assigneeMenu.open && (
+            {/* ASSIGNEE POPUP (Chỉ mở cho Leader) */}
+            {isLeader && assigneeMenu.open && (
                 <div
                     onClick={(e) => e.stopPropagation()}
                     style={{
@@ -490,8 +478,8 @@ export default function ProjectList() {
                 </div>
             )}
 
-            {/* QUICK CREATE TASK MODAL */}
-            {activeModal === 'quickCreateTaskModal' && (
+            {/* CREATE TASK MODAL (Chỉ Manager) */}
+            {isManager && activeModal === 'quickCreateTaskModal' && (
                 <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
                         <form onSubmit={handleCreateTask}>

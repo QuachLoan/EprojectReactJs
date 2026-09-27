@@ -13,15 +13,12 @@ import {
     CalendarClock,
     ChevronLeft,
     ChevronRight,
-    Loader2,
-    X,
-    Plus
+    Loader2
 } from 'lucide-react';
 
 import {
     fetchProjectById,
-    fetchTasksByProject,
-    createQuickTask
+    fetchTasksByProject
 } from '../../../api';
 
 // Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa từ username/name
@@ -39,18 +36,12 @@ export default function ProjectCalendar() {
 
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
-    const [activeModal, setActiveModal] = useState(null);
 
     const [project, setProject] = useState(null);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
 
     const [currentDate, setCurrentDate] = useState(new Date());
-
-    // Form Tạo Task
-    const [taskTitle, setTaskTitle] = useState('');
-    const [taskColumn, setTaskColumn] = useState('Todo');
-    const [taskDueDate, setTaskDueDate] = useState('');
 
     useEffect(() => {
         if (projectId) {
@@ -113,33 +104,6 @@ export default function ProjectCalendar() {
 
     const handleToday = () => {
         setCurrentDate(new Date());
-    };
-
-    const handleOpenCreateModalForDate = (dateStr) => {
-        setTaskDueDate(dateStr);
-        setActiveModal('quickCreateTaskModal');
-    };
-
-    const handleCreateTask = async (e) => {
-        e.preventDefault();
-        try {
-            const payload = {
-                title: taskTitle,
-                column: taskColumn,
-                status: taskColumn,
-                projectId,
-                dueDate: taskDueDate || new Date().toISOString(),
-                endDate: taskDueDate || new Date().toISOString()
-            };
-
-            await createQuickTask(payload);
-            setActiveModal(null);
-            setTaskTitle('');
-            setTaskDueDate('');
-            loadData();
-        } catch (err) {
-            console.error('Lỗi khi tạo task:', err);
-        }
     };
 
     // Dựng 35 / 42 ô lịch
@@ -239,7 +203,6 @@ export default function ProjectCalendar() {
             <div className="app-main">
                 <Header
                     onOpenSidebar={() => setSidebarMobileOpen(true)}
-                    onOpenModal={(modal) => setActiveModal(modal)}
                 />
 
                 {/* Project Header Info */}
@@ -270,29 +233,6 @@ export default function ProjectCalendar() {
                             </div>
                         </div>
                         <div className="project-header-actions">
-                            <span className="avatar-group">
-                                {memberList.slice(0, 4).map((m, idx) => {
-                                    const name = typeof m === 'object'
-                                        ? (m.username || m.name || m.fullName || m.email || 'User')
-                                        : 'User';
-                                    const avatarUrl = m?.avatar;
-
-                                    return (
-                                        <span
-                                            key={m._id || m.id || idx}
-                                            className="avatar avatar-sm"
-                                            style={{ background: '#4f46e5' }}
-                                            title={name}
-                                        >
-                                            {avatarUrl ? (
-                                                <img src={avatarUrl} alt="avatar" />
-                                            ) : (
-                                                getInitials(name)
-                                            )}
-                                        </span>
-                                    );
-                                })}
-                            </span>
                             <Link to={`/projectsetting/${projectId}`} className="icon-btn icon-btn-outline" aria-label="Project settings">
                                 <Settings className="icon" />
                             </Link>
@@ -323,7 +263,7 @@ export default function ProjectCalendar() {
                                 <ChevronLeft className="icon" style={{ width: 16, height: 16 }} />
                             </button>
                             <button onClick={handleToday} className="btn btn-outline btn-sm">
-                                Today
+                                Month
                             </button>
                             <button onClick={handleNextMonth} className="icon-btn icon-btn-outline">
                                 <ChevronRight className="icon" style={{ width: 16, height: 16 }} />
@@ -333,7 +273,7 @@ export default function ProjectCalendar() {
 
                     {loading ? (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 0', color: 'var(--color-text-subtle)', gap: '8px' }}>
-                            <Loader2 className="icon" style={{ width: 20, height: 20, animation: 'spin 1s linear infinite' }} /> Đang tải dữ liệu từ server...
+                            <Loader2 className="icon" style={{ width: 20, height: 20, animation: 'spin 1s linear infinite' }} /> Loading
                         </div>
                     ) : (
                         <div>
@@ -361,15 +301,6 @@ export default function ProjectCalendar() {
                                                 <span className="calendar-date-num">
                                                     {cell.dayNumber}
                                                 </span>
-
-                                                <button
-                                                    onClick={() => handleOpenCreateModalForDate(cell.dateString)}
-                                                    className="icon-btn"
-                                                    style={{ padding: '2px', opacity: 0.6, cursor: 'pointer', border: 'none', background: 'transparent' }}
-                                                    title="Tạo task cho ngày này"
-                                                >
-                                                    <Plus style={{ width: 14, height: 14 }} />
-                                                </button>
                                             </div>
 
                                             {/* Render Tasks */}
@@ -396,61 +327,6 @@ export default function ProjectCalendar() {
                     )}
                 </main>
             </div>
-
-            {/* Modal Quick Create Task */}
-            {activeModal === 'quickCreateTaskModal' && (
-                <div className="modal-overlay" onClick={() => setActiveModal(null)}>
-                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2 className="modal-title">Create Task</h2>
-                            <button className="icon-btn" onClick={() => setActiveModal(null)}>
-                                <X className="icon" />
-                            </button>
-                        </div>
-                        <form onSubmit={handleCreateTask}>
-                            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                                <div className="field">
-                                    <label className="field-label">Title</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        className="input"
-                                        value={taskTitle}
-                                        onChange={(e) => setTaskTitle(e.target.value)}
-                                        placeholder="e.g. Design review"
-                                    />
-                                </div>
-                                <div className="field">
-                                    <label className="field-label">Column</label>
-                                    <select value={taskColumn} onChange={(e) => setTaskColumn(e.target.value)} className="select">
-                                        <option value="Todo">Todo</option>
-                                        <option value="In Progress">In Progress</option>
-                                        <option value="Review">Review</option>
-                                        <option value="Done">Done</option>
-                                    </select>
-                                </div>
-                                <div className="field">
-                                    <label className="field-label">Due Date</label>
-                                    <input
-                                        type="date"
-                                        className="input"
-                                        value={taskDueDate}
-                                        onChange={(e) => setTaskDueDate(e.target.value)}
-                                    />
-                                </div>
-                            </div>
-                            <div className="modal-footer">
-                                <button type="button" onClick={() => setActiveModal(null)} className="btn btn-outline btn-sm">
-                                    Cancel
-                                </button>
-                                <button type="submit" className="btn btn-primary btn-sm">
-                                    Create Task
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
