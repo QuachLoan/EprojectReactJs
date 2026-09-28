@@ -20,7 +20,7 @@ import {
     moveTask
 } from './../../../api.jsx';
 import "./project.css";
-import {Calendar, CalendarClock, LayoutGrid, List, ListChecks, Settings, UsersRound} from "lucide-react";
+import {Calendar, CalendarClock, LayoutGrid, List, ListChecks, Settings, UsersRound, Loader2} from "lucide-react";
 
 // Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa từ username/name
 const getInitials = (name) => {
@@ -306,8 +306,15 @@ function TaskDrawer({
                 <div className="drawer-header">
                     <div className="drawer-header-meta" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         {renderPriorityBadge(task?.priority || 'Medium')}
-                        <span style={{ fontSize: '12px', color: '#6b7280' }}>
-                            {isSaving ? 'Đang lưu...' : (task?.updatedAt ? `Updated ${new Date(task.updatedAt).toLocaleDateString('vi-VN')}` : 'Recently')}
+                        <span style={{ fontSize: '12px', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            {isSaving ? (
+                                <>
+                                    <Loader2 className="animate-spin" size={14} />
+                                    <span>Đang lưu...</span>
+                                </>
+                            ) : (
+                                task?.updatedAt ? `Updated ${new Date(task.updatedAt).toLocaleDateString('vi-VN')}` : 'Recently'
+                            )}
                         </span>
                     </div>
                     <button className="icon-btn" onClick={handleCloseDrawer} aria-label="Close panel" style={{ cursor: 'pointer' }}>
@@ -321,7 +328,10 @@ function TaskDrawer({
                 </div>
 
                 {loading || !task ? (
-                    <div className="drawer-body" style={{ padding: '24px', textAlign: 'center' }}>Đang tải thông tin task...</div>
+                    <div className="drawer-body" style={{ padding: '48px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', color: '#6b7280' }}>
+                        <Loader2 className="animate-spin" size={32} style={{ color: '#4f46e5' }} />
+                        <span>Đang tải thông tin task...</span>
+                    </div>
                 ) : (
                     <div className="drawer-body">
                         {/* Title - Manager & Leader được sửa */}
@@ -395,7 +405,7 @@ function TaskDrawer({
 
                             {/* Due Date - CHỈ MANAGER ĐƯỢC CHỈNH SỬA */}
                             <div>
-                                <span className="drawer-field-label">Due date</span>
+                                <span className="drawer-field-label">End date</span>
                                 <input
                                     className="input"
                                     type="date"
@@ -459,7 +469,7 @@ function TaskDrawer({
                         {/* Checklist Section */}
                         <div className="drawer-section">
                             <div className="checklist-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                <span className="comments-title">Checklist</span>
+                                <span className="comments-title">Checklists</span>
                                 <span className="checklist-count">{completedChecklist}/{totalChecklist}</span>
                             </div>
                             <div className="progress-bar" style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px', marginBottom: '12px', overflow: 'hidden' }}>
@@ -561,7 +571,7 @@ function TaskDrawer({
 
                         {/* Activity Section */}
                         <div className="drawer-section">
-                            <p className="comments-title" style={{ fontWeight: 600, marginBottom: '8px' }}>Activity</p>
+                            <p className="comments-title" style={{ fontWeight: 600, marginBottom: '8px' }}>Activities</p>
                             <ol className="timeline" style={{ paddingLeft: '16px', fontSize: '13px', color: '#4b5563' }}>
                                 {activities.map((act, index) => (
                                     <li key={act._id || index} className="timeline-item" style={{ marginBottom: '6px' }}>
@@ -860,7 +870,12 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     };
 
     if (loading) {
-        return <div style={{ padding: '32px', textAlign: 'center' }}>Đang tải dữ liệu dự án...</div>;
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: '12px', color: '#6b7280' }}>
+                <Loader2 className="animate-spin" size={40} style={{ color: '#4f46e5' }} />
+                <span style={{ fontSize: '15px', fontWeight: 500 }}>Loading...</span>
+            </div>
+        );
     }
 
     const memberList = Array.isArray(project?.assignees) ? project.assignees : [];
@@ -1132,7 +1147,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 </div>
 
                                 <div className="form-group">
-                                    <label className="form-label">Due Date</label>
+                                    <label className="form-label">End date</label>
                                     <input
                                         type="date"
                                         className="input"
@@ -1207,8 +1222,15 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
                             <div className="modal-footer">
                                 <button type="button" className="btn btn-secondary" onClick={closeModal} style={{ cursor: 'pointer' }}>Cancel</button>
-                                <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ cursor: isSubmitting ? 'not-allowed' : 'pointer' }}>
-                                    {isSubmitting ? 'Adding...' : 'Add'}
+                                <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ cursor: isSubmitting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    {isSubmitting ? (
+                                        <>
+                                            <Loader2 className="animate-spin" size={16} />
+                                            <span>Adding...</span>
+                                        </>
+                                    ) : (
+                                        'Add'
+                                    )}
                                 </button>
                             </div>
                         </form>

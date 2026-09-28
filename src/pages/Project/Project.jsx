@@ -6,7 +6,8 @@ import {
     X,
     ListChecks,
     UsersRound,
-    CalendarClock
+    CalendarClock,
+    Loader2
 } from 'lucide-react';
 import SideBar from './../../components/layout/SideBar/SideBar';
 import Header from './../../components/layout/Header/Header';
@@ -36,6 +37,8 @@ export default function Projects() {
 
     const [loadingProjects, setLoadingProjects] = useState(true);
     const [loadingMembers, setLoadingMembers] = useState(false);
+    const [isSubmittingProject, setIsSubmittingProject] = useState(false);
+    const [isSubmittingTask, setIsSubmittingTask] = useState(false);
 
     const [projectName, setProjectName] = useState('');
     const [projectDesc, setProjectDesc] = useState('');
@@ -193,6 +196,7 @@ export default function Projects() {
 
     const handleCreateProject = async (e) => {
         e.preventDefault();
+        setIsSubmittingProject(true);
         try {
             const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
             const currentUserId = currentUser._id || currentUser.id;
@@ -213,8 +217,6 @@ export default function Projects() {
                 assignees: validAssignees // Gửi mảng ID đã làm sạch
             };
 
-            console.log("Payload gửi lên Backend:", payload); // Log ra để kiểm tra trước khi gửi
-
             await createProject(payload);
 
             showToast('Project created', 'Project đã lưu thành công.', 'success');
@@ -223,11 +225,14 @@ export default function Projects() {
         } catch (error) {
             console.error("Lỗi tạo Project:", error);
             showToast('Lỗi', error.response?.data?.message || error.message || 'Không thể tạo project.', 'error');
+        } finally {
+            setIsSubmittingProject(false);
         }
     };
 
     const handleCreateTask = async (e) => {
         e.preventDefault();
+        setIsSubmittingTask(true);
         try {
             await createTask({
                 title: taskTitle,
@@ -243,6 +248,8 @@ export default function Projects() {
             loadProjects();
         } catch (error) {
             showToast('Lỗi', 'Không thể tạo task.', 'error');
+        } finally {
+            setIsSubmittingTask(false);
         }
     };
 
@@ -271,6 +278,7 @@ export default function Projects() {
                             </div>
                             <button
                                 className="btn btn-primary"
+                                style={{ cursor: 'pointer' }}
                                 onClick={() => {
                                     resetProjectForm();
                                     setActiveModal('createProjectModal');
@@ -282,9 +290,14 @@ export default function Projects() {
                         </div>
 
                         {loadingProjects ? (
-                            <p>Loading projects...</p>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: '12px', color: '#6b7280' }}>
+                                <Loader2 className="animate-spin" size={36} style={{ color: '#4f46e5' }} />
+                                <span style={{ fontSize: '15px', fontWeight: 500 }}>Loading...</span>
+                            </div>
                         ) : projects.length === 0 ? (
-                            <p>Create your first project!</p>
+                            <div className="empty-state" style={{ padding: '48px 0', textAlign: 'center' }}>
+                                <p className="empty-state-title" style={{ fontSize: '16px', color: '#6b7280' }}>Create your first project!</p>
+                            </div>
                         ) : (
                             <div className="grid-cards">
                                 {projects.map((project) => {
@@ -409,7 +422,7 @@ export default function Projects() {
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <h2 className="modal-title">Create task</h2>
-                            <button className="icon-btn" onClick={() => setActiveModal(null)} aria-label="Close">
+                            <button className="icon-btn" onClick={() => setActiveModal(null)} aria-label="Close" style={{ cursor: 'pointer' }}>
                                 <X className="icon" />
                             </button>
                         </div>
@@ -464,11 +477,18 @@ export default function Projects() {
                                 </div>
                             </div>
                             <div className="modal-footer">
-                                <button type="button" className="btn btn-outline btn-sm" onClick={() => setActiveModal(null)}>
+                                <button type="button" className="btn btn-outline btn-sm" onClick={() => setActiveModal(null)} style={{ cursor: 'pointer' }}>
                                     Cancel
                                 </button>
-                                <button type="submit" className="btn btn-primary btn-sm">
-                                    Create task
+                                <button type="submit" className="btn btn-primary btn-sm" disabled={isSubmittingTask} style={{ cursor: isSubmittingTask ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    {isSubmittingTask ? (
+                                        <>
+                                            <Loader2 className="animate-spin" size={14} />
+                                            <span>Creating...</span>
+                                        </>
+                                    ) : (
+                                        'Create task'
+                                    )}
                                 </button>
                             </div>
                         </form>
@@ -485,7 +505,7 @@ export default function Projects() {
                                 <h2 className="modal-title">Create project</h2>
                                 <p className="modal-desc">Set up a new board for your team.</p>
                             </div>
-                            <button className="icon-btn" onClick={closeModal} aria-label="Close">
+                            <button className="icon-btn" onClick={closeModal} aria-label="Close" style={{ cursor: 'pointer' }}>
                                 <X className="icon" />
                             </button>
                         </div>
@@ -545,7 +565,10 @@ export default function Projects() {
                                     </span>
                                     <div className="card" style={{ maxHeight: '144px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         {loadingMembers ? (
-                                            <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>Loading members...</p>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', color: '#6b7280', fontSize: '13px' }}>
+                                                <Loader2 className="animate-spin" size={16} style={{ color: '#4f46e5' }} />
+                                                <span>Loading members...</span>
+                                            </div>
                                         ) : members.length === 0 ? (
                                             <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>Không có thành viên nào.</p>
                                         ) : (
@@ -577,11 +600,18 @@ export default function Projects() {
                                 </div>
                             </div>
                             <div className="modal-footer">
-                                <button type="button" className="btn btn-outline btn-sm" onClick={closeModal}>
+                                <button type="button" className="btn btn-outline btn-sm" onClick={closeModal} style={{ cursor: 'pointer' }}>
                                     Cancel
                                 </button>
-                                <button type="submit" className="btn btn-primary btn-sm">
-                                    Create project
+                                <button type="submit" className="btn btn-primary btn-sm" disabled={isSubmittingProject} style={{ cursor: isSubmittingProject ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    {isSubmittingProject ? (
+                                        <>
+                                            <Loader2 className="animate-spin" size={14} />
+                                            <span>Creating...</span>
+                                        </>
+                                    ) : (
+                                        'Create project'
+                                    )}
                                 </button>
                             </div>
                         </form>

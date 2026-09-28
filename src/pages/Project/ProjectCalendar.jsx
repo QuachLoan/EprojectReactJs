@@ -21,16 +21,6 @@ import {
     fetchTasksByProject
 } from '../../../api';
 
-// Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa từ username/name
-const getInitials = (name) => {
-    if (!name) return '??';
-    const words = String(name).trim().split(/\s+/);
-    if (words.length === 1) {
-        return words[0].substring(0, 2).toUpperCase();
-    }
-    return (words[0][0] + words[words.length - 1][0]).toUpperCase();
-};
-
 export default function ProjectCalendar() {
     const { id: projectId } = useParams();
 
@@ -64,7 +54,6 @@ export default function ProjectCalendar() {
                 })
             ]);
 
-            // Bóc tách dữ liệu chuẩn hoá giống ProjectBoard
             const realProject = projectData?.data || projectData || {};
             const realTasks = Array.isArray(tasksData)
                 ? tasksData
@@ -80,20 +69,17 @@ export default function ProjectCalendar() {
         }
     };
 
-    // Lấy danh sách thành viên
     const memberList = useMemo(() => {
         if (Array.isArray(project?.assignees)) return project.assignees;
         if (Array.isArray(project?.members)) return project.members;
         return [];
     }, [project]);
 
-    // Định dạng End Date/Due Date
     const formattedDueDate = useMemo(() => {
         const rawDate = project?.date || project?.endDate || project?.dueDate;
         return rawDate ? new Date(rawDate).toLocaleDateString('vi-VN') : 'Chưa đặt';
     }, [project]);
 
-    // Chuyển tháng
     const handlePrevMonth = () => {
         setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
     };
@@ -106,7 +92,6 @@ export default function ProjectCalendar() {
         setCurrentDate(new Date());
     };
 
-    // Dựng 35 / 42 ô lịch
     const { monthDays, currentMonthName, currentYear } = useMemo(() => {
         const year = currentDate.getFullYear();
         const month = currentDate.getMonth();
@@ -167,7 +152,6 @@ export default function ProjectCalendar() {
         };
     }, [currentDate]);
 
-    // Gom nhóm tasks theo ngày
     const tasksByDate = useMemo(() => {
         const map = {};
         tasks.forEach((task) => {
@@ -201,131 +185,129 @@ export default function ProjectCalendar() {
             />
 
             <div className="app-main">
-                <Header
-                    onOpenSidebar={() => setSidebarMobileOpen(true)}
-                />
+                <Header onOpenSidebar={() => setSidebarMobileOpen(true)} />
 
-                {/* Project Header Info */}
-                <div className="project-header">
-                    <div className="project-header-top">
-                        <div style={{ minWidth: 0 }}>
-                            <div className="project-title-row">
-                                <span
-                                    className="project-color-dot"
-                                    style={{ background: project?.color || '#4f46e5' }}
-                                ></span>
-                                <h1>{project?.name || project?.title || 'Dự án'}</h1>
-                            </div>
-                            <p className="page-subtitle" style={{ maxWidth: '640px' }}>
-                                {project?.description || project?.desc || 'No description'}
-                            </p>
-                            <div className="project-meta-row">
-                                <span className="project-meta-item">
-                                    <UsersRound className="icon icon-sm" />{memberList.length} members
-                                </span>
-                                <span className="project-meta-item">
-                                    <ListChecks className="icon icon-sm" />{tasks.length} tasks
-                                </span>
-                                <span className="project-meta-item">
-                                    <CalendarClock className="icon icon-sm" />
-                                    end date: {formattedDueDate}
-                                </span>
-                            </div>
-                        </div>
-                        <div className="project-header-actions">
-                            <Link to={`/projectsetting/${projectId}`} className="icon-btn icon-btn-outline" aria-label="Project settings">
-                                <Settings className="icon" />
-                            </Link>
-                        </div>
+                {loading ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: '60vh', color: '#64748b', gap: '12px' }}>
+                        <Loader2 className="animate-spin" style={{ width: 36, height: 36, color: '#4f46e5' }} />
+                        <span style={{ fontSize: '15px', fontWeight: 500 }}>Loading...</span>
                     </div>
-
-                    <nav className="project-tabs">
-                        <Link to={`/projectboard/${projectId}`} className="project-tab">
-                            <LayoutGrid className="icon icon-sm" /> Board
-                        </Link>
-                        <Link to={`/projectlist/${projectId}`} className="project-tab">
-                            <List className="icon icon-sm" /> List
-                        </Link>
-                        <Link to={`/projectcalendar/${projectId}`} className="project-tab active">
-                            <Calendar className="icon icon-sm" /> Calendar
-                        </Link>
-                    </nav>
-                </div>
-
-                {/* Main Calendar Area */}
-                <main className="page-content" style={{ padding: 'var(--space-6)' }}>
-                    <div className="calendar-nav">
-                        <h2 style={{ fontSize: '18px', fontWeight: 700 }}>
-                            {currentMonthName} {currentYear}
-                        </h2>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <button onClick={handlePrevMonth} className="icon-btn icon-btn-outline">
-                                <ChevronLeft className="icon" style={{ width: 16, height: 16 }} />
-                            </button>
-                            <button onClick={handleToday} className="btn btn-outline btn-sm">
-                                Month
-                            </button>
-                            <button onClick={handleNextMonth} className="icon-btn icon-btn-outline">
-                                <ChevronRight className="icon" style={{ width: 16, height: 16 }} />
-                            </button>
-                        </div>
-                    </div>
-
-                    {loading ? (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 0', color: 'var(--color-text-subtle)', gap: '8px' }}>
-                            <Loader2 className="icon" style={{ width: 20, height: 20, animation: 'spin 1s linear infinite' }} /> Loading
-                        </div>
-                    ) : (
-                        <div>
-                            {/* Headings thứ trong tuần */}
-                            <div className="calendar-grid">
-                                {daysOfWeek.map((day) => (
-                                    <div key={day} className="calendar-weekday">
-                                        {day}
+                ) : (
+                    <>
+                        {/* Project Header Info */}
+                        <div className="project-header">
+                            <div className="project-header-top">
+                                <div style={{ minWidth: 0 }}>
+                                    <div className="project-title-row">
+                                        <span
+                                            className="project-color-dot"
+                                            style={{ background: project?.color || '#4f46e5' }}
+                                        ></span>
+                                        <h1>{project?.name || project?.title || 'Dự án'}</h1>
                                     </div>
-                                ))}
+                                    <p className="page-subtitle" style={{ maxWidth: '640px' }}>
+                                        {project?.description || project?.desc || 'No description'}
+                                    </p>
+                                    <div className="project-meta-row">
+                                        <span className="project-meta-item">
+                                            <UsersRound className="icon icon-sm" />{memberList.length} members
+                                        </span>
+                                        <span className="project-meta-item">
+                                            <ListChecks className="icon icon-sm" />{tasks.length} tasks
+                                        </span>
+                                        <span className="project-meta-item">
+                                            <CalendarClock className="icon icon-sm" />
+                                            end date: {formattedDueDate}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="project-header-actions">
+                                    <Link to={`/projectsetting/${projectId}`} className="icon-btn icon-btn-outline" aria-label="Project settings">
+                                        <Settings className="icon" />
+                                    </Link>
+                                </div>
                             </div>
 
-                            {/* Lưới hiển thị các ngày */}
-                            <div className="calendar-grid">
-                                {monthDays.map((cell, index) => {
-                                    const dayTasks = tasksByDate[cell.dateString] || [];
-                                    const isToday = todayStr === cell.dateString;
-
-                                    return (
-                                        <div
-                                            key={index}
-                                            className={`calendar-cell ${!cell.isCurrentMonth ? 'outside' : ''} ${isToday ? 'today' : ''}`}
-                                        >
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                                <span className="calendar-date-num">
-                                                    {cell.dayNumber}
-                                                </span>
-                                            </div>
-
-                                            {/* Render Tasks */}
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', overflowY: 'auto', maxHeight: '70px' }}>
-                                                {dayTasks.map((task) => {
-                                                    const taskTitleDisplay = task.title || task.name || task.taskName || 'Untitled Task';
-
-                                                    return (
-                                                        <div
-                                                            key={task._id || task.id}
-                                                            className="calendar-task-chip"
-                                                            title={taskTitleDisplay}
-                                                        >
-                                                            {taskTitleDisplay}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                            <nav className="project-tabs">
+                                <Link to={`/projectboard/${projectId}`} className="project-tab">
+                                    <LayoutGrid className="icon icon-sm" /> Board
+                                </Link>
+                                <Link to={`/projectlist/${projectId}`} className="project-tab">
+                                    <List className="icon icon-sm" /> List
+                                </Link>
+                                <Link to={`/projectcalendar/${projectId}`} className="project-tab active">
+                                    <Calendar className="icon icon-sm" /> Calendar
+                                </Link>
+                            </nav>
                         </div>
-                    )}
-                </main>
+
+                        {/* Main Calendar Area */}
+                        <main className="page-content" style={{ padding: 'var(--space-6)' }}>
+                            <div className="calendar-nav">
+                                <h2 style={{ fontSize: '18px', fontWeight: 700 }}>
+                                    {currentMonthName} {currentYear}
+                                </h2>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <button onClick={handlePrevMonth} className="icon-btn icon-btn-outline">
+                                        <ChevronLeft className="icon" style={{ width: 16, height: 16 }} />
+                                    </button>
+                                    <button onClick={handleToday} className="btn btn-outline btn-sm">
+                                        Month
+                                    </button>
+                                    <button onClick={handleNextMonth} className="icon-btn icon-btn-outline">
+                                        <ChevronRight className="icon" style={{ width: 16, height: 16 }} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="calendar-grid">
+                                    {daysOfWeek.map((day) => (
+                                        <div key={day} className="calendar-weekday">
+                                            {day}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="calendar-grid">
+                                    {monthDays.map((cell, index) => {
+                                        const dayTasks = tasksByDate[cell.dateString] || [];
+                                        const isToday = todayStr === cell.dateString;
+
+                                        return (
+                                            <div
+                                                key={index}
+                                                className={`calendar-cell ${!cell.isCurrentMonth ? 'outside' : ''} ${isToday ? 'today' : ''}`}
+                                            >
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                                    <span className="calendar-date-num">
+                                                        {cell.dayNumber}
+                                                    </span>
+                                                </div>
+
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', overflowY: 'auto', maxHeight: '70px' }}>
+                                                    {dayTasks.map((task) => {
+                                                        const taskTitleDisplay = task.title || task.name || task.taskName || 'Untitled Task';
+
+                                                        return (
+                                                            <div
+                                                                key={task._id || task.id}
+                                                                className="calendar-task-chip"
+                                                                title={taskTitleDisplay}
+                                                            >
+                                                                {taskTitleDisplay}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </main>
+                    </>
+                )}
             </div>
         </div>
     );
