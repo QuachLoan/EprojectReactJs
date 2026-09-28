@@ -1833,12 +1833,9 @@ h3 {
 /* ============ KANBAN CONTAINER (SCROLL NGANG CHO CỘT) ============ */
 .board.scroll-x {
     display: flex;
-    gap: 16px;
-    align-items: flex-start;
-    overflow-x: auto;         /* Cho phép cuộn ngang khi thừa cột */
+    overflow-x: auto;
     overflow-y: hidden;
-    padding-bottom: 16px;
-    height: calc(100vh - 180px); /* Tùy chỉnh chiều cao phù hợp với layout của bạn */
+    height: calc(100vh - 200px); /* Tùy chỉnh theo Layout */
 }
 
 /* Tùy chỉnh thanh cuộn ngang mượt đẹp */
@@ -1872,12 +1869,10 @@ h3 {
 
 /* ============ THÂN CỘT (SCROLL DỌC CHO DANH SÁCH TASK) ============ */
 .board-column-body {
-    flex: 1;
-    overflow-y: auto;         /* Cho phép cuộn dọc khi danh sách task quá dài */
-    max-height: calc(100vh - 280px); /* Giới hạn chiều cao tối đa của danh sách task */
-    padding-right: 4px;
-    margin-top: 8px;
-    margin-bottom: 8px;
+    max-height: calc(100vh - 280px);
+    overflow-y: auto;
+    /* Giúp thao tác kéo mượt hơn trên thiết bị cảm ứng */
+    touch-action: pan-y;
 }
 
 /* Tùy chỉnh thanh cuộn dọc bên trong cột */

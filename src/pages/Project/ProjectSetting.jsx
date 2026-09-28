@@ -201,6 +201,11 @@ export default function ProjectSetting() {
         ? members
         : members.filter(m => selectedMembers.includes(String(m._id || m.id)));
 
+    // Style chung cho input khi bị khóa (disabled)
+    const disabledInputStyle = !isManager
+        ? { cursor: 'not-allowed', backgroundColor: 'var(--color-bg-muted, #f1f5f9)', opacity: 0.8 }
+        : {};
+
     return (
         <div className="app-shell">
             <Sidebar
@@ -312,6 +317,7 @@ export default function ProjectSetting() {
                                                 value={formData.name}
                                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                                 disabled={!isManager}
+                                                style={disabledInputStyle}
                                                 required
                                             />
                                         </div>
@@ -324,6 +330,7 @@ export default function ProjectSetting() {
                                                 value={formData.description}
                                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                                 disabled={!isManager}
+                                                style={disabledInputStyle}
                                             />
                                         </div>
 
@@ -332,7 +339,15 @@ export default function ProjectSetting() {
                                                 <label className="field-label">Color</label>
                                                 <input
                                                     type="color"
-                                                    style={{ height: '38px', width: '100%', padding: '2px', cursor: isManager ? 'pointer' : 'not-allowed', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}
+                                                    style={{
+                                                        height: '38px',
+                                                        width: '100%',
+                                                        padding: '2px',
+                                                        cursor: isManager ? 'pointer' : 'not-allowed',
+                                                        borderRadius: 'var(--radius-md)',
+                                                        border: '1px solid var(--color-border)',
+                                                        opacity: isManager ? 1 : 0.7
+                                                    }}
                                                     value={formData.color}
                                                     onChange={(e) => setFormData({ ...formData, color: e.target.value })}
                                                     disabled={!isManager}
@@ -346,6 +361,7 @@ export default function ProjectSetting() {
                                                     value={formData.dueDate}
                                                     onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
                                                     disabled={!isManager}
+                                                    style={disabledInputStyle}
                                                 />
                                             </div>
                                         </div>
@@ -414,7 +430,7 @@ export default function ProjectSetting() {
                                                             gap: '12px',
                                                             padding: '8px 10px',
                                                             borderRadius: '6px',
-                                                            cursor: isManager ? 'pointer' : 'default',
+                                                            cursor: isManager ? 'pointer' : 'not-allowed',
                                                             backgroundColor: isChecked ? 'var(--color-bg-subtle, #f8fafc)' : 'transparent',
                                                             border: '1px solid',
                                                             borderColor: isChecked ? 'var(--color-primary-light, #e0e7ff)' : 'transparent'
@@ -427,6 +443,7 @@ export default function ProjectSetting() {
                                                                 className="checkbox"
                                                                 checked={isChecked}
                                                                 onChange={() => toggleMemberSelection(memberId)}
+                                                                style={{ cursor: isManager ? 'pointer' : 'not-allowed' }}
                                                             />
                                                         )}
                                                         <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', width: '28px', height: '28px' }}>

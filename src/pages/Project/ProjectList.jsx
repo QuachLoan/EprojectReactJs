@@ -12,7 +12,8 @@ import {
     Loader2,
     ArrowRightCircle,
     UserPlus,
-    Check, UsersRound, ListChecks, CalendarClock
+    Check, UsersRound, ListChecks, CalendarClock,
+    Trash2 // <-- Thêm icon Trash2
 } from 'lucide-react';
 
 import {
@@ -21,7 +22,8 @@ import {
     fetchColumnsByProject,
     createTask,
     updateTask,
-    moveTask
+    moveTask,
+    deleteTask // <-- Thêm hàm deleteTask từ api.jsx
 } from '../../../api.jsx';
 
 const getInitials = (name) => {
@@ -162,6 +164,20 @@ export default function ProjectList() {
         }
     };
 
+    // Thêm hàm xóa task dành cho Manager
+    const handleDeleteTask = async (taskId) => {
+        if (!isManager) return;
+        if (!window.confirm('Bạn có chắc chắn muốn xóa task này không?')) return;
+
+        try {
+            setTasks(prev => prev.filter(t => String(t._id || t.id) !== String(taskId)));
+            await deleteTask(taskId);
+        } catch (err) {
+            console.error('Lỗi khi xóa task:', err);
+            loadData();
+        }
+    };
+
     const handleOpenAssigneeMenu = (e, taskId) => {
         if (!isLeader) return; // Chỉ Leader mở được menu chọn assignee
         e.stopPropagation();
@@ -204,6 +220,7 @@ export default function ProjectList() {
         }
     };
 
+    // Chỉnh sửa để chỉ cho phép gán tối đa 1 assignee
     const handleToggleTaskAssignee = async (task, memberId) => {
         if (!isLeader || !task) return; // Chỉ Leader chỉnh sửa assignee
 
@@ -213,9 +230,11 @@ export default function ProjectList() {
             : [];
 
         const targetMemberId = String(memberId);
+
+        // Nếu thành viên đã được chọn -> Bỏ chọn (trả về rỗng). Nếu chưa chọn -> Gán duy nhất thành viên này.
         const updatedAssignees = currentAssignees.includes(targetMemberId)
-            ? currentAssignees.filter(id => id !== targetMemberId)
-            : [...currentAssignees, targetMemberId];
+            ? []
+            : [targetMemberId];
 
         setTasks(prev => prev.map(t => {
             const tId = t._id || t.id;
@@ -407,17 +426,43 @@ export default function ProjectList() {
                                                 </td>
 
                                                 <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                                                    {/* CHỈ LEADER MỚI HIỂN THỊ NÚT PUSH TO BOARD */}
-                                                    {isLeader && (
-                                                        <button
-                                                            onClick={() => handlePushToBoard(task)}
-                                                            className="btn btn-primary btn-sm"
-                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
-                                                        >
-                                                            <ArrowRightCircle className="w-3.5 h-3.5" />
-                                                            Push to Board
-                                                        </button>
-                                                    )}
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                                        {/* CHỈ LEADER MỚI HIỂN THỊ NÚT PUSH TO BOARD */}
+                                                        {isLeader && (
+                                                            <button
+                                                                onClick={() => handlePushToBoard(task)}
+                                                                className="btn btn-primary btn-sm"
+                                                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+                                                            >
+                                                                <ArrowRightCircle className="w-3.5 h-3.5" />
+                                                                Push to Board
+                                                            </button>
+                                                        )}
+
+                                                        {/* NÚT DELETE TASK DÀNH CHO MANAGER */}
+                                                        {isManager && (
+                                                            <button
+                                                                onClick={() => handleDeleteTask(taskId)}
+                                                                className="btn btn-danger btn-sm"
+                                                                style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '4px',
+                                                                    fontSize: '12px',
+                                                                    backgroundColor: '#ef4444',
+                                                                    color: '#fff',
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: '4px',
+                                                                    border: 'none',
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                                title="Delete task"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                                Delete
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -453,7 +498,7 @@ export default function ProjectList() {
                         padding: '6px',
                     }}
                 >
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', padding: '4px 6px' }}>Assign Members:</div>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', padding: '4px 6px' }}>Assign Member (Max 1):</div>
                     {memberList.map((m) => {
                         const mId = m._id || m.id;
                         const currentTask = tasks.find(t => String(t._id || t.id) === String(assigneeMenu.taskId));

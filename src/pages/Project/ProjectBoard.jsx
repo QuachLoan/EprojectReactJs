@@ -64,7 +64,10 @@ function TaskDrawer({
                         columns = [],
                         projectMembers = [],
                         onTaskUpdated,
-                        onTaskDeleted
+                        onTaskDeleted,
+                        isManager = false,
+                        isLeader = false,
+                        currentUserId = null
                     }) {
     const [task, setTask] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -75,6 +78,12 @@ function TaskDrawer({
     const [comments, setComments] = useState([]);
     const [commentText, setCommentText] = useState('');
     const [activities, setActivities] = useState([]);
+
+    // LOGIC PHÂN QUYỀN:
+    const canEditAll = isManager;
+    const canEditManagement = isManager || isLeader;
+    const canDeleteTask = isManager; // CHỈ MANAGER MỚI ĐƯỢC XÓA TASK
+    const canAddChecklist = isManager || isLeader;
 
     useEffect(() => {
         if (isDrawerOpen && taskId) {
@@ -93,6 +102,7 @@ function TaskDrawer({
 
                     setTask({
                         ...realTask,
+                        name: realTask.name || realTask.title || '',
                         columnId: extractColumnId(realTask.columnId),
                         date: realTask.date ? new Date(realTask.date).toISOString().split('T')[0] : '',
                         assignees: formattedAssignees
@@ -111,7 +121,6 @@ function TaskDrawer({
     const handleUpdateTaskField = async (updatedFields) => {
         if (!task || isSaving) return;
 
-        // Bóc tách trước columnId nếu có thay đổi Status
         if (updatedFields.columnId) {
             updatedFields.columnId = extractColumnId(updatedFields.columnId);
         }
@@ -119,10 +128,10 @@ function TaskDrawer({
         const previousTask = { ...task };
         const updatedTaskLocal = { ...task, ...updatedFields };
 
-        // 1. Cập nhật UI local của Drawer ngay lập tức
+        // 1. Cập nhật UI local của Drawer
         setTask(updatedTaskLocal);
 
-        // 2. Cập nhật UI của Kanban Board ngoài ngay lập tức
+        // 2. Cập nhật UI của Kanban Board ngoài
         if (onTaskUpdated) {
             onTaskUpdated(updatedTaskLocal);
         }
@@ -144,7 +153,6 @@ function TaskDrawer({
             }
         } catch (error) {
             console.error("Lỗi khi cập nhật task, đang hoàn tác:", error);
-            // Revert nếu lỗi
             setTask(previousTask);
             if (onTaskUpdated) onTaskUpdated(previousTask);
         } finally {
@@ -161,20 +169,26 @@ function TaskDrawer({
         });
     };
 
+    // Chỉ chọn 1 Assignee duy nhất
     const handleToggleAssignee = (memberId) => {
+        if (!canEditManagement) return;
+
         const currentAssignees = task.assignees || [];
         let newAssignees;
 
-        if (currentAssignees.includes(memberId)) {
-            newAssignees = currentAssignees.filter(id => String(id) !== String(memberId));
+        // Nếu người này đã được chọn thì bỏ chọn (về rỗng), ngược lại chỉ đặt duy nhất người này
+        if (currentAssignees.some(id => String(id) === String(memberId))) {
+            newAssignees = [];
         } else {
-            newAssignees = [...currentAssignees, memberId];
+            newAssignees = [memberId];
         }
 
         handleUpdateTaskField({ assignees: newAssignees, members: newAssignees });
     };
 
+    // CHỈ MANAGER MỚI ĐƯỢC XÓA TASK
     const handleDeleteTask = async () => {
+        if (!canDeleteTask) return;
         if (!window.confirm("Bạn có chắc chắn muốn xóa task này?")) return;
         try {
             await deleteTask(taskId);
@@ -185,8 +199,9 @@ function TaskDrawer({
         }
     };
 
+    // MANAGER VÀ LEADER CÓ QUYỀN THÊM CHECKLIST
     const handleAddChecklist = async () => {
-        if (!checklistText.trim()) return;
+        if (!canAddChecklist || !checklistText.trim()) return;
 
         const textToSend = checklistText.trim();
         setChecklistText('');
@@ -202,25 +217,22 @@ function TaskDrawer({
         }
     };
 
+    // CẢ MANAGER, LEADER VÀ MEMBER ĐỀU ĐƯỢC TÍCH CHECKLIST ITEM
     const handleToggleChecklist = async (itemId, completed) => {
-        // 1. Toggle giao diện trước (Optimistic Update)
         const updatedChecklist = (task.checklist || []).map(item =>
             String(item._id) === String(itemId) ? { ...item, completed: !completed } : item
         );
         setTask(prev => ({ ...prev, checklist: updatedChecklist }));
 
-        // 2. Gọi API để lưu vào DB
         try {
             const response = await toggleChecklistItem(taskId, itemId, completed);
             const realTask = response?.data || response;
 
-            // Cập nhật lại State bằng dữ liệu thật từ Server
             if (realTask && realTask.checklist) {
                 setTask(prev => ({ ...prev, checklist: realTask.checklist }));
             }
         } catch (error) {
             console.error("Lỗi khi cập nhật checklist:", error);
-            // Nếu lỗi thì hoàn tác lại giao diện
             setTask(prev => ({ ...prev, checklist: task.checklist }));
         }
     };
@@ -276,7 +288,7 @@ function TaskDrawer({
                             {isSaving ? 'Đang lưu...' : (task?.updatedAt ? `Updated ${new Date(task.updatedAt).toLocaleDateString('vi-VN')}` : 'Recently')}
                         </span>
                     </div>
-                    <button className="icon-btn" onClick={handleCloseDrawer} aria-label="Close panel">
+                    <button className="icon-btn" onClick={handleCloseDrawer} aria-label="Close panel" style={{ cursor: 'pointer' }}>
                         <span className="icon">
                             <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none" strokeWidth="2">
                                 <path d="M18 6 6 18"></path>
@@ -290,23 +302,48 @@ function TaskDrawer({
                     <div className="drawer-body" style={{ padding: '24px', textAlign: 'center' }}>Đang tải thông tin task...</div>
                 ) : (
                     <div className="drawer-body">
-                        {/* Title */}
+                        {/* Title - Manager & Leader được sửa */}
                         <textarea
                             className="drawer-title-input"
                             rows="1"
                             value={task.title || ''}
+                            readOnly={!canEditManagement}
+                            style={{ cursor: canEditManagement ? 'text' : 'not-allowed' }}
                             onChange={(e) => handleInputChange('title', e.target.value)}
                             onBlur={(e) => handleUpdateTaskField({ title: e.target.value })}
-                            placeholder="Nhập tên task..."
+                            placeholder="Nhập tiêu đề task..."
                         />
 
                         <div className="drawer-field-grid">
-                            {/* Column / Status */}
+                            {/* NAME - CHỈ MANAGER ĐƯỢC CHỈNH SỬA */}
+                            <div style={{ gridColumn: 'span 2' }}>
+                                <span className="drawer-field-label">Title</span>
+                                <input
+                                    className="input"
+                                    type="text"
+                                    value={task.title || ''}
+                                    readOnly={!canEditAll}
+                                    disabled={!canEditAll}
+                                    style={{
+                                        backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6',
+                                        cursor: canEditAll ? 'text' : 'not-allowed',
+                                        color: '#374151',
+                                        fontWeight: 500
+                                    }}
+                                    onChange={(e) => handleInputChange('title', e.target.value)}
+                                    onBlur={(e) => handleUpdateTaskField({ title: e.target.value })}
+                                    placeholder="Task's title"
+                                />
+                            </div>
+
+                            {/* Status - CHỈ MANAGER ĐƯỢC CHỈNH SỬA */}
                             <div>
                                 <span className="drawer-field-label">Status</span>
                                 <select
                                     className="select"
                                     value={extractColumnId(task.columnId)}
+                                    disabled={!canEditAll}
+                                    style={{ backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6', cursor: canEditAll ? 'pointer' : 'not-allowed' }}
                                     onChange={(e) => handleUpdateTaskField({ columnId: e.target.value })}
                                 >
                                     {columns.map((col) => (
@@ -317,12 +354,14 @@ function TaskDrawer({
                                 </select>
                             </div>
 
-                            {/* Priority */}
+                            {/* Priority - CHỈ MANAGER ĐƯỢC CHỈNH SỬA */}
                             <div>
                                 <span className="drawer-field-label">Priority</span>
                                 <select
                                     className="select"
                                     value={task.priority || 'Medium'}
+                                    disabled={!canEditAll}
+                                    style={{ backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6', cursor: canEditAll ? 'pointer' : 'not-allowed' }}
                                     onChange={(e) => handleUpdateTaskField({ priority: e.target.value })}
                                 >
                                     <option value="Low">Low</option>
@@ -332,20 +371,22 @@ function TaskDrawer({
                                 </select>
                             </div>
 
-                            {/* Due Date */}
+                            {/* Due Date - CHỈ MANAGER ĐƯỢC CHỈNH SỬA */}
                             <div>
                                 <span className="drawer-field-label">Due date</span>
                                 <input
                                     className="input"
                                     type="date"
                                     value={task.date ? String(task.date).split('T')[0] : ''}
+                                    disabled={!canEditAll}
+                                    style={{ backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6', cursor: canEditAll ? 'pointer' : 'not-allowed' }}
                                     onChange={(e) => handleUpdateTaskField({ date: e.target.value })}
                                 />
                             </div>
 
-                            {/* Assignees */}
+                            {/* Assignee - CHỈ CHO PHÉP CHỌN 1 NGUỜI */}
                             <div style={{ gridColumn: 'span 2' }}>
-                                <span className="drawer-field-label">Assignees</span>
+                                <span className="drawer-field-label">Assignee</span>
                                 <div className="card" style={{ maxHeight: '120px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                     {projectMembers.length === 0 ? (
                                         <span style={{ fontSize: '13px', color: '#6b7280' }}>Chưa có thành viên dự án</span>
@@ -356,11 +397,14 @@ function TaskDrawer({
                                             const isChecked = task.assignees?.some(id => String(id) === String(memberId));
 
                                             return (
-                                                <label key={memberId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                                                <label key={memberId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: canEditManagement ? 'pointer' : 'not-allowed', fontSize: '13px' }}>
                                                     <input
-                                                        type="checkbox"
-                                                        className="checkbox"
+                                                        type="radio"
+                                                        name="drawer-assignee-radio"
+                                                        className="radio"
                                                         checked={isChecked}
+                                                        disabled={!canEditManagement}
+                                                        style={{ cursor: canEditManagement ? 'pointer' : 'not-allowed' }}
                                                         onChange={() => handleToggleAssignee(memberId)}
                                                     />
                                                     <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '10px', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -375,7 +419,7 @@ function TaskDrawer({
                             </div>
                         </div>
 
-                        {/* Description */}
+                        {/* Description - CHỈ MANAGER ĐƯỢC CHỈNH SỬA */}
                         <div>
                             <span className="drawer-field-label">Description</span>
                             <textarea
@@ -383,6 +427,8 @@ function TaskDrawer({
                                 rows="3"
                                 placeholder="Add a more detailed description…"
                                 value={task.description || ''}
+                                readOnly={!canEditAll}
+                                style={{ backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6', cursor: canEditAll ? 'text' : 'not-allowed' }}
                                 onChange={(e) => handleInputChange('description', e.target.value)}
                                 onBlur={(e) => handleUpdateTaskField({ description: e.target.value })}
                             />
@@ -407,26 +453,31 @@ function TaskDrawer({
                                             type="checkbox"
                                             className="checkbox"
                                             checked={item.completed || false}
+                                            style={{ cursor: 'pointer' }}
                                             onChange={() => handleToggleChecklist(item._id, item.completed)}
                                         />
-                                        <span className={`checklist-text ${item.completed ? 'completed' : ''}`} style={{ textDecoration: item.completed ? 'line-through' : 'none', color: item.completed ? '#9ca3af' : 'inherit' }}>
+                                        <span className={`checklist-text ${item.completed ? 'completed' : ''}`} style={{ textDecoration: item.completed ? 'line-through' : 'none', color: item.completed ? '#9ca3af' : 'inherit', cursor: 'pointer' }}>
                                             {item.text}
                                         </span>
                                     </label>
                                 ))}
                             </div>
-                            <div className="checklist-add-row" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                                <input
-                                    className="input"
-                                    placeholder="Add checklist item…"
-                                    value={checklistText}
-                                    onChange={(e) => setChecklistText(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddChecklist()}
-                                />
-                                <button className="checklist-add-btn btn btn-secondary" onClick={handleAddChecklist} aria-label="Add checklist item">
-                                    +
-                                </button>
-                            </div>
+
+                            {/* MANAGER & LEADER THẤY Ô THÊM CHECKLIST */}
+                            {canAddChecklist && (
+                                <div className="checklist-add-row" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                    <input
+                                        className="input"
+                                        placeholder="Add checklist item…"
+                                        value={checklistText}
+                                        onChange={(e) => setChecklistText(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleAddChecklist()}
+                                    />
+                                    <button className="checklist-add-btn btn btn-secondary" onClick={handleAddChecklist} aria-label="Add checklist item" style={{ cursor: 'pointer' }}>
+                                        +
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Comments Section */}
@@ -455,7 +506,7 @@ function TaskDrawer({
                                     onChange={(e) => setCommentText(e.target.value)}
                                 />
                                 <div className="comment-form-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-                                    <button type="submit" className="btn btn-primary btn-sm">Send</button>
+                                    <button type="submit" className="btn btn-primary btn-sm" style={{ cursor: 'pointer' }}>Send</button>
                                 </div>
                             </form>
                         </div>
@@ -472,16 +523,18 @@ function TaskDrawer({
                             </ol>
                         </div>
 
-                        {/* Delete Task */}
-                        <div className="drawer-section" style={{ marginTop: '24px' }}>
-                            <button
-                                className="btn btn-outline btn-full"
-                                style={{ color: '#dc2626', borderColor: '#fca5a5', width: '100%' }}
-                                onClick={handleDeleteTask}
-                            >
-                                Delete task
-                            </button>
-                        </div>
+                        {/* Delete Task - CHỈ MANAGER MỚI CÓ QUYỀN XÓA */}
+                        {canDeleteTask && (
+                            <div className="drawer-section" style={{ marginTop: '24px' }}>
+                                <button
+                                    className="btn btn-outline btn-full"
+                                    style={{ color: '#dc2626', borderColor: '#fca5a5', width: '100%', cursor: 'pointer' }}
+                                    onClick={handleDeleteTask}
+                                >
+                                    Delete task
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -517,19 +570,21 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
     // Form Task State
     const [newTaskTitle, setNewTaskTitle] = useState('');
+    const [newTaskName, setNewTaskName] = useState('');
     const [newTaskColumnId, setNewTaskColumnId] = useState('');
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
     const [newTaskDesc, setNewTaskDesc] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [newTaskDate, setNewTaskDate] = useState('');
 
-    // Lấy thông tin user & vai trò từ localStorage
     const getCurrentUser = () => {
         return JSON.parse(localStorage.getItem('user') || '{}');
     };
 
     const currentUser = getCurrentUser();
-    const isLeader = currentUser?.role === 'Leader'; // Kiểm tra vai trò Leader
+    const isManager = currentUser?.role === 'Manager';
+    const isLeader = currentUser?.role === 'Leader';
+    const canCreateTask = isManager || isLeader; // Manager & Leader được phép tạo task mới
 
     const fetchBoardData = async () => {
         if (!activeProjectId) return;
@@ -595,6 +650,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
     const resetTaskForm = () => {
         setNewTaskTitle('');
+        setNewTaskName('');
         setNewTaskDesc('');
         setNewTaskPriority('Medium');
         setNewTaskDate('');
@@ -608,9 +664,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         resetTaskForm();
     };
 
+    // Chỉ chọn 1 thành viên duy nhất cho Modal Tạo Task
     const toggleMemberSelection = (id) => {
         setSelectedMembers((prev) =>
-            prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
+            prev.includes(id) ? [] : [id]
         );
     };
 
@@ -649,68 +706,40 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             return;
         }
 
-        const sourceColId = source.droppableId;
-        const destColId = destination.droppableId;
+        // 1. Lưu lại state cũ để rollback nếu gặp lỗi
+        const previousTasks = [...tasks];
 
-        setColumns(prevColumns => {
-            const newColumns = structuredClone(prevColumns);
-            const sourceCol = newColumns.find(c => String(c._id) === String(sourceColId));
-            const destCol = newColumns.find(c => String(c._id) === String(destColId));
+        // 2. Cập nhật state UI lập tức (Optimistic UI Update)
+        setTasks((prevTasks) => {
+            const newTasks = Array.from(prevTasks);
+            const movedTaskIndex = newTasks.findIndex(t => String(t._id) === String(draggableId));
 
-            if (!sourceCol || !destCol) return prevColumns;
-
-            if (!sourceCol.taskOrderIds) sourceCol.taskOrderIds = [];
-            if (!destCol.taskOrderIds) destCol.taskOrderIds = [];
-
-            if (sourceCol.taskOrderIds.length === 0) {
-                sourceCol.taskOrderIds = getSortedTasksForColumn(sourceCol).map(t => t._id);
+            if (movedTaskIndex !== -1) {
+                newTasks[movedTaskIndex] = {
+                    ...newTasks[movedTaskIndex],
+                    columnId: destination.droppableId
+                };
             }
-            if (destCol.taskOrderIds.length === 0 && sourceColId !== destColId) {
-                destCol.taskOrderIds = getSortedTasksForColumn(destCol).map(t => t._id);
-            }
-
-            if (sourceColId === destColId) {
-                const newOrder = Array.from(sourceCol.taskOrderIds.map(id => String(id)));
-                const [movedId] = newOrder.splice(source.index, 1);
-                newOrder.splice(destination.index, 0, movedId);
-                sourceCol.taskOrderIds = newOrder;
-            } else {
-                const sourceOrder = Array.from(sourceCol.taskOrderIds.map(id => String(id)));
-                sourceOrder.splice(source.index, 1);
-                sourceCol.taskOrderIds = sourceOrder;
-
-                const destOrder = Array.from(destCol.taskOrderIds.map(id => String(id)));
-                destOrder.splice(destination.index, 0, draggableId);
-                destCol.taskOrderIds = destOrder;
-            }
-
-            return newColumns;
+            return newTasks;
         });
 
-        if (sourceColId !== destColId) {
-            setTasks(prevTasks =>
-                prevTasks.map(t =>
-                    String(t._id) === String(draggableId)
-                        ? { ...t, columnId: destColId }
-                        : t
-                )
-            );
-        }
+        // 3. Gọi API cập nhật server
+        const payload = {
+            sourceColumnId: source.droppableId === 'backlog' ? null : source.droppableId,
+            destColumnId: destination.droppableId,
+            destinationIndex: destination.index
+        };
 
         try {
-            await moveTask(draggableId, {
-                sourceColumnId: sourceColId,
-                destColumnId: destColId,
-                destinationIndex: destination.index
-            });
+            await moveTask(draggableId, payload);
         } catch (error) {
-            console.error("Lỗi khi cập nhật vị trí Task trên server:", error);
-            fetchBoardData();
+            console.error("Lỗi kéo thả task, hoàn tác UI:", error);
+            setTasks(previousTasks); // Hoàn tác nếu lỗi
         }
     };
 
     const handleOpenCreateModal = (columnId = '', isFixed = false) => {
-        if (!isLeader) return; // Chỉ cho phép Leader tạo task
+        if (!canCreateTask) return;
         setNewTaskColumnId(columnId || (columns[0]?._id || ''));
         setIsColumnFixed(isFixed);
         resetTaskForm();
@@ -719,7 +748,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
     const handleCreateTask = async (e) => {
         e.preventDefault();
-        if (!isLeader || !newTaskTitle.trim() || !newTaskColumnId) {
+        if (!canCreateTask || !newTaskTitle.trim() || !newTaskColumnId) {
             return;
         }
 
@@ -729,6 +758,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
             const payload = {
                 title: newTaskTitle,
+                name: newTaskName || newTaskTitle,
                 description: newTaskDesc,
                 columnId: newTaskColumnId,
                 projectId: activeProjectId,
@@ -738,8 +768,27 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 members: cleanMembers
             };
 
-            await createTask(payload);
-            await fetchBoardData();
+            // 1. Gọi API tạo task
+            const response = await createTask(payload);
+
+            // Bóc tách lấy dữ liệu task mới trả về từ Server
+            const createdTask = response?.data || response;
+
+            // 2. Đảm bảo chuẩn hóa dữ liệu task trước khi thêm vào state
+            const formattedNewTask = {
+                ...createdTask,
+                _id: String(createdTask._id || createdTask.id),
+                title: createdTask.title || newTaskTitle,
+                columnId: extractColumnId(createdTask.columnId || newTaskColumnId),
+                priority: createdTask.priority || newTaskPriority,
+                date: createdTask.date || (newTaskDate ? new Date(newTaskDate) : new Date()),
+                assignees: createdTask.assignees || cleanMembers
+            };
+
+            // 3. Thêm trực tiếp task mới vào danh sách `tasks` hiện tại mà không load lại trang
+            setTasks(prevTasks => [...prevTasks, formattedNewTask]);
+
+            // 4. Đóng modal và reset form
             closeModal();
         } catch (error) {
             console.error("Lỗi khi tạo task mới:", error);
@@ -790,7 +839,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate || 'Chưa đặt'}</span>
                             </div>
                         </div>
-                        <Link to={`/projectsetting/${activeProjectId}`} className="icon-btn icon-btn-outline">
+                        <Link to={`/projectsetting/${activeProjectId}`} className="icon-btn icon-btn-outline" style={{ cursor: 'pointer' }}>
                             <Settings className="icon" />
                         </Link>
                     </div>
@@ -814,11 +863,11 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             <input className="input" placeholder="Search..." style={{ width: '100%' }} />
                         </div>
 
-                        {/* CHỈ LEADER MỚI HIỂN THỊ NÚT ADD TASK TỔNG */}
-                        {isLeader && (
+                        {/* MANAGER VÀ LEADER MỚI THẤY NÚT TẠO TASK */}
+                        {canCreateTask && (
                             <button
                                 className="btn btn-primary"
-                                style={{ marginLeft: 'auto', flexShrink: 0 }}
+                                style={{ marginLeft: 'auto', flexShrink: 0, cursor: 'pointer' }}
                                 onClick={() => handleOpenCreateModal('', false)}
                             >
                                 + Add Task
@@ -835,11 +884,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                         <div className="board-column-header">
                                             <span className="board-column-title">{column.name || column.title}</span>
                                             <span className="board-column-count">{columnTasks.length}</span>
-                                            {/* CHỈ LEADER MỚI HIỂN THỊ NÚT + TRÊN HEADER CỘT */}
-                                            {isLeader && (
+                                            {canCreateTask && (
                                                 <button
                                                     className="btn-icon"
-                                                    style={{ marginLeft: 'auto' }}
+                                                    style={{ marginLeft: 'auto', cursor: 'pointer' }}
                                                     onClick={() => handleOpenCreateModal(column._id, true)}
                                                     title="Thêm task vào cột này"
                                                 >
@@ -877,6 +925,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                     key={String(task._id)}
                                                                     draggableId={String(task._id)}
                                                                     index={index}
+                                                                    isDragDisabled={!isManager} // CHỈ MANAGER ĐƯỢC KÉO THẢ
                                                                 >
                                                                     {(provided, snapshot) => (
                                                                         <div
@@ -894,7 +943,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 cursor: 'pointer'
                                                                             }}
                                                                         >
-                                                                            <div className="task-card-title">{task.title}</div>
+                                                                            <div className="task-card-title">{task.title || task.name}</div>
 
                                                                             <div className="task-card-bottom">
                                                                                 <div className="task-card-meta">
@@ -941,11 +990,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                             )}
                                         </Droppable>
 
-                                        {/* CHỈ LEADER MỚI HIỂN THỊ NÚT ADD TASK Ở ĐÁY CỘT */}
-                                        {isLeader && (
+                                        {canCreateTask && (
                                             <button
                                                 className="add-task-btn"
-                                                style={{ width: '260px' }}
+                                                style={{ width: '260px', cursor: 'pointer' }}
                                                 onClick={() => handleOpenCreateModal(column._id, true)}
                                             >
                                                 + Add Task
@@ -959,7 +1007,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 </main>
             </div>
 
-            {/* TASK DRAWER CHI TIẾT & CHỈNH SỬA TASK */}
+            {/* TASK DRAWER CHI TIẾT TASK */}
             <TaskDrawer
                 taskId={selectedTaskId}
                 isDrawerOpen={isDrawerOpen}
@@ -968,29 +1016,31 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 projectMembers={memberList}
                 onTaskUpdated={handleTaskUpdatedFromDrawer}
                 onTaskDeleted={handleTaskDeletedFromDrawer}
+                isManager={isManager}
+                isLeader={isLeader}
+                currentUserId={getCurrentUserId()}
             />
 
-            {/* MODAL TẠO TASK (CHỈ DÀNH CHO LEADER) */}
-            {isLeader && activeModal === 'quickCreateTaskModal' && (
+            {/* MODAL TẠO TASK (MANAGER VÀ LEADER MỚI MỞ ĐƯỢC) */}
+            {canCreateTask && activeModal === 'quickCreateTaskModal' && (
                 <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
                         <form onSubmit={handleCreateTask}>
                             <div className="modal-header">
                                 <h2>Add Task</h2>
-                                <button type="button" className="btn-icon" onClick={closeModal}>✕</button>
+                                <button type="button" className="btn-icon" onClick={closeModal} style={{ cursor: 'pointer' }}>✕</button>
                             </div>
                             <div className="modal-body">
                                 <div className="form-group">
                                     <label className="form-label">Title *</label>
                                     <input
                                         className="input"
-                                        placeholder="e.g: My task"
+                                        placeholder="e.g: My task title"
                                         value={newTaskTitle}
                                         onChange={(e) => setNewTaskTitle(e.target.value)}
                                         required
                                     />
                                 </div>
-
                                 <div className="form-group">
                                     <label className="form-label">Column *</label>
                                     <select
@@ -1027,6 +1077,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                         className="select"
                                         value={newTaskPriority}
                                         onChange={(e) => setNewTaskPriority(e.target.value)}
+                                        style={{ cursor: 'pointer' }}
                                     >
                                         <option value="Low">Low</option>
                                         <option value="Medium">Medium</option>
@@ -1035,9 +1086,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                     </select>
                                 </div>
 
+                                {/* CHỈ CHO PHÉP CHỌN 1 ASSIGNEE TRONG MODAL */}
                                 <div className="form-group">
                                     <label className="form-label">
-                                        Assignees {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
+                                        Assignee {selectedMembers.length > 0 && `(1 selected)`}
                                     </label>
                                     <div className="card" style={{ maxHeight: '144px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         {memberList.length === 0 ? (
@@ -1053,8 +1105,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                 return (
                                                     <label key={memberId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', borderRadius: '6px', cursor: 'pointer' }}>
                                                         <input
-                                                            type="checkbox"
-                                                            className="checkbox"
+                                                            type="radio"
+                                                            name="modal-assignee-radio"
+                                                            className="radio"
+                                                            style={{ cursor: 'pointer' }}
                                                             checked={selectedMembers.includes(memberId)}
                                                             onChange={() => toggleMemberSelection(memberId)}
                                                         />
@@ -1082,8 +1136,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             </div>
 
                             <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
-                                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                                <button type="button" className="btn btn-secondary" onClick={closeModal} style={{ cursor: 'pointer' }}>Cancel</button>
+                                <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ cursor: isSubmitting ? 'not-allowed' : 'pointer' }}>
                                     {isSubmitting ? 'Adding...' : 'Add'}
                                 </button>
                             </div>
