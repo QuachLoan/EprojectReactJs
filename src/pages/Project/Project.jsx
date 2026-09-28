@@ -54,9 +54,14 @@ export default function Projects() {
 
     const [toasts, setToasts] = useState([]);
 
-    // 🟢 Cập nhật getCurrentUserId hỗ trợ cả key 'user' lẫn 'member'
+    // 🟢 Lấy thông tin user hiện tại và kiểm tra role Manager
+    const getCurrentUser = () => {
+        return JSON.parse(localStorage.getItem('user') || localStorage.getItem('member') || '{}');
+    };
+    const currentUser = getCurrentUser();
+    const isManager = currentUser?.role === 'Manager';
+
     const getCurrentUserId = () => {
-        const currentUser = JSON.parse(localStorage.getItem('user') || localStorage.getItem('member') || '{}');
         return currentUser._id || currentUser.id || null;
     };
 
@@ -143,7 +148,6 @@ export default function Projects() {
             const list = Array.isArray(data) ? data : (data?.data || data?.users || []);
             setMembers(list);
 
-            // 🟢 Lấy ID của User đang đăng nhập và tự động tick sẵn
             const currentUserId = getCurrentUserId();
 
             if (currentUserId && list.length > 0) {
@@ -218,6 +222,8 @@ export default function Projects() {
 
     const handleCreateProject = async (e) => {
         e.preventDefault();
+        if (!isManager) return; // Bảo vệ nút gửi nếu không phải Manager
+
         setIsSubmittingProject(true);
         try {
             const currentUserId = getCurrentUserId();
@@ -296,17 +302,21 @@ export default function Projects() {
                                     All the boards your team is working on.
                                 </p>
                             </div>
-                            <button
-                                className="btn btn-primary"
-                                style={{ cursor: 'pointer' }}
-                                onClick={() => {
-                                    resetProjectForm();
-                                    setActiveModal('createProjectModal');
-                                }}
-                            >
-                                <Plus className="icon icon-sm" />
-                                Create Project
-                            </button>
+
+                            {/* 🟢 Chỉ hiển thị nút Create Project đối với Manager */}
+                            {isManager && (
+                                <button
+                                    className="btn btn-primary"
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => {
+                                        resetProjectForm();
+                                        setActiveModal('createProjectModal');
+                                    }}
+                                >
+                                    <Plus className="icon icon-sm" />
+                                    Create Project
+                                </button>
+                            )}
                         </div>
 
                         {loadingProjects ? (
@@ -316,7 +326,9 @@ export default function Projects() {
                             </div>
                         ) : projects.length === 0 ? (
                             <div className="empty-state" style={{ padding: '48px 0', textAlign: 'center' }}>
-                                <p className="empty-state-title" style={{ fontSize: '16px', color: '#6b7280' }}>Create your first project!</p>
+                                <p className="empty-state-title" style={{ fontSize: '16px', color: '#6b7280' }}>
+                                    {isManager ? 'Create your first project!' : 'No projects found.'}
+                                </p>
                             </div>
                         ) : (
                             <div className="grid-cards">
@@ -517,7 +529,7 @@ export default function Projects() {
             )}
 
             {/* Modal Create Project */}
-            {activeModal === 'createProjectModal' && (
+            {isManager && activeModal === 'createProjectModal' && (
                 <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
