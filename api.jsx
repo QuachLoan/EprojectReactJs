@@ -176,6 +176,14 @@ export const toggleChecklistItem = async (taskId, itemId, completed) => {
     return handleResponse(res);
 };
 
+export const deleteChecklist = async (taskId, checklistId) => {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}/checklist/${checklistId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
+
 // ==================== COMMENTS & ACTIVITIES ====================
 
 export const fetchTaskComments = async (taskId) => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import Header from './../../components/layout/Header/Header.jsx';
@@ -13,6 +13,7 @@ import {
     deleteTask,
     addChecklistItem,
     toggleChecklistItem,
+    deleteChecklist,
     fetchTaskComments,
     addComment,
     fetchTaskActivities,
@@ -84,6 +85,7 @@ function TaskDrawer({
     const canEditManagement = isManager || isLeader;
     const canDeleteTask = isManager; // CHỈ MANAGER MỚI ĐƯỢC XÓA TASK
     const canAddChecklist = isManager || isLeader;
+    const canDeleteChecklist = isManager || isLeader; // MANAGER VÀ LEADER MỚI ĐƯỢC XÓA CHECKLIST
 
     useEffect(() => {
         if (isDrawerOpen && taskId) {
@@ -176,7 +178,6 @@ function TaskDrawer({
         const currentAssignees = task.assignees || [];
         let newAssignees;
 
-        // Nếu người này đã được chọn thì bỏ chọn (về rỗng), ngược lại chỉ đặt duy nhất người này
         if (currentAssignees.some(id => String(id) === String(memberId))) {
             newAssignees = [];
         } else {
@@ -234,6 +235,27 @@ function TaskDrawer({
         } catch (error) {
             console.error("Lỗi khi cập nhật checklist:", error);
             setTask(prev => ({ ...prev, checklist: task.checklist }));
+        }
+    };
+
+    // MANAGER VÀ LEADER ĐƯỢC XÓA CHECKLIST
+    const handleDeleteChecklist = async (checklistId) => {
+        if (!canDeleteChecklist) return;
+        if (!window.confirm("Bạn có chắc chắn muốn xóa checklist này?")) return;
+
+        const previousChecklist = task.checklist;
+        const updatedChecklist = (task.checklist || []).filter(
+            item => String(item._id) !== String(checklistId)
+        );
+        setTask(prev => ({ ...prev, checklist: updatedChecklist }));
+
+        try {
+            if (typeof deleteChecklist === 'function') {
+                await deleteChecklist(checklistId);
+            }
+        } catch (error) {
+            console.error("Lỗi khi xóa checklist:", error);
+            setTask(prev => ({ ...prev, checklist: previousChecklist }));
         }
     };
 
@@ -448,18 +470,44 @@ function TaskDrawer({
                             </div>
                             <div className="checklist-items" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 {task.checklist && task.checklist.map((item, index) => (
-                                    <label key={item._id || index} className="checklist-item" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                                        <input
-                                            type="checkbox"
-                                            className="checkbox"
-                                            checked={item.completed || false}
-                                            style={{ cursor: 'pointer' }}
-                                            onChange={() => handleToggleChecklist(item._id, item.completed)}
-                                        />
-                                        <span className={`checklist-text ${item.completed ? 'completed' : ''}`} style={{ textDecoration: item.completed ? 'line-through' : 'none', color: item.completed ? '#9ca3af' : 'inherit', cursor: 'pointer' }}>
-                                            {item.text}
-                                        </span>
-                                    </label>
+                                    <div
+                                        key={item._id || index}
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0' }}
+                                    >
+                                        <label className="checklist-item" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flex: 1 }}>
+                                            <input
+                                                type="checkbox"
+                                                className="checkbox"
+                                                checked={item.completed || false}
+                                                style={{ cursor: 'pointer' }}
+                                                onChange={() => handleToggleChecklist(item._id, item.completed)}
+                                            />
+                                            <span className={`checklist-text ${item.completed ? 'completed' : ''}`} style={{ textDecoration: item.completed ? 'line-through' : 'none', color: item.completed ? '#9ca3af' : 'inherit', cursor: 'pointer' }}>
+                                                {item.text || item.title}
+                                            </span>
+                                        </label>
+
+                                        {/* NÚT XÓA CHECKLIST - CHỈ HIỂN THỊ VỚI MANAGER VÀ LEADER */}
+                                        {canDeleteChecklist && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDeleteChecklist(item._id)}
+                                                title="Xóa checklist"
+                                                style={{
+                                                    background: 'transparent',
+                                                    border: 'none',
+                                                    color: '#ef4444',
+                                                    cursor: 'pointer',
+                                                    fontSize: '14px',
+                                                    fontWeight: 'bold',
+                                                    padding: '0 6px',
+                                                    lineHeight: 1
+                                                }}
+                                            >
+                                                ✕
+                                            </button>
+                                        )}
+                                    </div>
                                 ))}
                             </div>
 
@@ -560,6 +608,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [loading, setLoading] = useState(true);
     const [selectedMembers, setSelectedMembers] = useState([]);
 
+    // Search State
+    const [searchQuery, setSearchQuery] = useState('');
+
     // UI & Modal / Drawer States
     const [activeModal, setActiveModal] = useState(null);
     const [isColumnFixed, setIsColumnFixed] = useState(false);
@@ -618,10 +669,21 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         fetchBoardData();
     }, [activeProjectId]);
 
+    // Lọc danh sách task dựa trên từ khóa tìm kiếm (Search Query)
+    const filteredTasks = useMemo(() => {
+        if (!searchQuery.trim()) return tasks;
+        const query = searchQuery.toLowerCase().trim();
+
+        return tasks.filter((task) => {
+            const title = (task.title || task.name || '').toLowerCase();
+            return title.includes(query);
+        });
+    }, [tasks, searchQuery]);
+
     const getSortedTasksForColumn = (column) => {
         const columnTaskMap = new Map();
 
-        tasks.forEach(task => {
+        filteredTasks.forEach(task => {
             if (!task || !task.columnId) return;
             const taskColId = extractColumnId(task.columnId);
             if (String(taskColId) === String(column._id)) {
@@ -858,9 +920,16 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
                 <main className="page-content">
                     <div className="filter-bar" style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                        <div className="input-icon-wrap" style={{ width: '220px', flexShrink: 0 }}>
+                        {/* Ô NHẬP TÌM KIẾM TỰ ĐỘNG LỌC CÁC TASK */}
+                        <div className="input-icon-wrap" style={{ width: '260px', flexShrink: 0 }}>
                             <span className="input-icon">🔍</span>
-                            <input className="input" placeholder="Search..." style={{ width: '100%' }} />
+                            <input
+                                className="input"
+                                placeholder="Search task name..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                style={{ width: '100%' }}
+                            />
                         </div>
 
                         {/* MANAGER VÀ LEADER MỚI THẤY NÚT TẠO TASK */}
@@ -911,7 +980,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                 >
                                                     {columnTasks.length === 0 ? (
                                                         <div className="empty-state" style={{ padding: '24px 0' }}>
-                                                            <div className="empty-state-desc">Chưa có công việc</div>
+                                                            <div className="empty-state-desc">
+                                                                {searchQuery ? 'Not found' : 'Empty'}
+                                                            </div>
                                                         </div>
                                                     ) : (
                                                         columnTasks.map((task, index) => {
@@ -925,7 +996,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                     key={String(task._id)}
                                                                     draggableId={String(task._id)}
                                                                     index={index}
-                                                                    isDragDisabled={!isManager} // CHỈ MANAGER ĐƯỢC KÉO THẢ
                                                                 >
                                                                     {(provided, snapshot) => (
                                                                         <div
