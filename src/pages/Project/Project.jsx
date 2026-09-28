@@ -54,18 +54,19 @@ export default function Projects() {
 
     const [toasts, setToasts] = useState([]);
 
+    // 🟢 Cập nhật getCurrentUserId hỗ trợ cả key 'user' lẫn 'member'
     const getCurrentUserId = () => {
-        const currentUser = JSON.parse(localStorage.getItem('member') || '{}');
+        const currentUser = JSON.parse(localStorage.getItem('user') || localStorage.getItem('member') || '{}');
         return currentUser._id || currentUser.id || null;
     };
 
+    // 🟢 Tự động tích chọn chính mình khi reset/mở form tạo project
     const resetProjectForm = () => {
         setProjectName('');
         setProjectDesc('');
         setProjectDueDate('');
         setSelectedColor('#4f46e5');
 
-        // 🟢 Tự động chọn Member hiện tại khi reset form
         const currentUserId = getCurrentUserId();
         if (currentUserId && members.length > 0) {
             const currentMember = members.find(m => {
@@ -142,17 +143,15 @@ export default function Projects() {
             const list = Array.isArray(data) ? data : (data?.data || data?.users || []);
             setMembers(list);
 
-            // 🟢 Lấy ID của User đang đăng nhập
+            // 🟢 Lấy ID của User đang đăng nhập và tự động tick sẵn
             const currentUserId = getCurrentUserId();
 
             if (currentUserId && list.length > 0) {
-                // Tìm record Member có chứa userId trùng với User hiện tại
                 const currentMember = list.find(m => {
                     const uId = m.userId?._id || m.userId;
                     return String(uId) === String(currentUserId);
                 });
 
-                // Nếu tìm thấy Member tương ứng thì tick sẵn memberId đó
                 if (currentMember) {
                     setSelectedMembers([currentMember._id || currentMember.id]);
                 }
@@ -221,10 +220,8 @@ export default function Projects() {
         e.preventDefault();
         setIsSubmittingProject(true);
         try {
-            const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-            const currentUserId = currentUser._id || currentUser.id;
+            const currentUserId = getCurrentUserId();
 
-            // Lọc kỹ mảng selectedMembers: chỉ giữ lại ID hợp lệ (chuỗi có độ dài > 0)
             const validAssignees = selectedMembers.filter(
                 (id) => typeof id === 'string' && id.trim().length > 0
             );
@@ -237,7 +234,7 @@ export default function Projects() {
                 color: selectedColor,
                 userId: currentUserId,
                 date: projectDueDate || today,
-                assignees: validAssignees // Gửi mảng ID đã làm sạch
+                assignees: validAssignees
             };
 
             await createProject(payload);
@@ -393,31 +390,30 @@ export default function Projects() {
                                             </div>
                                             <div className="project-card-footer">
                                                 <span className="avatar-group">
-    {memberList.map((member, index) => {
-        if (typeof member === 'string' || !member) {
-            return (
-                <span key={member || index} className="avatar avatar-xs" style={{ background: '#4f46e5' }}>
-                    U
-                </span>
-            );
-        }
+                                                    {memberList.map((member, index) => {
+                                                        if (typeof member === 'string' || !member) {
+                                                            return (
+                                                                <span key={member || index} className="avatar avatar-xs" style={{ background: '#4f46e5' }}>
+                                                                    U
+                                                                </span>
+                                                            );
+                                                        }
 
-        // 🟢 Đọc username/email từ member.userId lồng bên trong
-        const displayName = member.userId?.username || member.username || member.userId?.email || member.email || 'Member';
-        const initials = displayName.slice(0, 2).toUpperCase();
+                                                        const displayName = member.userId?.username || member.username || member.userId?.email || member.email || 'Member';
+                                                        const initials = displayName.slice(0, 2).toUpperCase();
 
-        return (
-            <span
-                key={member._id || index}
-                className="avatar avatar-xs"
-                style={{ background: '#4f46e5' }}
-                title={displayName}
-            >
-                {initials}
-            </span>
-        );
-    })}
-</span>
+                                                        return (
+                                                            <span
+                                                                key={member._id || index}
+                                                                className="avatar avatar-xs"
+                                                                style={{ background: '#4f46e5' }}
+                                                                title={displayName}
+                                                            >
+                                                                {initials}
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </span>
                                                 <span className="project-card-footer-meta">
                                                     <span className="icon-inline">
                                                         <UsersRound className="icon icon-sm" />
@@ -597,9 +593,8 @@ export default function Projects() {
                                             <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>Không có thành viên nào.</p>
                                         ) : (
                                             members.map((member) => {
-                                                const memberId = member._id || member.id; // 🟢 Dùng ID của Member
+                                                const memberId = member._id || member.id;
 
-                                                // Lấy username từ member.userId (nếu đã populate) hoặc fallback sang member
                                                 const displayName = member.userId?.username || member.username || member.userId?.email || member.email || 'Member';
                                                 const initials = displayName.slice(0, 2).toUpperCase();
 
@@ -612,8 +607,8 @@ export default function Projects() {
                                                             onChange={() => toggleMemberSelection(memberId)}
                                                         />
                                                         <span className="avatar avatar-xs" style={{ background: '#4f46e5' }}>
-                        {initials}
-                    </span>
+                                                            {initials}
+                                                        </span>
                                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                                                             <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
                                                             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{member.role || 'Member'}</span>

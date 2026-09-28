@@ -67,13 +67,11 @@ export default function ProjectSetting() {
         return `${year}-${month}-${day}`;
     };
 
+    // 🟢 Hàm trích xuất Member ID linh hoạt
     const extractMemberId = (m) => {
         if (!m) return '';
         if (typeof m === 'object') {
-            if (m.userId) {
-                return typeof m.userId === 'object' ? String(m.userId._id || m.userId.id) : String(m.userId);
-            }
-            return String(m._id || m.id || '');
+            return String(m._id || m.id || m.userId?._id || m.userId?.id || m.userId || '');
         }
         return String(m);
     };
@@ -114,7 +112,7 @@ export default function ProjectSetting() {
             const currentAssignees = Array.isArray(realProject?.assignees) ? realProject.assignees : [];
             const initialSelectedIds = currentAssignees
                 .map(m => extractMemberId(m))
-                .filter(id => id && id.length === 24);
+                .filter(id => id && id.length > 0);
 
             setSelectedMembers(initialSelectedIds);
             setTasks(realTasks);
@@ -132,6 +130,7 @@ export default function ProjectSetting() {
         );
     };
 
+    // 🟢 Đã sửa: Gửi kèm `assignees: selectedMembers` để giữ nguyên danh sách thành viên khi lưu thông tin chung
     const handleSaveGeneralSettings = async (e) => {
         e.preventDefault();
         if (!isManager) return;
@@ -139,13 +138,18 @@ export default function ProjectSetting() {
         try {
             setSaving(true);
 
+            const validAssignees = selectedMembers
+                .map(id => String(id).trim())
+                .filter(id => id.length > 0);
+
             const payload = {
                 name: formData.name.trim(),
                 description: formData.description.trim(),
                 color: formData.color,
                 date: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
                 dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
-                endDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null
+                endDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
+                assignees: validAssignees // Keep existing member list
             };
 
             await updateProject(projectId, payload);
@@ -165,9 +169,14 @@ export default function ProjectSetting() {
 
             const validAssignees = selectedMembers
                 .map(id => String(id).trim())
-                .filter(id => id.length === 24);
+                .filter(id => id.length > 0);
 
-            const payload = { assignees: validAssignees };
+            const payload = {
+                name: formData.name.trim(),
+                description: formData.description.trim(),
+                color: formData.color,
+                assignees: validAssignees
+            };
 
             await updateProject(projectId, payload);
             await loadData();
