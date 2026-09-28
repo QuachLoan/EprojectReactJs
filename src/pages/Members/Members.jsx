@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { fetchMembers } from "../../../api";
+import { fetchMembers, inviteMember } from "../../../api"; //
 
 function Members() {
-    const [member, setMember] = useState([]);
+    const [members, setMembers] = useState([]);
     const [openModel, setOpenModel] = useState(false);
     const [searchMember, setSearchMember] = useState("");
     const [inviteEmail, setInviteEmail] = useState("");
@@ -10,7 +10,7 @@ function Members() {
     const [invitePosition, setInvitePosition] = useState("None");
     const [loading, setLoading] = useState(true);
 
-    // Lấy thông tin user hiện tại và role từ localStorage
+    // Lấy thông tin user hiện tại từ localStorage
     const getCurrentUser = () => {
         return JSON.parse(localStorage.getItem('user') || '{}');
     };
@@ -21,11 +21,12 @@ function Members() {
     const loadData = async () => {
         try {
             setLoading(true);
-            const membersRes = await fetchMembers().catch(() => []);
-            const realMembers = Array.isArray(membersRes) ? membersRes : (membersRes?.data || membersRes?.users || []);
-            setMember(realMembers);
+            const resData = await fetchMembers();
+            const memberList = Array.isArray(resData) ? resData : (resData?.data || []);
+            setMembers(memberList);
         } catch (err) {
-            console.error("Lỗi khi tải dữ liệu:", err);
+            console.error("Lỗi khi tải dữ liệu member:", err);
+            setMembers([]);
         } finally {
             setLoading(false);
         }
@@ -35,9 +36,9 @@ function Members() {
         loadData();
     }, []);
 
-    // Lọc danh sách thành viên theo từ khóa tìm kiếm
-    const filteredMembers = member.filter((m) => {
-        const username = m.userId?.username || m.username || m.name || "";
+    // Lọc danh sách Member dựa vào thông tin của userId
+    const filteredMembers = members.filter((m) => {
+        const username = m.userId?.username || m.username || "";
         const email = m.userId?.email || m.email || "";
         return (
             username.toLowerCase().includes(searchMember.toLowerCase()) ||
@@ -60,32 +61,26 @@ function Members() {
         }
 
         try {
-            const token = localStorage.getItem('token');
-            const res = await fetch('http://localhost:3000/api/member/invite', {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    email: inviteEmail,
-                    role: inviteRole,
-                    position: invitePosition
-                })
+            const res = await inviteMember({
+                email: inviteEmail,
+                role: inviteRole,
+                position: invitePosition
             });
+
             const data = await res.json();
+
             if (res.ok) {
-                alert("Gửi lời mời / Thêm thành viên thành công!");
                 setOpenModel(false);
                 setInviteEmail("");
                 setInviteRole("Member");
                 setInvitePosition("None");
-                loadData();
+                loadData(); // Tải lại danh sách sau khi thêm thành công
             } else {
                 alert(data.message || "Xảy ra lỗi khi thực hiện!");
             }
         } catch (error) {
             console.error("Lỗi gửi lời mời:", error);
+            alert("Có lỗi kết nối đến server!");
         }
     };
 
@@ -107,7 +102,7 @@ function Members() {
                             <p className="page-subtitle">Everyone with access to this workspace.</p>
                         </div>
                         {isManager && (
-                            <button onClick={toggleModel} className="btn btn-primary" data-open-modal="inviteMemberModal">
+                            <button onClick={toggleModel} className="btn btn-primary">
                                 <span className="icon icon-sm" data-icon="plus">
                                     <svg viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
                                 </span>
@@ -129,7 +124,6 @@ function Members() {
                     </div>
 
                     <div className="card">
-                        {/* Đã chia lại layout gồm 3 cột: Member, Role, Status */}
                         <div className="member-table-header" style={{ gridTemplateColumns: "2fr 150px 100px" }}>
                             <span>Member</span>
                             <span>Role</span>
@@ -137,15 +131,17 @@ function Members() {
                         </div>
 
                         {loading ? (
-                            <div style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>Đang tải danh sách thành viên...</div>
+                            <div style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>Loading...</div>
                         ) : filteredMembers.length > 0 ? (
-                            filteredMembers.map((x, idx) => {
-                                const username = x.userId?.username || x.username || x.name || "User";
-                                const email = x.userId?.email || x.email || "No email";
-                                const role = x.role || "Member";
+                            filteredMembers.map((m, idx) => {
+                                // Lấy thông tin từ m.userId đã được populate
+                                const username = m.userId?.username || "Chưa cập nhật";
+                                const email = m.userId?.email || "Không có email";
+                                const role = m.role || "Member";
+                                const status = m.status || "Active";
 
                                 return (
-                                    <div key={x._id || idx} className="member-row" style={{ gridTemplateColumns: "2fr 150px 100px" }}>
+                                    <div key={m._id || idx} className="member-row" style={{ gridTemplateColumns: "2fr 150px 100px" }}>
                                         <div className="member-identity">
                                             <span className="avatar avatar-sm" style={{ background: '#4f46e5' }}>
                                                 {getInitials(username)}
@@ -156,18 +152,31 @@ function Members() {
                                             </div>
                                         </div>
                                         <span>
-                                            <span className={`badge ${role === 'Manager' ? 'badge-primary' : role === 'Leader' ? 'badge-success' : 'badge-neutral'}`}>
+                                            <span
+                                                className="badge"
+                                                style={{
+                                                    backgroundColor: role === 'Manager' ? '#8b5cf6' : role === 'Leader' ? '#f59e0b' : '#f1f5f9',
+                                                    color: role === 'Manager' || role === 'Leader' ? '#ffffff' : '#475569',
+                                                    border: role === 'Member' ? '1px solid #cbd5e1' : 'none',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '8px',
+                                                    fontSize: '12px',
+                                                    fontWeight: '500'
+                                                }}
+                                            >
                                                 {role}
                                             </span>
                                         </span>
                                         <span>
-                                            <span className="badge badge-success">Active</span>
+                                            <span className={`badge ${status === 'Active' ? 'badge-success' : 'badge-warning'}`}>
+                                                {status}
+                                            </span>
                                         </span>
                                     </div>
                                 );
                             })
                         ) : (
-                            <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>Không tìm thấy thành viên phù hợp.</div>
+                            <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>No members found</div>
                         )}
                     </div>
                 </div>

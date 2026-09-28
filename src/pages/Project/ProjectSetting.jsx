@@ -67,6 +67,17 @@ export default function ProjectSetting() {
         return `${year}-${month}-${day}`;
     };
 
+    const extractMemberId = (m) => {
+        if (!m) return '';
+        if (typeof m === 'object') {
+            if (m.userId) {
+                return typeof m.userId === 'object' ? String(m.userId._id || m.userId.id) : String(m.userId);
+            }
+            return String(m._id || m.id || '');
+        }
+        return String(m);
+    };
+
     useEffect(() => {
         if (projectId) {
             loadData();
@@ -102,7 +113,7 @@ export default function ProjectSetting() {
 
             const currentAssignees = Array.isArray(realProject?.assignees) ? realProject.assignees : [];
             const initialSelectedIds = currentAssignees
-                .map(m => (typeof m === 'object' ? String(m._id || m.id) : String(m)))
+                .map(m => extractMemberId(m))
                 .filter(id => id && id.length === 24);
 
             setSelectedMembers(initialSelectedIds);
@@ -188,7 +199,7 @@ export default function ProjectSetting() {
 
     const displayedMembers = isManager
         ? members
-        : members.filter(m => selectedMembers.includes(String(m._id || m.id)));
+        : members.filter(m => selectedMembers.includes(extractMemberId(m)));
 
     const disabledInputStyle = !isManager
         ? { cursor: 'not-allowed', backgroundColor: 'var(--color-bg-muted, #f1f5f9)', opacity: 0.8 }
@@ -400,8 +411,9 @@ export default function ProjectSetting() {
                                                 <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>Không có thành viên nào.</p>
                                             ) : (
                                                 displayedMembers.map((member) => {
-                                                    const memberId = String(member._id || member.id);
-                                                    const displayName = member.username || member.email || 'User';
+                                                    const memberId = extractMemberId(member);
+                                                    const userObj = member.userId && typeof member.userId === 'object' ? member.userId : member;
+                                                    const displayName = userObj.username || userObj.email || 'User';
                                                     const initials = displayName.slice(0, 2).toUpperCase();
                                                     const isChecked = selectedMembers.includes(memberId);
 
@@ -434,7 +446,7 @@ export default function ProjectSetting() {
                                                             </span>
                                                             <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
                                                                 <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
-                                                                <span style={{ fontSize: '11px', color: 'var(--text-muted, #64748b)' }}>{member.email || member.role || 'Member'}</span>
+                                                                <span style={{ fontSize: '11px', color: 'var(--text-muted, #64748b)' }}>{userObj.email || member.role || 'Member'}</span>
                                                             </div>
                                                             {isChecked && (
                                                                 <span style={{ fontSize: '12px', color: '#4f46e5', fontWeight: 600 }}>Added</span>

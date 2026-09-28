@@ -34,13 +34,37 @@ const getInitials = (name) => {
         : (words[0][0] + words[words.length - 1][0]).toUpperCase();
 };
 
+const getMemberUserId = (member) => {
+    if (!member) return null;
+    if (typeof member === 'object') {
+        if (member.userId) {
+            return typeof member.userId === 'object' ? String(member.userId._id || member.userId.id) : String(member.userId);
+        }
+        return String(member._id || member.id || '');
+    }
+    return String(member);
+};
+
+const getMemberDisplayName = (member) => {
+    if (!member) return 'User';
+    if (typeof member === 'object') {
+        const u = member.userId && typeof member.userId === 'object' ? member.userId : member;
+        return u.username || u.name || u.email || 'User';
+    }
+    return 'User';
+};
+
 const getUserInfo = (userOrId, projectMembers = []) => {
     if (!userOrId) return null;
     if (typeof userOrId === 'object' && (userOrId.username || userOrId.name)) {
         return userOrId;
     }
     const targetId = typeof userOrId === 'object' ? (userOrId._id || userOrId.id) : userOrId;
-    const found = projectMembers.find(m => String(m._id || m.id) === String(targetId));
+    const found = projectMembers.find(m => {
+        const mUserId = getMemberUserId(m);
+        const mId = String(m._id || m.id);
+        return mUserId === String(targetId) || mId === String(targetId);
+    });
     return found || userOrId;
 };
 
@@ -218,7 +242,7 @@ export default function ProjectList() {
         }
     };
 
-    const handleToggleTaskAssignee = async (task, memberId) => {
+    const handleToggleTaskAssignee = async (task, memberUserId) => {
         if (!isLeader || !task) return;
 
         const taskId = task._id || task.id;
@@ -226,7 +250,7 @@ export default function ProjectList() {
             ? task.assignees.map(a => typeof a === 'object' ? (a._id || a.id) : a).filter(Boolean).map(id => String(id))
             : [];
 
-        const targetMemberId = String(memberId);
+        const targetMemberId = String(memberUserId);
 
         const updatedAssignees = currentAssignees.includes(targetMemberId)
             ? []
@@ -366,9 +390,7 @@ export default function ProjectList() {
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                             {taskAssignees.map((assignee, aIdx) => {
                                                                 const userInfo = getUserInfo(assignee, memberList);
-                                                                const name = typeof userInfo === 'object'
-                                                                    ? (userInfo.username || userInfo.name || userInfo.email || '')
-                                                                    : '';
+                                                                const name = getMemberDisplayName(userInfo);
                                                                 const memberId = typeof assignee === 'object'
                                                                     ? (assignee._id || assignee.id || aIdx)
                                                                     : assignee;
@@ -376,7 +398,7 @@ export default function ProjectList() {
                                                                 return (
                                                                     <span
                                                                         key={`assignee-${memberId}-${aIdx}`}
-                                                                        title={name || 'User'}
+                                                                        title={name}
                                                                         style={{
                                                                             background: '#4f46e5',
                                                                             color: '#fff',
@@ -492,24 +514,25 @@ export default function ProjectList() {
                         padding: '6px',
                     }}
                 >
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', padding: '4px 6px' }}>Assign Member (Max 1):</div>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', padding: '4px 6px' }}>Assign Member:</div>
                     {memberList.map((m) => {
-                        const mId = m._id || m.id;
+                        const mUserId = getMemberUserId(m);
+                        const displayName = getMemberDisplayName(m);
                         const currentTask = tasks.find(t => String(t._id || t.id) === String(assigneeMenu.taskId));
                         const taskAssignees = Array.isArray(currentTask?.assignees) ? currentTask.assignees : [];
-                        const isChecked = taskAssignees.some(a => String(typeof a === 'object' ? (a._id || a.id) : a) === String(mId));
+                        const isChecked = taskAssignees.some(a => String(typeof a === 'object' ? (a._id || a.id) : a) === String(mUserId));
 
                         return (
                             <div
-                                key={mId}
+                                key={mUserId}
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    handleToggleTaskAssignee(currentTask, mId);
+                                    handleToggleTaskAssignee(currentTask, mUserId);
                                 }}
                                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}
                                 className="hover:bg-slate-100"
                             >
-                                <span>{m.username || m.name}</span>
+                                <span>{displayName}</span>
                                 {isChecked && <Check className="w-4 h-4 text-indigo-600" />}
                             </div>
                         );

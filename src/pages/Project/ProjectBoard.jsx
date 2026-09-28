@@ -22,7 +22,7 @@ import {
 import "./project.css";
 import {Calendar, CalendarClock, LayoutGrid, List, ListChecks, Settings, UsersRound, Loader2} from "lucide-react";
 
-// Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa từ username/name
+// Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa
 const getInitials = (name) => {
     if (!name) return '??';
     const words = String(name).trim().split(/\s+/);
@@ -32,16 +32,47 @@ const getInitials = (name) => {
     return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 };
 
+// Hàm trích xuất User ID chính xác từ Member object hoặc ID
+const getMemberUserId = (member) => {
+    if (!member) return null;
+    if (typeof member === 'object') {
+        if (member.userId) {
+            return typeof member.userId === 'object' ? String(member.userId._id || member.userId.id) : String(member.userId);
+        }
+        return String(member._id || member.id || '');
+    }
+    return String(member);
+};
+
+// Hàm lấy tên hiển thị của Member (hỗ trợ đọc cả populated userId và user phẳng)
+const getMemberDisplayName = (member) => {
+    if (!member) return 'User';
+    if (typeof member === 'object') {
+        // Nếu member.userId là object (đã populate)
+        if (member.userId && typeof member.userId === 'object') {
+            return member.userId.username || member.userId.name || member.userId.email || 'User';
+        }
+        // Nếu thông tin user nằm trực tiếp trên object
+        return member.username || member.name || member.email || 'User';
+    }
+    return 'User';
+};
+
 // Hàm tìm kiếm thông tin user theo ID từ danh sách thành viên dự án
 const getUserInfo = (userOrId, projectMembers = []) => {
     if (!userOrId) return null;
 
-    if (typeof userOrId === 'object' && (userOrId.username || userOrId.name)) {
+    if (typeof userOrId === 'object' && (userOrId.username || userOrId.name || userOrId.userId)) {
         return userOrId;
     }
 
-    const targetId = typeof userOrId === 'object' ? (userOrId._id || userOrId.id) : userOrId;
-    const found = projectMembers.find(m => String(m._id || m.id) === String(targetId));
+    const targetId = typeof userOrId === 'object' ? String(userOrId._id || userOrId.id) : String(userOrId);
+
+    const found = projectMembers.find(m => {
+        const mUserId = getMemberUserId(m);
+        const mId = String(m._id || m.id);
+        return mUserId === targetId || mId === targetId;
+    });
 
     return found || userOrId;
 };
@@ -83,9 +114,9 @@ function TaskDrawer({
     // LOGIC PHÂN QUYỀN:
     const canEditAll = isManager;
     const canEditManagement = isManager || isLeader;
-    const canDeleteTask = isManager; // CHỈ MANAGER MỚI ĐƯỢC XÓA TASK
+    const canDeleteTask = isManager;
     const canAddChecklist = isManager || isLeader;
-    const canDeleteChecklist = isManager || isLeader; // MANAGER VÀ LEADER MỚI ĐƯỢC XÓA CHECKLIST
+    const canDeleteChecklist = isManager || isLeader;
 
     useEffect(() => {
         if (isDrawerOpen && taskId) {
@@ -99,7 +130,7 @@ function TaskDrawer({
                     const realTask = taskData?.data || taskData;
 
                     const formattedAssignees = Array.isArray(realTask.assignees)
-                        ? realTask.assignees.map(a => typeof a === 'object' ? (a._id || a.id) : a)
+                        ? realTask.assignees.map(a => typeof a === 'object' ? String(a._id || a.id) : String(a))
                         : [];
 
                     setTask({
@@ -119,7 +150,6 @@ function TaskDrawer({
 
     if (!isDrawerOpen) return null;
 
-    // Cập nhật trường dữ liệu task
     const handleUpdateTaskField = async (updatedFields) => {
         if (!task || isSaving) return;
 
@@ -130,15 +160,9 @@ function TaskDrawer({
         const previousTask = { ...task };
         const updatedTaskLocal = { ...task, ...updatedFields };
 
-        // 1. Cập nhật UI local của Drawer
         setTask(updatedTaskLocal);
+        if (onTaskUpdated) onTaskUpdated(updatedTaskLocal);
 
-        // 2. Cập nhật UI của Kanban Board ngoài
-        if (onTaskUpdated) {
-            onTaskUpdated(updatedTaskLocal);
-        }
-
-        // 3. Gọi API lưu vào DB
         try {
             setIsSaving(true);
             const updatedData = await updateTask(taskId, updatedFields);
@@ -171,23 +195,21 @@ function TaskDrawer({
         });
     };
 
-    // Chỉ chọn 1 Assignee duy nhất
-    const handleToggleAssignee = (memberId) => {
+    const handleToggleAssignee = (memberUserId) => {
         if (!canEditManagement) return;
 
         const currentAssignees = task.assignees || [];
         let newAssignees;
 
-        if (currentAssignees.some(id => String(id) === String(memberId))) {
+        if (currentAssignees.some(id => String(id) === String(memberUserId))) {
             newAssignees = [];
         } else {
-            newAssignees = [memberId];
+            newAssignees = [memberUserId];
         }
 
         handleUpdateTaskField({ assignees: newAssignees, members: newAssignees });
     };
 
-    // CHỈ MANAGER MỚI ĐƯỢC XÓA TASK
     const handleDeleteTask = async () => {
         if (!canDeleteTask) return;
         if (!window.confirm("Bạn có chắc chắn muốn xóa task này?")) return;
@@ -200,7 +222,6 @@ function TaskDrawer({
         }
     };
 
-    // MANAGER VÀ LEADER CÓ QUYỀN THÊM CHECKLIST
     const handleAddChecklist = async () => {
         if (!canAddChecklist || !checklistText.trim()) return;
 
@@ -218,7 +239,6 @@ function TaskDrawer({
         }
     };
 
-    // CẢ MANAGER, LEADER VÀ MEMBER ĐỀU ĐƯỢC TÍCH CHECKLIST ITEM
     const handleToggleChecklist = async (itemId, completed) => {
         const updatedChecklist = (task.checklist || []).map(item =>
             String(item._id) === String(itemId) ? { ...item, completed: !completed } : item
@@ -238,7 +258,6 @@ function TaskDrawer({
         }
     };
 
-    // MANAGER VÀ LEADER ĐƯỢC XÓA CHECKLIST
     const handleDeleteChecklist = async (checklistId) => {
         if (!canDeleteChecklist) return;
         if (!window.confirm("Bạn có chắc chắn muốn xóa checklist này?")) return;
@@ -310,7 +329,7 @@ function TaskDrawer({
                             {isSaving ? (
                                 <>
                                     <Loader2 className="animate-spin" size={14} />
-                                    <span>Đang lưu...</span>
+                                    <span>Updating...</span>
                                 </>
                             ) : (
                                 task?.updatedAt ? `Updated ${new Date(task.updatedAt).toLocaleDateString('vi-VN')}` : 'Recently'
@@ -334,7 +353,6 @@ function TaskDrawer({
                     </div>
                 ) : (
                     <div className="drawer-body">
-                        {/* Title - Manager & Leader được sửa */}
                         <textarea
                             className="drawer-title-input"
                             rows="1"
@@ -347,7 +365,6 @@ function TaskDrawer({
                         />
 
                         <div className="drawer-field-grid">
-                            {/* NAME - CHỈ MANAGER ĐƯỢC CHỈNH SỬA */}
                             <div style={{ gridColumn: 'span 2' }}>
                                 <span className="drawer-field-label">Title</span>
                                 <input
@@ -368,7 +385,6 @@ function TaskDrawer({
                                 />
                             </div>
 
-                            {/* Status - CHỈ MANAGER ĐƯỢC CHỈNH SỬA */}
                             <div>
                                 <span className="drawer-field-label">Status</span>
                                 <select
@@ -386,7 +402,6 @@ function TaskDrawer({
                                 </select>
                             </div>
 
-                            {/* Priority - CHỈ MANAGER ĐƯỢC CHỈNH SỬA */}
                             <div>
                                 <span className="drawer-field-label">Priority</span>
                                 <select
@@ -403,7 +418,6 @@ function TaskDrawer({
                                 </select>
                             </div>
 
-                            {/* Due Date - CHỈ MANAGER ĐƯỢC CHỈNH SỬA */}
                             <div>
                                 <span className="drawer-field-label">End date</span>
                                 <input
@@ -416,7 +430,6 @@ function TaskDrawer({
                                 />
                             </div>
 
-                            {/* Assignee - CHỈ CHO PHÉP CHỌN 1 NGUỜI */}
                             <div style={{ gridColumn: 'span 2' }}>
                                 <span className="drawer-field-label">Assignee</span>
                                 <div className="card" style={{ maxHeight: '120px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -424,12 +437,12 @@ function TaskDrawer({
                                         <span style={{ fontSize: '13px', color: '#6b7280' }}>Chưa có thành viên dự án</span>
                                     ) : (
                                         projectMembers.map((member, idx) => {
-                                            const memberId = typeof member === 'object' ? (member._id || member.id) : member;
-                                            const name = typeof member === 'object' ? (member.username || member.name || member.email || 'User') : 'User';
-                                            const isChecked = task.assignees?.some(id => String(id) === String(memberId));
+                                            const memberUserId = getMemberUserId(member);
+                                            const name = getMemberDisplayName(member);
+                                            const isChecked = task.assignees?.some(id => String(id) === String(memberUserId));
 
                                             return (
-                                                <label key={memberId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: canEditManagement ? 'pointer' : 'not-allowed', fontSize: '13px' }}>
+                                                <label key={memberUserId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: canEditManagement ? 'pointer' : 'not-allowed', fontSize: '13px' }}>
                                                     <input
                                                         type="radio"
                                                         name="drawer-assignee-radio"
@@ -437,7 +450,7 @@ function TaskDrawer({
                                                         checked={isChecked}
                                                         disabled={!canEditManagement}
                                                         style={{ cursor: canEditManagement ? 'pointer' : 'not-allowed' }}
-                                                        onChange={() => handleToggleAssignee(memberId)}
+                                                        onChange={() => handleToggleAssignee(memberUserId)}
                                                     />
                                                     <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '10px', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                         {getInitials(name)}
@@ -451,7 +464,6 @@ function TaskDrawer({
                             </div>
                         </div>
 
-                        {/* Description - CHỈ MANAGER ĐƯỢC CHỈNH SỬA */}
                         <div>
                             <span className="drawer-field-label">Description</span>
                             <textarea
@@ -466,7 +478,6 @@ function TaskDrawer({
                             />
                         </div>
 
-                        {/* Checklist Section */}
                         <div className="drawer-section">
                             <div className="checklist-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                                 <span className="comments-title">Checklists</span>
@@ -497,7 +508,6 @@ function TaskDrawer({
                                             </span>
                                         </label>
 
-                                        {/* NÚT XÓA CHECKLIST - CHỈ HIỂN THỊ VỚI MANAGER VÀ LEADER */}
                                         {canDeleteChecklist && (
                                             <button
                                                 type="button"
@@ -521,7 +531,6 @@ function TaskDrawer({
                                 ))}
                             </div>
 
-                            {/* MANAGER & LEADER THẤY Ô THÊM CHECKLIST */}
                             {canAddChecklist && (
                                 <div className="checklist-add-row" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                                     <input
@@ -538,7 +547,6 @@ function TaskDrawer({
                             )}
                         </div>
 
-                        {/* Comments Section */}
                         <div className="drawer-section">
                             <p className="comments-title" style={{ fontWeight: 600, marginBottom: '8px' }}>Comments</p>
                             <div className="comments-list" style={{ marginBottom: '12px' }}>
@@ -569,7 +577,6 @@ function TaskDrawer({
                             </form>
                         </div>
 
-                        {/* Activity Section */}
                         <div className="drawer-section">
                             <p className="comments-title" style={{ fontWeight: 600, marginBottom: '8px' }}>Activities</p>
                             <ol className="timeline" style={{ paddingLeft: '16px', fontSize: '13px', color: '#4b5563' }}>
@@ -581,7 +588,6 @@ function TaskDrawer({
                             </ol>
                         </div>
 
-                        {/* Delete Task - CHỈ MANAGER MỚI CÓ QUYỀN XÓA */}
                         {canDeleteTask && (
                             <div className="drawer-section" style={{ marginTop: '24px' }}>
                                 <button
@@ -607,29 +613,23 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const { id: urlProjectId } = useParams();
     const activeProjectId = urlProjectId || propProjectId;
 
-    // Layout State
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
 
-    // Data States
     const [project, setProject] = useState(null);
     const [columns, setColumns] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedMembers, setSelectedMembers] = useState([]);
 
-    // Search State
     const [searchQuery, setSearchQuery] = useState('');
 
-    // UI & Modal / Drawer States
     const [activeModal, setActiveModal] = useState(null);
     const [isColumnFixed, setIsColumnFixed] = useState(false);
 
-    // State quản lý Task Drawer
     const [selectedTaskId, setSelectedTaskId] = useState(null);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-    // Form Task State
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskName, setNewTaskName] = useState('');
     const [newTaskColumnId, setNewTaskColumnId] = useState('');
@@ -645,7 +645,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const currentUser = getCurrentUser();
     const isManager = currentUser?.role === 'Manager';
     const isLeader = currentUser?.role === 'Leader';
-    const canCreateTask = isManager || isLeader; // Manager & Leader được phép tạo task mới
+    const canCreateTask = isManager || isLeader;
 
     const fetchBoardData = async () => {
         if (!activeProjectId) return;
@@ -679,7 +679,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         fetchBoardData();
     }, [activeProjectId]);
 
-    // Lọc danh sách task dựa trên từ khóa tìm kiếm (Search Query)
     const filteredTasks = useMemo(() => {
         if (!searchQuery.trim()) return tasks;
         const query = searchQuery.toLowerCase().trim();
@@ -736,14 +735,12 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         resetTaskForm();
     };
 
-    // Chỉ chọn 1 thành viên duy nhất cho Modal Tạo Task
     const toggleMemberSelection = (id) => {
         setSelectedMembers((prev) =>
             prev.includes(id) ? [] : [id]
         );
     };
 
-    // Handlers Mở / Đóng Drawer
     const handleOpenTaskDrawer = (taskId) => {
         setSelectedTaskId(taskId);
         setIsDrawerOpen(true);
@@ -778,10 +775,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             return;
         }
 
-        // 1. Lưu lại state cũ để rollback nếu gặp lỗi
         const previousTasks = [...tasks];
 
-        // 2. Cập nhật state UI lập tức (Optimistic UI Update)
         setTasks((prevTasks) => {
             const newTasks = Array.from(prevTasks);
             const movedTaskIndex = newTasks.findIndex(t => String(t._id) === String(draggableId));
@@ -795,7 +790,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             return newTasks;
         });
 
-        // 3. Gọi API cập nhật server
         const payload = {
             sourceColumnId: source.droppableId === 'backlog' ? null : source.droppableId,
             destColumnId: destination.droppableId,
@@ -806,7 +800,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             await moveTask(draggableId, payload);
         } catch (error) {
             console.error("Lỗi kéo thả task, hoàn tác UI:", error);
-            setTasks(previousTasks); // Hoàn tác nếu lỗi
+            setTasks(previousTasks);
         }
     };
 
@@ -840,13 +834,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 members: cleanMembers
             };
 
-            // 1. Gọi API tạo task
             const response = await createTask(payload);
-
-            // Bóc tách lấy dữ liệu task mới trả về từ Server
             const createdTask = response?.data || response;
 
-            // 2. Đảm bảo chuẩn hóa dữ liệu task trước khi thêm vào state
             const formattedNewTask = {
                 ...createdTask,
                 _id: String(createdTask._id || createdTask.id),
@@ -857,10 +847,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 assignees: createdTask.assignees || cleanMembers
             };
 
-            // 3. Thêm trực tiếp task mới vào danh sách `tasks` hiện tại mà không load lại trang
             setTasks(prevTasks => [...prevTasks, formattedNewTask]);
-
-            // 4. Đóng modal và reset form
             closeModal();
         } catch (error) {
             console.error("Lỗi khi tạo task mới:", error);
@@ -935,7 +922,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
                 <main className="page-content">
                     <div className="filter-bar" style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                        {/* Ô NHẬP TÌM KIẾM TỰ ĐỘNG LỌC CÁC TASK */}
                         <div className="input-icon-wrap" style={{ width: '260px', flexShrink: 0 }}>
                             <span className="input-icon">🔍</span>
                             <input
@@ -947,7 +933,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             />
                         </div>
 
-                        {/* MANAGER VÀ LEADER MỚI THẤY NÚT TẠO TASK */}
                         {canCreateTask && (
                             <button
                                 className="btn btn-primary"
@@ -1044,9 +1029,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                     <div className="task-assignees-group">
                                                                                         {assignees.map((assignee, aIdx) => {
                                                                                             const userInfo = getUserInfo(assignee, memberList);
-                                                                                            const name = typeof userInfo === 'object'
-                                                                                                ? (userInfo.username || userInfo.name || userInfo.email || '')
-                                                                                                : '';
+                                                                                            const name = getMemberDisplayName(userInfo);
                                                                                             const assigneeId = typeof assignee === 'object'
                                                                                                 ? (assignee._id || assignee.id || aIdx)
                                                                                                 : assignee;
@@ -1055,7 +1038,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                                 <div
                                                                                                     key={assigneeId}
                                                                                                     className="task-assignee-avatar"
-                                                                                                    title={name || 'User'}
+                                                                                                    title={name}
                                                                                                 >
                                                                                                     {getInitials(name)}
                                                                                                 </div>
@@ -1092,7 +1075,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 </main>
             </div>
 
-            {/* TASK DRAWER CHI TIẾT TASK */}
             <TaskDrawer
                 taskId={selectedTaskId}
                 isDrawerOpen={isDrawerOpen}
@@ -1106,7 +1088,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 currentUserId={getCurrentUserId()}
             />
 
-            {/* MODAL TẠO TASK (MANAGER VÀ LEADER MỚI MỞ ĐƯỢC) */}
             {canCreateTask && activeModal === 'quickCreateTaskModal' && (
                 <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
@@ -1171,7 +1152,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                     </select>
                                 </div>
 
-                                {/* CHỈ CHO PHÉP CHỌN 1 ASSIGNEE TRONG MODAL */}
                                 <div className="form-group">
                                     <label className="form-label">
                                         Assignee {selectedMembers.length > 0 && `(1 selected)`}
@@ -1183,19 +1163,19 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                             </p>
                                         ) : (
                                             memberList.map((member, idx) => {
-                                                const memberId = typeof member === 'object' ? (member._id || member.id) : member;
-                                                const displayName = typeof member === 'object' ? (member.username || member.name || member.email || 'User') : 'User';
+                                                const memberUserId = getMemberUserId(member);
+                                                const displayName = getMemberDisplayName(member);
                                                 const initials = getInitials(displayName);
 
                                                 return (
-                                                    <label key={memberId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', borderRadius: '6px', cursor: 'pointer' }}>
+                                                    <label key={memberUserId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', borderRadius: '6px', cursor: 'pointer' }}>
                                                         <input
                                                             type="radio"
                                                             name="modal-assignee-radio"
                                                             className="radio"
                                                             style={{ cursor: 'pointer' }}
-                                                            checked={selectedMembers.includes(memberId)}
-                                                            onChange={() => toggleMemberSelection(memberId)}
+                                                            checked={selectedMembers.includes(memberUserId)}
+                                                            onChange={() => toggleMemberSelection(memberUserId)}
                                                         />
                                                         <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '11px', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                             {initials}

@@ -67,16 +67,39 @@ export const deleteProject = async (projectId) => {
     return handleResponse(res);
 };
 
-export const fetchMembersByProject = async (projectId) => {
+export const fetchUsersByProject = async (projectId) => {
     const res = await fetch(`${API_BASE_URL}/project/${projectId}/user`, {
         headers: getAuthHeaders()
     });
     return handleResponse(res);
 };
 
-export const fetchMembers = async () => {
+export const fetchUsers = async () => {
     const res = await fetch(`${API_BASE_URL}/user`, {
         headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
+
+export const fetchMembers = async () => {
+    const res = await fetch(`${API_BASE_URL}/member`, {
+        headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
+
+export const fetchMembersByProject = async (projectId) => {
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}/member`, {
+        headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
+
+export const inviteMember = async (payload) => {
+    const res = await fetch(`${API_BASE_URL}/member/invite`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload)
     });
     return handleResponse(res);
 };
