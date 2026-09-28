@@ -643,9 +643,22 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     };
 
     const currentUser = getCurrentUser();
+    const currentUserId = currentUser._id || currentUser.id || null;
+
     const isManager = currentUser?.role === 'Manager';
     const isLeader = currentUser?.role === 'Leader';
+    const isMember = currentUser?.role === 'Member';
     const canCreateTask = isManager || isLeader;
+
+    // KIỂM TRA QUYỀN MEMBER TRONG PROJECT DÙNG ĐỂ CHẶN KÉO THẢ:
+    const isProjectMember = useMemo(() => {
+        if (!currentUserId || !project) return false;
+        const memberList = Array.isArray(project.assignees) ? project.assignees : (project.members || []);
+        return memberList.some(m => {
+            const mUserId = getMemberUserId(m);
+            return String(mUserId) === String(currentUserId);
+        });
+    }, [currentUserId, project]);
 
     const fetchBoardData = async () => {
         if (!activeProjectId) return;
@@ -765,8 +778,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     };
 
     const handleOnDragEnd = async (result) => {
-        const { destination, source, draggableId } = result;
+        // CHẶN KÉO THẢ NẾU KHÔNG PHẢI LÀ MEMBER CỦA PROJECT
+        if (!isProjectMember) return;
 
+        const { destination, source, draggableId } = result;
         if (!destination) return;
         if (
             destination.droppableId === source.droppableId &&
@@ -996,6 +1011,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                     key={String(task._id)}
                                                                     draggableId={String(task._id)}
                                                                     index={index}
+                                                                    isDragDisabled={!isProjectMember}
                                                                 >
                                                                     {(provided, snapshot) => (
                                                                         <div
@@ -1010,7 +1026,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 boxShadow: snapshot.isDragging
                                                                                     ? '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
                                                                                     : 'none',
-                                                                                cursor: 'pointer'
+                                                                                cursor: isProjectMember ? 'grab' : 'pointer'
                                                                             }}
                                                                         >
                                                                             <div className="task-card-title">{task.title || task.name}</div>
