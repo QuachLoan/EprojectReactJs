@@ -531,8 +531,18 @@ export default function Projects() {
             {/* Modal Create Project */}
             {isManager && activeModal === 'createProjectModal' && (
                 <div className="modal-overlay" onClick={closeModal}>
-                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
+                    <div
+                        className="modal-box"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            maxHeight: '90vh',        // Giới hạn chiều cao tối đa bằng 90% màn hình
+                            display: 'flex',
+                            flexDirection: 'column',
+                            overflow: 'hidden'        // Giữ cho header và footer cố định
+                        }}
+                    >
+                        {/* Header cố định */}
+                        <div className="modal-header" style={{ flexShrink: 0 }}>
                             <div>
                                 <h2 className="modal-title">Create project</h2>
                                 <p className="modal-desc">Set up a new board for your team.</p>
@@ -541,8 +551,28 @@ export default function Projects() {
                                 <X className="icon" />
                             </button>
                         </div>
-                        <form onSubmit={handleCreateProject}>
-                            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+
+                        <form
+                            onSubmit={handleCreateProject}
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                flex: 1,
+                                overflow: 'hidden'
+                            }}
+                        >
+                            {/* Body tự động cuộn khi nội dung vượt quá chiều cao */}
+                            <div
+                                className="modal-body"
+                                style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 'var(--space-4)',
+                                    overflowY: 'auto',       // Cho phép cuộn dọc phần này
+                                    paddingRight: '4px',     // Giúp thanh cuộn không đè sát mép
+                                    flex: 1
+                                }}
+                            >
                                 <div className="field">
                                     <label className="field-label">Name</label>
                                     <input
@@ -570,7 +600,7 @@ export default function Projects() {
                                 </div>
                                 <div className="field">
                                     <span className="field-label">Color</span>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                         {COLOR_OPTIONS.map((color) => (
                                             <button
                                                 key={color}
@@ -592,9 +622,9 @@ export default function Projects() {
                                 </div>
 
                                 <div className="field">
-                                    <span className="field-label">
-                                        Members {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
-                                    </span>
+                        <span className="field-label">
+                            Members {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
+                        </span>
                                     <div className="card" style={{ maxHeight: '144px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         {loadingMembers ? (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', color: '#6b7280', fontSize: '13px' }}>
@@ -619,8 +649,8 @@ export default function Projects() {
                                                             onChange={() => toggleMemberSelection(memberId)}
                                                         />
                                                         <span className="avatar avatar-xs" style={{ background: '#4f46e5' }}>
-                                                            {initials}
-                                                        </span>
+                                                {initials}
+                                            </span>
                                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                                                             <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
                                                             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{member.role || 'Member'}</span>
@@ -632,7 +662,9 @@ export default function Projects() {
                                     </div>
                                 </div>
                             </div>
-                            <div className="modal-footer">
+
+                            {/* Footer chứa nút bấm luôn cố định ở đáy Modal */}
+                            <div className="modal-footer" style={{ flexShrink: 0, marginTop: '16px' }}>
                                 <button type="button" className="btn btn-outline btn-sm" onClick={closeModal} style={{ cursor: 'pointer' }}>
                                     Cancel
                                 </button>

@@ -85,6 +85,7 @@ export default function ProjectList() {
 
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
+    const [newTaskPoints, setNewTaskPoints] = useState(0);
     const [newTaskDesc, setNewTaskDesc] = useState('');
     const [newTaskDate, setNewTaskDate] = useState('');
     const [selectedMembers, setSelectedMembers] = useState([]);
@@ -146,6 +147,7 @@ export default function ProjectList() {
         setNewTaskTitle('');
         setNewTaskDesc('');
         setNewTaskPriority('Medium');
+        setNewTaskPoints(0);
         setNewTaskDate('');
         const currentUserId = currentUser._id || currentUser.id;
         setSelectedMembers(currentUserId ? [currentUserId] : []);
@@ -164,11 +166,16 @@ export default function ProjectList() {
             setIsSubmitting(true);
             if (!projectId) return;
 
+            const pointValue = Number(newTaskPoints) || 0;
+
+            // Gửi đồng thời cả point và points xuống backend
             const payload = {
                 title: newTaskTitle,
                 description: newTaskDesc,
                 projectId: projectId,
                 priority: newTaskPriority,
+                point: pointValue,
+                points: pointValue,
                 date: newTaskDate ? new Date(newTaskDate) : new Date(),
                 assignees: []
             };
@@ -347,6 +354,7 @@ export default function ProjectList() {
                                     <tr>
                                         <th style={{ padding: '12px 16px' }}>Title</th>
                                         <th style={{ padding: '12px 16px' }}>Priority</th>
+                                        <th style={{ padding: '12px 16px' }}>Points</th>
                                         <th style={{ padding: '12px 16px' }}>Assignee</th>
                                         <th style={{ padding: '12px 16px' }}>End date</th>
                                         <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>
@@ -368,6 +376,7 @@ export default function ProjectList() {
                                             }
 
                                             const displayTitle = task.title || task.name || 'Untitled Task';
+                                            const taskPoints = task.points ?? task.point ?? 0;
 
                                             return (
                                                 <tr key={taskId} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -383,6 +392,12 @@ export default function ProjectList() {
                                                     <td style={{ padding: '12px 16px' }}>
                                                         <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, background: '#fffbeb', color: '#d97706' }}>
                                                             {task.priority || 'Medium'}
+                                                        </span>
+                                                    </td>
+
+                                                    <td style={{ padding: '12px 16px' }}>
+                                                        <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 600, background: '#f1f5f9', color: '#475569' }}>
+                                                            {taskPoints} pts
                                                         </span>
                                                     </td>
 
@@ -484,7 +499,7 @@ export default function ProjectList() {
                                         })
                                     ) : (
                                         <tr>
-                                            <td colSpan="5" style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                                            <td colSpan="6" style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
                                                 No pending backlog tasks.
                                             </td>
                                         </tr>
@@ -558,6 +573,18 @@ export default function ProjectList() {
                                         value={newTaskTitle}
                                         onChange={(e) => setNewTaskTitle(e.target.value)}
                                         required
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label className="form-label">Points</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        className="input"
+                                        placeholder="0"
+                                        value={newTaskPoints}
+                                        onChange={(e) => setNewTaskPoints(e.target.value === '' ? '' : Number(e.target.value))}
                                     />
                                 </div>
 

@@ -44,21 +44,19 @@ const getMemberUserId = (member) => {
     return String(member);
 };
 
-// Hàm lấy tên hiển thị của Member (hỗ trợ đọc cả populated userId và user phẳng)
+// Hàm lấy tên hiển thị của Member
 const getMemberDisplayName = (member) => {
     if (!member) return 'User';
     if (typeof member === 'object') {
-        // Nếu member.userId là object (đã populate)
         if (member.userId && typeof member.userId === 'object') {
             return member.userId.username || member.userId.name || member.userId.email || 'User';
         }
-        // Nếu thông tin user nằm trực tiếp trên object
         return member.username || member.name || member.email || 'User';
     }
     return 'User';
 };
 
-// Hàm tìm kiếm thông tin user theo ID từ danh sách thành viên dự án
+// Hàm tìm kiếm thông tin user theo ID
 const getUserInfo = (userOrId, projectMembers = []) => {
     if (!userOrId) return null;
 
@@ -138,7 +136,8 @@ function TaskDrawer({
                         name: realTask.name || realTask.title || '',
                         columnId: extractColumnId(realTask.columnId),
                         date: realTask.date ? new Date(realTask.date).toISOString().split('T')[0] : '',
-                        assignees: formattedAssignees
+                        assignees: formattedAssignees,
+                        points: realTask.points ?? realTask.point ?? 0
                     });
                     setComments(Array.isArray(commentsData) ? commentsData : (commentsData?.data || []));
                     setActivities(Array.isArray(activitiesData) ? activitiesData : (activitiesData?.data || []));
@@ -157,6 +156,13 @@ function TaskDrawer({
             updatedFields.columnId = extractColumnId(updatedFields.columnId);
         }
 
+        // Nếu cập nhật points, đồng bộ cả 2 key point/points để backend nhận đúng
+        if (updatedFields.points !== undefined || updatedFields.point !== undefined) {
+            const val = Number(updatedFields.points ?? updatedFields.point) || 0;
+            updatedFields.points = val;
+            updatedFields.point = val;
+        }
+
         const previousTask = { ...task };
         const updatedTaskLocal = { ...task, ...updatedFields };
 
@@ -172,7 +178,8 @@ function TaskDrawer({
                 const finalTask = {
                     ...updatedTaskLocal,
                     ...returnedTask,
-                    columnId: extractColumnId(returnedTask.columnId) || updatedTaskLocal.columnId
+                    columnId: extractColumnId(returnedTask.columnId) || updatedTaskLocal.columnId,
+                    points: returnedTask.points ?? returnedTask.point ?? updatedTaskLocal.points
                 };
                 setTask(finalTask);
                 if (onTaskUpdated) onTaskUpdated(finalTask);
@@ -188,6 +195,10 @@ function TaskDrawer({
 
     const handleInputChange = (field, value) => {
         const updatedFields = { [field]: value };
+        if (field === 'points' || field === 'point') {
+            updatedFields.points = value;
+            updatedFields.point = value;
+        }
         setTask(prev => {
             const nextState = { ...prev, ...updatedFields };
             if (onTaskUpdated) onTaskUpdated(nextState);
@@ -419,6 +430,20 @@ function TaskDrawer({
                             </div>
 
                             <div>
+                                <span className="drawer-field-label">Points</span>
+                                <input
+                                    className="input"
+                                    type="number"
+                                    min="0"
+                                    value={task.points ?? task.point ?? 0}
+                                    disabled={!canEditAll}
+                                    style={{ backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6', cursor: canEditAll ? 'text' : 'not-allowed' }}
+                                    onChange={(e) => handleInputChange('points', e.target.value)}
+                                    onBlur={(e) => handleUpdateTaskField({ points: Number(e.target.value) || 0, point: Number(e.target.value) || 0 })}
+                                />
+                            </div>
+
+                            <div>
                                 <span className="drawer-field-label">End date</span>
                                 <input
                                     className="input"
@@ -634,6 +659,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [newTaskName, setNewTaskName] = useState('');
     const [newTaskColumnId, setNewTaskColumnId] = useState('');
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
+    const [newTaskPoints, setNewTaskPoints] = useState(0);
     const [newTaskDesc, setNewTaskDesc] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [newTaskDate, setNewTaskDate] = useState('');
@@ -737,6 +763,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setNewTaskName('');
         setNewTaskDesc('');
         setNewTaskPriority('Medium');
+        setNewTaskPoints(0);
         setNewTaskDate('');
 
         const currentUserId = getCurrentUserId();
@@ -778,7 +805,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     };
 
     const handleOnDragEnd = async (result) => {
-        // CHẶN KÉO THẢ NẾU KHÔNG PHẢI LÀ MEMBER CỦA PROJECT
         if (!isProjectMember) return;
 
         const { destination, source, draggableId } = result;
@@ -836,6 +862,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         try {
             setIsSubmitting(true);
             const cleanMembers = selectedMembers.filter(id => Boolean(id));
+            const pointValue = Number(newTaskPoints) || 0;
 
             const payload = {
                 title: newTaskTitle,
@@ -844,6 +871,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 columnId: newTaskColumnId,
                 projectId: activeProjectId,
                 priority: newTaskPriority,
+                point: pointValue,
+                points: pointValue,
                 date: newTaskDate ? new Date(newTaskDate) : new Date(),
                 assignees: cleanMembers,
                 members: cleanMembers
@@ -858,6 +887,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 title: createdTask.title || newTaskTitle,
                 columnId: extractColumnId(createdTask.columnId || newTaskColumnId),
                 priority: createdTask.priority || newTaskPriority,
+                points: createdTask.points ?? createdTask.point ?? pointValue,
+                point: createdTask.point ?? createdTask.points ?? pointValue,
                 date: createdTask.date || (newTaskDate ? new Date(newTaskDate) : new Date()),
                 assignees: createdTask.assignees || cleanMembers
             };
@@ -1005,6 +1036,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                 ? new Date(task.date).toLocaleDateString('vi-VN')
                                                                 : 'N/A';
                                                             const assignees = Array.isArray(task.assignees) ? task.assignees : [];
+                                                            const taskPoints = task.points ?? task.point ?? 0;
 
                                                             return (
                                                                 <Draggable
@@ -1029,10 +1061,34 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 cursor: isProjectMember ? 'grab' : 'pointer'
                                                                             }}
                                                                         >
-                                                                            <div className="task-card-title">{task.title || task.name}</div>
+                                                                            {/* Hàng trên: Tiêu đề + Point Badge góc trên bên phải */}
+                                                                            <div className="task-card-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
+                                                                                <div className="task-card-title" style={{ flex: 1, margin: 0 }}>
+                                                                                    {task.title || task.name}
+                                                                                </div>
 
-                                                                            <div className="task-card-bottom">
-                                                                                <div className="task-card-meta">
+                                                                                <span
+                                                                                    title="Story Points"
+                                                                                    style={{
+                                                                                        background: '#f1f5f9',
+                                                                                        color: '#475569',
+                                                                                        border: '1px solid #e2e8f0',
+                                                                                        borderRadius: '12px',
+                                                                                        padding: '1px 7px',
+                                                                                        fontSize: '11px',
+                                                                                        fontWeight: 600,
+                                                                                        lineHeight: '16px',
+                                                                                        whiteSpace: 'nowrap',
+                                                                                        flexShrink: 0
+                                                                                    }}
+                                                                                >
+                                                                                    {taskPoints} pts
+                                                                                </span>
+                                                                            </div>
+
+                                                                            {/* Hàng dưới: Meta info bên trái + Assignees/Logo góc dưới bên phải */}
+                                                                            <div className="task-card-bottom" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+                                                                                <div className="task-card-meta" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                                                     <span className="task-card-meta-item">
                                                                                         📅 {taskDueDateFormatted}
                                                                                     </span>
@@ -1042,7 +1098,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 </div>
 
                                                                                 {assignees.length > 0 && (
-                                                                                    <div className="task-assignees-group">
+                                                                                    <div className="task-assignees-group" style={{ marginLeft: 'auto' }}>
                                                                                         {assignees.map((assignee, aIdx) => {
                                                                                             const userInfo = getUserInfo(assignee, memberList);
                                                                                             const name = getMemberDisplayName(userInfo);
@@ -1106,13 +1162,41 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
             {canCreateTask && activeModal === 'quickCreateTaskModal' && (
                 <div className="modal-overlay" onClick={closeModal}>
-                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                        <form onSubmit={handleCreateTask}>
-                            <div className="modal-header">
+                    <div
+                        className="modal-box"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            maxHeight: '90vh',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            overflow: 'hidden'
+                        }}
+                    >
+                        <form
+                            onSubmit={handleCreateTask}
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                flex: 1,
+                                overflow: 'hidden'
+                            }}
+                        >
+                            <div className="modal-header" style={{ flexShrink: 0 }}>
                                 <h2>Add Task</h2>
                                 <button type="button" className="btn-icon" onClick={closeModal} style={{ cursor: 'pointer' }}>✕</button>
                             </div>
-                            <div className="modal-body">
+
+                            <div
+                                className="modal-body"
+                                style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '16px',
+                                    overflowY: 'auto',
+                                    paddingRight: '4px',
+                                    flex: 1
+                                }}
+                            >
                                 <div className="form-group">
                                     <label className="form-label">Title *</label>
                                     <input
@@ -1141,6 +1225,18 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                             <option key={col._id} value={col._id}>{col.name || col.title}</option>
                                         ))}
                                     </select>
+                                </div>
+
+                                <div className="form-group">
+                                    <label className="form-label">Points</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        className="input"
+                                        placeholder="0"
+                                        value={newTaskPoints}
+                                        onChange={(e) => setNewTaskPoints(e.target.value === '' ? '' : Number(e.target.value))}
+                                    />
                                 </div>
 
                                 <div className="form-group">
@@ -1216,7 +1312,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 </div>
                             </div>
 
-                            <div className="modal-footer">
+                            <div className="modal-footer" style={{ flexShrink: 0, marginTop: '16px' }}>
                                 <button type="button" className="btn btn-secondary" onClick={closeModal} style={{ cursor: 'pointer' }}>Cancel</button>
                                 <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ cursor: isSubmitting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     {isSubmitting ? (
