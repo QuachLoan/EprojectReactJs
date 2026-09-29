@@ -7,7 +7,6 @@ function Members() {
     const [searchMember, setSearchMember] = useState("");
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteRole, setInviteRole] = useState("Member");
-    const [invitePosition, setInvitePosition] = useState("None");
     const [loading, setLoading] = useState(true);
     const [openDropdown,setDropDown] = useState(false);
     function handleDropdown(){
@@ -64,26 +63,26 @@ function Members() {
         }
 
         try {
-            const res = await inviteMember({
+            // API trả về response có chứa object member vừa thêm
+            const data = await inviteMember({
                 email: inviteEmail,
                 role: inviteRole,
-                position: invitePosition
             });
 
-            const data = await res.json();
-
-            if (res.ok) {
-                setOpenModel(false);
-                setInviteEmail("");
-                setInviteRole("Member");
-                setInvitePosition("None");
-                loadData(); // Tải lại danh sách sau khi thêm thành công
-            } else {
-                alert(data.message || "Xảy ra lỗi khi thực hiện!");
+            // 1. Cập nhật trực tiếp vào State danh sách member hiện tại
+            if (data && data.member) {
+                setMembers((prevMembers) => [...prevMembers, data.member]);
             }
-        } catch (error) {
+
+            // 2. Reset form & đóng Modal
+            setOpenModel(false);
+            setInviteEmail("");
+            setInviteRole("Member");
+        }
+        catch (error) {
             console.error("Lỗi gửi lời mời:", error);
-            alert("Có lỗi kết nối đến server!");
+            const message = error.response?.data?.message || error.message || "Có lỗi kết nối đến server!";
+            alert(message);
         }
     };
 
@@ -240,19 +239,6 @@ function Members() {
                                         <option value="Member">Member</option>
                                         <option value="Leader">Team Leader</option>
                                         <option value="Manager">Manager</option>
-                                    </select>
-                                </div>
-
-                                <div className="field">
-                                    <label className="field-label">Position</label>
-                                    <select
-                                        value={invitePosition}
-                                        onChange={(e) => setInvitePosition(e.target.value)}
-                                        className="select"
-                                    >
-                                        <option value="None">None</option>
-                                        <option value="Dev">Dev</option>
-                                        <option value="Tester">Tester</option>
                                     </select>
                                 </div>
                                 <button className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={handleInvite}>
