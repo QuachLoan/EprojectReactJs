@@ -6,7 +6,7 @@ function AdminUsers(){
  const [currentUserRole, setCurrentUserRole] = useState(""); 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("All");
-const filteredUsers = users.filter((user) => {
+  const filteredUsers = users.filter((user) => {
   const matchSearch =
     user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.email.toLowerCase().includes(searchTerm.toLowerCase());
@@ -16,7 +16,7 @@ const filteredUsers = users.filter((user) => {
   return matchSearch && matchRole;
 });
   useEffect(()=>{
-    fetch("http://localhost:3000/api/user/GetUsers")
+    fetch("http://localhost:3000/api/user")
     .then((res)=> res.json())
     .then((data)=>setUsers(data))
     .catch((err) => console.error(" Fetch error:", err));
