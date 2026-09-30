@@ -67,7 +67,7 @@ function AdminUsers(){
                 <span class="avatar avatar-sm" style={{background:'#db2777'}}>{user.username.charAt(0).toUpperCase()}</span>
                 <div class="member-identity-text"><p class="member-name">{user.username}</p><p class="member-email">{user.email}</p></div>
               </div>
-              <span className={`badge ${user.role ==="User" ? "badge-primary": "badge-warning"}`}>{user.role}</span>
+              <span className="badge badge-primary">{user.role}</span>
               <span className= {user.role ==="Admin"?"hidden": user.status ==="Active" ? "badge badge-success":"badge badge-danger" }>{user.status}</span>
               <span className= {user.role ==="Admin"?"hidden":"admin-user-joined"}>
                 Joined { new Date(user.createdAt).toLocaleDateString("en-GB", {

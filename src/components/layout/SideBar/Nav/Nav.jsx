@@ -4,21 +4,29 @@ import { NavLink } from "react-router-dom";
 function Nav() {
 
    const [currentUserRole, setCurrentUserRole] = useState(""); 
+   const [member,setMembers] = useState("")
     const getNavClass = ({ isActive }) => (isActive ? "nav-item active" : "nav-item");
 
  useEffect(() => {
- const token = localStorage.getItem("token"); // lấy token đã lưu
+ const token = localStorage.getItem("token"); 
   if (!token) return;
+   
   fetch("http://localhost:3000/api/user/currentUser", {
     headers: { Authorization: `Bearer ${token}` }
   })
       .then((res) => res.json())
-      .then((data) => setCurrentUserRole(data.role))
+      .then((data) => {
+       setCurrentUserRole(data.userRole);
+       setMembers(data.memberRole);
+      console.log(data);
+      })
       .catch((err) => console.error("Fetch error:", err));
   }, []);
+  
     return (
         <nav className="sidebar-nav">
             {/* Dashboard */}
+
             <NavLink to="/dashboard" className={getNavClass}>
         <span className="icon" data-icon="layoutDashboard">
           <svg viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"></rect><rect width="7" height="5" x="14" y="3" rx="1"></rect><rect width="7" height="9" x="14" y="12" rx="1"></rect><rect width="7" height="5" x="3" y="16" rx="1"></rect></svg>
@@ -42,17 +50,21 @@ function Nav() {
                 <span className="nav-label">Projects</span>
             </NavLink>
 
-            {/* Members */}
+           {
+            member === "Manager" &&(
+              <>
             <NavLink to="/members" className={getNavClass}>
-        <span className="icon" data-icon="users">
-          <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><path d="M16 3.128a4 4 0 0 1 0 7.744"></path><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><circle cx="9" cy="7" r="4"></circle></svg>
-        </span>
+                <span className="icon" data-icon="users">
+                  <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><path d="M16 3.128a4 4 0 0 1 0 7.744"></path><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><circle cx="9" cy="7" r="4"></circle></svg>
+                </span>
                 <span className="nav-label">Members</span>
             </NavLink>
+              </>
 
-           
+            )
+           }
 
-            {/* Admin Users */}
+
             {
               
               currentUserRole === "Admin" && (
