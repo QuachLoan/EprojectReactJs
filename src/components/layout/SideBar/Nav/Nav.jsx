@@ -18,7 +18,7 @@ function Nav() {
       .then((data) => {
        setCurrentUserRole(data.userRole);
        setMembers(data.memberRole);
-      console.log(data);
+      // console.log(data);
       })
       .catch((err) => console.error("Fetch error:", err));
   }, []);
@@ -51,7 +51,7 @@ function Nav() {
             </NavLink>
 
            {
-            member === "Manager" &&(
+           (member === "Manager" || member === "Leader") &&(
               <>
             <NavLink to="/members" className={getNavClass}>
                 <span className="icon" data-icon="users">

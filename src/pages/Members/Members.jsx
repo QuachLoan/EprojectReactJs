@@ -9,25 +9,38 @@ function Members() {
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteRole, setInviteRole] = useState("Member");
     const [loading, setLoading] = useState(true);
-
+ const [memberCurrentRole, setMemberRole] = useState(""); 
     const [openDropdown,setDropDown] = useState(false);
     function handleDropdown(userId){
       setDropDown(openDropdown === userId ? null : userId)
     }
-    // Lấy thông tin user hiện tại từ localStorage
     const getCurrentUser = () => {
         return JSON.parse(localStorage.getItem('user') || '{}');
     };
-    const currentUser = getCurrentUser();
-    // const isManager = currentUser?.role === 'Manager';
-    
+
+        const fetchCurrentMemberRole = async () => {
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) return;
+
+            const res = await fetch("http://localhost:3000/api/user/currentUser", {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+            
+            setMemberRole(data.memberRole); 
+            console.log(data);
+        } catch (err) {
+            console.error("Không thể lấy thông tin role hiện tại:", err);
+        }
+    };
     // Load danh sách Members
     const loadData = async () => {
         try {
             setLoading(true);
             const resData = await fetchMembers();
             const memberList = Array.isArray(resData) ? resData : (resData?.data || []);
-            setMembers(memberList);
+            setMembers(memberList);         
         } catch (err) {
             console.error("Lỗi khi tải dữ liệu member:", err);
             setMembers([]);
@@ -38,6 +51,7 @@ function Members() {
 
     useEffect(() => {
         loadData();
+         fetchCurrentMemberRole();
     }, []);
 
     // Lọc danh sách Member dựa vào thông tin của userId
@@ -178,9 +192,10 @@ function Members() {
                                                 {status}
                                             </span>
                                         </span>
-                                        {
-                                          m.role !== "Manager" && (
-                                          <span class="member-actions-cell" data-member-actions="">
+                                        
+                                         {
+                                          memberCurrentRole === "Manager" && (
+                                         <span class="member-actions-cell" data-member-actions="">
                                           <div class="dropdown">                                          
                                           <button onClick={()=>handleDropdown(m._id)} class="icon-btn icon-btn-sm" data-dropdown-trigger="" aria-label="Member actions">
                                           <span class="icon icon-sm " data-icon="moreHorizontal"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg></span>
@@ -198,10 +213,9 @@ function Members() {
                                         </span>
 
                                           )
-                                        }
+                                         }
 
-
-                                    </div>
+                               </div>
                                     
                                 );
                             })
