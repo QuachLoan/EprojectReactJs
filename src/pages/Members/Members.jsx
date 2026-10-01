@@ -64,6 +64,36 @@ function Members() {
         );
     });
 
+   async function  handleUpdateRole(memberId,currentRole,newRole) {
+      if(currentRole === newRole){
+        alert(`This member is already a ${newRole}.`)
+        setDropDown(false);
+        return;
+      }
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch (`http://localhost:3000/api/member/${memberId}`,{
+          method: "PUT",
+          headers : {
+            "Content-Type":"application/json",
+            Authorization :`Bearer ${token}`
+          },
+          body: JSON.stringify({role : newRole})
+
+        })
+          const data = await res.json();
+          if(!res.ok){
+             throw new Error(data.message || "Cập nhật thất bại");
+          }
+           setMembers((prevMembers) =>
+                prevMembers.map((m) => (m._id === memberId ? { ...m, role: newRole } : m))
+            );
+            alert(`Đã cập nhật vai trò thành ${newRole} thành công!`);
+            setDropDown(null); // Đóng menu
+      } catch (error) {
+        console.error("Lỗi update role:", error);
+      }
+   }
     const toggleModel = () => {
         // if (!isManager) {
         //     alert("Chỉ Manager mới có quyền mời thành viên mới!");
@@ -194,7 +224,7 @@ function Members() {
                                         </span>
                                         
                                          {
-                                          memberCurrentRole === "Manager" && (
+                                          memberCurrentRole === "Manager"  && m.role !== "Manager"  && (
                                          <span class="member-actions-cell" data-member-actions="">
                                           <div class="dropdown">                                          
                                           <button onClick={()=>handleDropdown(m._id)} class="icon-btn icon-btn-sm" data-dropdown-trigger="" aria-label="Member actions">
@@ -203,8 +233,8 @@ function Members() {
                                             {
                                               openDropdown === m._id &&(
                                             <div class="dropdown-menu" data-dropdown-menu="">
-                                              <button  class="dropdown-item"><span class="icon icon-sm" data-icon="userCog"><svg viewBox="0 0 24 24"><path d="M10 15H6a4 4 0 0 0-4 4v2"></path><path d="m14.305 16.53.923-.382"></path><path d="m15.228 13.852-.923-.383"></path><path d="m16.852 12.228-.383-.923"></path><path d="m16.852 17.772-.383.924"></path><path d="m19.148 12.228.383-.923"></path><path d="m19.53 18.696-.382-.924"></path><path d="m20.772 13.852.924-.383"></path><path d="m20.772 16.148.924.383"></path><circle cx="18" cy="15" r="3"></circle><circle cx="9" cy="7" r="4"></circle></svg></span>Promote to Leader</button>
-                                              <button  class="dropdown-item"><span class="icon icon-sm" data-icon="userCog"><svg viewBox="0 0 24 24"><path d="M10 15H6a4 4 0 0 0-4 4v2"></path><path d="m14.305 16.53.923-.382"></path><path d="m15.228 13.852-.923-.383"></path><path d="m16.852 12.228-.383-.923"></path><path d="m16.852 17.772-.383.924"></path><path d="m19.148 12.228.383-.923"></path><path d="m19.53 18.696-.382-.924"></path><path d="m20.772 13.852.924-.383"></path><path d="m20.772 16.148.924.383"></path><circle cx="18" cy="15" r="3"></circle><circle cx="9" cy="7" r="4"></circle></svg></span>Set as Member</button>
+                                              <button onClick={() => handleUpdateRole(m._id, role,"Leader")} class="dropdown-item"><span class="icon icon-sm" data-icon="userCog"><svg viewBox="0 0 24 24"><path d="M10 15H6a4 4 0 0 0-4 4v2"></path><path d="m14.305 16.53.923-.382"></path><path d="m15.228 13.852-.923-.383"></path><path d="m16.852 12.228-.383-.923"></path><path d="m16.852 17.772-.383.924"></path><path d="m19.148 12.228.383-.923"></path><path d="m19.53 18.696-.382-.924"></path><path d="m20.772 13.852.924-.383"></path><path d="m20.772 16.148.924.383"></path><circle cx="18" cy="15" r="3"></circle><circle cx="9" cy="7" r="4"></circle></svg></span>Promote to Leader</button>
+                                              <button onClick={() => handleUpdateRole(m._id, role,"Member")}  class="dropdown-item"><span class="icon icon-sm" data-icon="userCog"><svg viewBox="0 0 24 24"><path d="M10 15H6a4 4 0 0 0-4 4v2"></path><path d="m14.305 16.53.923-.382"></path><path d="m15.228 13.852-.923-.383"></path><path d="m16.852 12.228-.383-.923"></path><path d="m16.852 17.772-.383.924"></path><path d="m19.148 12.228.383-.923"></path><path d="m19.53 18.696-.382-.924"></path><path d="m20.772 13.852.924-.383"></path><path d="m20.772 16.148.924.383"></path><circle cx="18" cy="15" r="3"></circle><circle cx="9" cy="7" r="4"></circle></svg></span>Set as Member</button>
                                               <button class="dropdown-item destructive" ><span class="icon icon-sm" data-icon="userMinus"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="22" x2="16" y1="11" y2="11"></line></svg></span>Remove from workspace</button>
                                             </div>
                                               )
