@@ -20,7 +20,7 @@ import {
     moveTask
 } from './../../../api.jsx';
 import "./project.css";
-import {Calendar, CalendarClock, LayoutGrid, List, ListChecks, Settings, UsersRound, Loader2} from "lucide-react";
+import {Calendar, CalendarClock, LayoutGrid, List, ListChecks, Settings, UsersRound, Loader2, Check, X} from "lucide-react";
 
 // Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa
 const getInitials = (name) => {
@@ -156,7 +156,6 @@ function TaskDrawer({
             updatedFields.columnId = extractColumnId(updatedFields.columnId);
         }
 
-        // Nếu cập nhật points, đồng bộ cả 2 key point/points để backend nhận đúng
         if (updatedFields.points !== undefined || updatedFields.point !== undefined) {
             const val = Number(updatedFields.points ?? updatedFields.point) || 0;
             updatedFields.points = val;
@@ -655,9 +654,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [selectedTaskId, setSelectedTaskId] = useState(null);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-    // State lưu thông tin task đang chờ Leader duyệt khi kéo vào cột Done
-    const [pendingReviewTask, setPendingReviewTask] = useState(null);
-
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskName, setNewTaskName] = useState('');
     const [newTaskColumnId, setNewTaskColumnId] = useState('');
@@ -691,10 +687,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     // Lấy role từ member tìm được trong project (nếu có), nếu không lấy role của currentUser
     const currentUserRole = currentProjectMember?.role || currentUser?.role;
 
-    // Kiểm tra các quyền dựa trên role của member trong project
-    const isManager = currentUserRole === 'Manager';
+    // CHỈ LEADER MỚI ĐƯỢC XẤY VÀ THAO TÁC NÚT NOT ACCEPT
     const isLeader = currentUserRole === 'Leader';
-    const isMember = currentUserRole === 'Member';
+    const isManager = currentUserRole === 'Manager';
     const canCreateTask = isManager || isLeader;
 
     // KIỂM TRA QUYỀN MEMBER TRONG PROJECT DÙNG ĐỂ CHẶN KÉO THẢ:
@@ -820,7 +815,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setTasks(prevTasks => prevTasks.filter(t => String(t._id) !== String(deletedTaskId)));
     };
 
-    // HÀM XỬ LÝ KÉO THẢ TASK
+    // HÀM XỬ LÝ KÉO THẢ TASK TRỰC TIẾP
     const handleOnDragEnd = async (result) => {
         if (!isProjectMember) return;
 
@@ -830,22 +825,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             destination.droppableId === source.droppableId &&
             destination.index === source.index
         ) {
-            return;
-        }
-
-        // Tìm thông tin cột đích để kiểm tra xem có phải cột "Done" không
-        const destColumn = columns.find(c => String(c._id) === String(destination.droppableId));
-        const destColumnName = (destColumn?.name || destColumn?.title || '').toLowerCase();
-
-        // NẾU KÉO VÀO CỘT DONE -> HIỂN THỊ POPUP DUYỆT BẤM ACCEPT / NOT ACCEPT
-        if (destColumnName.includes('done')) {
-            const movedTask = tasks.find(t => String(t._id) === String(draggableId));
-            setPendingReviewTask({
-                task: movedTask,
-                sourceColumnId: source.droppableId,
-                destColumnId: destination.droppableId,
-                destinationIndex: destination.index
-            });
             return;
         }
 
@@ -878,33 +857,24 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         }
     };
 
-    // HÀM XỬ LÝ QUYẾT ĐỊNH CỦA LEADER (ACCEPT / NOT ACCEPT)
-    const handleLeaderDecision = async (isAccepted) => {
-        if (!pendingReviewTask) return;
+    // HÀM XỬ LÝ QUYẾT ĐỊNH CỦA LEADER TẠI CHỖ (NOT ACCEPT)
+    const handleLeaderDecisionOnTask = async (e, task, currentColumnId, isAccepted) => {
+        e.stopPropagation(); // Ngăn sự kiện click mở drawer
 
-        const { task, sourceColumnId, destColumnId } = pendingReviewTask;
-
-        // Tìm cột Accepted và In Review
-        const acceptedColumn = columns.find(c =>
-            (c.name || c.title || '').toLowerCase().includes('accepted')
-        );
         const inReviewColumn = columns.find(c =>
-            (c.name || c.title || '').toLowerCase().includes('in review') ||
             (c.name || c.title || '').toLowerCase().includes('review')
         );
 
-        // Nếu bấm Accept -> Chuyển sang cột Accepted (nếu có) hoặc giữ cột Done
-        // Nếu bấm Not Accept -> Chuyển về cột In Review (nếu có) hoặc cột ban đầu (sourceColumnId)
         let targetColumnId;
         if (isAccepted) {
-            targetColumnId = acceptedColumn ? acceptedColumn._id : destColumnId;
+            targetColumnId = currentColumnId;
         } else {
-            targetColumnId = inReviewColumn ? inReviewColumn._id : sourceColumnId;
+            targetColumnId = inReviewColumn ? inReviewColumn._id : (columns[0]?._id || currentColumnId);
         }
 
         const previousTasks = [...tasks];
 
-        // Cập nhật UI ngay lập tức
+        // Cập nhật UI lập tức
         setTasks((prevTasks) =>
             prevTasks.map(t =>
                 String(t._id) === String(task._id)
@@ -913,12 +883,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             )
         );
 
-        setPendingReviewTask(null);
-
         // Gọi API backend
         try {
             await moveTask(task._id, {
-                sourceColumnId: sourceColumnId === 'backlog' ? null : sourceColumnId,
+                sourceColumnId: currentColumnId,
                 destColumnId: targetColumnId,
                 destinationIndex: 0
             });
@@ -1076,6 +1044,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                         <div className="board scroll-x" id="kanbanBoard">
                             {columns.map((column) => {
                                 const columnTasks = getSortedTasksForColumn(column);
+                                const isDoneColumn = (column.name || column.title || '').toLowerCase().includes('done');
+
                                 return (
                                     <div className="board-column" key={column._id}>
                                         <div className="board-column-header">
@@ -1119,6 +1089,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                 : 'N/A';
                                                             const assignees = Array.isArray(task.assignees) ? task.assignees : [];
                                                             const taskPoints = task.points ?? task.point ?? 0;
+                                                            const showNotAcceptBtn = isDoneColumn && isLeader;
 
                                                             return (
                                                                 <Draggable
@@ -1140,11 +1111,23 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 boxShadow: snapshot.isDragging
                                                                                     ? '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
                                                                                     : 'none',
-                                                                                cursor: isProjectMember ? 'grab' : 'pointer'
+                                                                                cursor: isProjectMember ? 'grab' : 'pointer',
+                                                                                marginBottom: '8px',
+                                                                                position: 'relative'
                                                                             }}
                                                                         >
-                                                                            {/* Hàng trên: Tiêu đề + Point Badge góc trên bên phải */}
-                                                                            <div className="task-card-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
+                                                                            {/* Hàng trên: Tiêu đề + Point Badge */}
+                                                                            <div
+                                                                                className="task-card-top"
+                                                                                style={{
+                                                                                    display: 'flex',
+                                                                                    justify: 'space-between',
+                                                                                    alignItems: 'flex-start',
+                                                                                    gap: '8px',
+                                                                                    marginBottom: '8px',
+                                                                                    paddingRight: showNotAcceptBtn ? '32px' : '0'
+                                                                                }}
+                                                                            >
                                                                                 <div className="task-card-title" style={{ flex: 1, margin: 0 }}>
                                                                                     {task.title || task.name}
                                                                                 </div>
@@ -1168,8 +1151,17 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 </span>
                                                                             </div>
 
-                                                                            {/* Hàng dưới: Meta info bên trái + Assignees/Logo góc dưới bên phải */}
-                                                                            <div className="task-card-bottom" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+                                                                            {/* Hàng dưới: Meta info bên trái + Assignees/Logo bên phải */}
+                                                                            <div
+                                                                                className="task-card-bottom"
+                                                                                style={{
+                                                                                    display: 'flex',
+                                                                                    justify: 'space-between',
+                                                                                    alignItems: 'center',
+                                                                                    marginTop: 'auto',
+                                                                                    paddingRight: showNotAcceptBtn ? '32px' : '0'
+                                                                                }}
+                                                                            >
                                                                                 <div className="task-card-meta" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                                                     <span className="task-card-meta-item">
                                                                                         📅 {taskDueDateFormatted}
@@ -1201,6 +1193,35 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                     </div>
                                                                                 )}
                                                                             </div>
+
+                                                                            {/* NÚT X CĂN GIỮA NẰM TRỰC TIẾP BÊN TRONG THẺ TASK CARD */}
+                                                                            {showNotAcceptBtn && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    title="Not Accept Task"
+                                                                                    onClick={(e) => handleLeaderDecisionOnTask(e, task, column._id, false)}
+                                                                                    style={{
+                                                                                        position: 'absolute',
+                                                                                        right: '10px',
+                                                                                        top: '50%',
+                                                                                        transform: 'translateY(-50%)',
+                                                                                        backgroundColor: '#dc2626',
+                                                                                        color: '#ffffff',
+                                                                                        border: 'none',
+                                                                                        borderRadius: '50%',
+                                                                                        width: '24px',
+                                                                                        height: '24px',
+                                                                                        cursor: 'pointer',
+                                                                                        display: 'flex',
+                                                                                        alignItems: 'center',
+                                                                                        justifyContent: 'center',
+                                                                                        transition: 'background-color 0.2s',
+                                                                                        zIndex: 2
+                                                                                    }}
+                                                                                >
+                                                                                    <X size={14} strokeWidth={3} />
+                                                                                </button>
+                                                                            )}
                                                                         </div>
                                                                     )}
                                                                 </Draggable>
@@ -1241,56 +1262,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 isLeader={isLeader}
                 currentUserId={getCurrentUserId()}
             />
-
-            {/* MODAL DUYỆT TASK CHO LEADER / MANAGER */}
-            {pendingReviewTask && (
-                <div className="modal-overlay" onClick={() => setPendingReviewTask(null)}>
-                    <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px', padding: '24px', borderRadius: '12px', textAlign: 'center' }}>
-                        <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px', color: '#1f2937' }}>
-                            Xác nhận duyệt Task
-                        </h3>
-                        <p style={{ color: '#4b5563', fontSize: '14px', marginBottom: '24px', lineHeight: '1.5' }}>
-                            Task <strong>"{pendingReviewTask.task?.title || pendingReviewTask.task?.name}"</strong> đã được kéo vào cột Done.<br />
-                            Bạn muốn duyệt task này hay chuyển về cột In Review?
-                        </p>
-
-                        {isLeader || isManager ? (
-                            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-                                <button
-                                    type="button"
-                                    className="btn"
-                                    style={{ backgroundColor: '#16a34a', color: '#ffffff', flex: 1, padding: '10px 16px', fontWeight: 600, cursor: 'pointer', borderRadius: '6px', border: 'none' }}
-                                    onClick={() => handleLeaderDecision(true)}
-                                >
-                                    ✓ Accept
-                                </button>
-                                <button
-                                    type="button"
-                                    className="btn"
-                                    style={{ backgroundColor: '#dc2626', color: '#ffffff', flex: 1, padding: '10px 16px', fontWeight: 600, cursor: 'pointer', borderRadius: '6px', border: 'none' }}
-                                    onClick={() => handleLeaderDecision(false)}
-                                >
-                                    ✕ Not Accept
-                                </button>
-                            </div>
-                        ) : (
-                            <div>
-                                <p style={{ color: '#d97706', fontSize: '13px', marginBottom: '16px', fontStyle: 'italic' }}>
-                                    ⏳ Đang chờ Leader hoặc Manager xác nhận duyệt task này.
-                                </p>
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary"
-                                    onClick={() => setPendingReviewTask(null)}
-                                    style={{ width: '100%', cursor: 'pointer' }}
-                                >
-                                    Đóng
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
 
             {canCreateTask && activeModal === 'quickCreateTaskModal' && (
                 <div className="modal-overlay" onClick={closeModal}>
