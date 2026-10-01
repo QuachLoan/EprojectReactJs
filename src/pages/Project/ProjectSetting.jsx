@@ -51,41 +51,61 @@ export default function ProjectSetting() {
     const [saving, setSaving] = useState(false);
 
     const getCurrentUser = () => {
-        return JSON.parse(localStorage.getItem('user') || localStorage.getItem('member') || '{}');
+        return JSON.parse(localStorage.getItem('user') || '{}');
     };
 
     const currentUser = getCurrentUser();
     const currentUserId = currentUser._id || currentUser.id || null;
 
-    // Hàm trích xuất Member ID linh hoạt
-    const extractMemberId = (m) => {
+    // Hàm lấy User ID từ object Member/User hoặc ID
+    const getMemberUserId = (m) => {
         if (!m) return '';
         if (typeof m === 'object') {
-            return String(m._id || m.id || m.userId?._id || m.userId?.id || m.userId || '');
+            if (m.userId) {
+                return typeof m.userId === 'object'
+                    ? String(m.userId._id || m.userId.id || '')
+                    : String(m.userId);
+            }
+            return String(m._id || m.id || '');
         }
         return String(m);
     };
 
-    // Lấy danh sách thành viên từ project
-    const currentMemberList = useMemo(() => {
-        return Array.isArray(project?.assignees) ? project.assignees : (project?.members || []);
+    // Lấy mảng danh sách thành viên trong dự án
+    const memberList = useMemo(() => {
+        if (!project) return [];
+        return Array.isArray(project.assignees) ? project.assignees : (project.members || []);
     }, [project]);
 
-    // Tìm record member tương ứng với user đang đăng nhập
+    // Tìm thông tin member tương ứng với currentUserId trong dự án (hoặc trong danh sách members tổng)
     const currentProjectMember = useMemo(() => {
-        if (!currentUserId || !currentMemberList.length) return null;
-        return currentMemberList.find(m => {
-            const mUserId = extractMemberId(m);
+        if (!currentUserId) return null;
+
+        // 1. Tìm trong danh sách assignees / members của project trước
+        const foundInProject = memberList.find(m => {
+            const mUserId = getMemberUserId(m);
             return String(mUserId) === String(currentUserId);
         });
-    }, [currentUserId, currentMemberList]);
 
-    // Lấy role từ dự án (hoặc fallback về role chung)
-    const currentUserRole = currentProjectMember?.role || currentUser?.role || 'Member';
+        if (foundInProject && typeof foundInProject === 'object' && foundInProject.role) {
+            return foundInProject;
+        }
 
-    const isManager = currentUserRole === 'Manager';
+        // 2. Tìm trong danh sách tất cả members lấy từ API
+        const foundInAllMembers = members.find(m => {
+            const mUserId = getMemberUserId(m);
+            return String(mUserId) === String(currentUserId);
+        });
+
+        return foundInAllMembers || foundInProject || null;
+    }, [currentUserId, memberList, members]);
+
+    // Lấy role chính xác giống hệt như trang ProjectBoard
+    const currentUserRole = currentProjectMember?.role || currentUser?.role;
+
+    // Phân quyền chuẩn
     const isLeader = currentUserRole === 'Leader';
-    const isMember = currentUserRole === 'Member';
+    const isManager = currentUserRole === 'Manager';
 
     const formatDateForInput = (dateValue) => {
         if (!dateValue) return '';
@@ -132,7 +152,7 @@ export default function ProjectSetting() {
 
             const currentAssignees = Array.isArray(realProject?.assignees) ? realProject.assignees : [];
             const initialSelectedIds = currentAssignees
-                .map(m => extractMemberId(m))
+                .map(m => getMemberUserId(m))
                 .filter(id => id && id.length > 0);
 
             setSelectedMembers(initialSelectedIds);
@@ -226,7 +246,7 @@ export default function ProjectSetting() {
 
     const displayedMembers = isManager
         ? members
-        : members.filter(m => selectedMembers.includes(extractMemberId(m)));
+        : members.filter(m => selectedMembers.includes(getMemberUserId(m)));
 
     const disabledInputStyle = !isManager
         ? { cursor: 'not-allowed', backgroundColor: 'var(--color-bg-muted, #f1f5f9)', opacity: 0.8 }
@@ -268,7 +288,7 @@ export default function ProjectSetting() {
 
                                     <div className="project-meta-row">
                                         <span className="project-meta-item">
-                                            <UsersRound className="icon icon-sm" />{currentMemberList.length} members
+                                            <UsersRound className="icon icon-sm" />{memberList.length} members
                                         </span>
                                         <span className="project-meta-item">
                                             <ListChecks className="icon icon-sm" />{tasks.length} tasks
@@ -438,9 +458,9 @@ export default function ProjectSetting() {
                                                 <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>Không có thành viên nào.</p>
                                             ) : (
                                                 displayedMembers.map((member) => {
-                                                    const memberId = extractMemberId(member);
+                                                    const memberId = getMemberUserId(member);
                                                     const userObj = member.userId && typeof member.userId === 'object' ? member.userId : member;
-                                                    const displayName = userObj.username || userObj.email || 'User';
+                                                    const displayName = userObj.username || userObj.name || userObj.email || 'User';
                                                     const initials = displayName.slice(0, 2).toUpperCase();
                                                     const isChecked = selectedMembers.includes(memberId);
 
