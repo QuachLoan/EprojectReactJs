@@ -13,7 +13,12 @@ import {
     CalendarClock,
     Save,
     Trash2,
-    Loader2
+    Loader2,
+    Search,
+    UserPlus,
+    X,
+    MoreHorizontal,
+    UserCog
 } from 'lucide-react';
 
 import {
@@ -21,7 +26,8 @@ import {
     fetchTasksByProject,
     updateProject,
     deleteProject,
-    fetchMembers
+    fetchMembers,
+    inviteMember
 } from '../../../api';
 
 export default function ProjectSetting() {
@@ -43,8 +49,17 @@ export default function ProjectSetting() {
         dueDate: ''
     });
 
+    // States cho quản lý Members
     const [members, setMembers] = useState([]);
     const [selectedMembers, setSelectedMembers] = useState([]);
+    const [searchMember, setSearchMember] = useState("");
+    const [openDropdown, setDropDown] = useState(null);
+    const [memberCurrentRole, setMemberRole] = useState("");
+
+    // States cho Modal Invite
+    const [openInviteModal, setOpenInviteModal] = useState(false);
+    const [inviteEmail, setInviteEmail] = useState("");
+    const [inviteRole, setInviteRole] = useState("Member");
 
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -56,6 +71,22 @@ export default function ProjectSetting() {
 
     const currentUser = getCurrentUser();
     const currentUserId = currentUser._id || currentUser.id || null;
+
+    // Lấy thông tin Member Role từ server giống Members.jsx
+    const fetchCurrentMemberRole = async () => {
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) return;
+
+            const res = await fetch("http://localhost:3000/api/user/currentUser", {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+            setMemberRole(data.memberRole || "");
+        } catch (err) {
+            console.error("Không thể lấy thông tin role hiện tại:", err);
+        }
+    };
 
     // Hàm lấy User ID từ object Member/User hoặc ID
     const getMemberUserId = (m) => {
@@ -77,11 +108,10 @@ export default function ProjectSetting() {
         return Array.isArray(project.assignees) ? project.assignees : (project.members || []);
     }, [project]);
 
-    // Tìm thông tin member tương ứng với currentUserId trong dự án (hoặc trong danh sách members tổng)
+    // Tìm thông tin member tương ứng với currentUserId
     const currentProjectMember = useMemo(() => {
         if (!currentUserId) return null;
 
-        // 1. Tìm trong danh sách assignees / members của project trước
         const foundInProject = memberList.find(m => {
             const mUserId = getMemberUserId(m);
             return String(mUserId) === String(currentUserId);
@@ -91,7 +121,6 @@ export default function ProjectSetting() {
             return foundInProject;
         }
 
-        // 2. Tìm trong danh sách tất cả members lấy từ API
         const foundInAllMembers = members.find(m => {
             const mUserId = getMemberUserId(m);
             return String(mUserId) === String(currentUserId);
@@ -100,12 +129,13 @@ export default function ProjectSetting() {
         return foundInAllMembers || foundInProject || null;
     }, [currentUserId, memberList, members]);
 
-    // Lấy role chính xác giống hệt như trang ProjectBoard
-    const currentUserRole = currentProjectMember?.role || currentUser?.role;
+    const currentUserRole = currentProjectMember?.role || currentUser?.role || memberCurrentRole;
 
-    // Phân quyền chuẩn
+    const isAdmin = String(currentUser?.role).toLowerCase() === 'admin';
     const isLeader = currentUserRole === 'Leader';
     const isManager = currentUserRole === 'Manager';
+
+    const canManage = isAdmin || isManager;
 
     const formatDateForInput = (dateValue) => {
         if (!dateValue) return '';
@@ -120,6 +150,7 @@ export default function ProjectSetting() {
     useEffect(() => {
         if (projectId) {
             loadData();
+            fetchCurrentMemberRole();
         }
     }, [projectId]);
 
@@ -164,16 +195,93 @@ export default function ProjectSetting() {
         }
     };
 
-    const toggleMemberSelection = (id) => {
-        if (!isManager) return;
-        setSelectedMembers((prev) =>
-            prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
-        );
+    const toggleDropdown = (userId) => {
+        setDropDown(prev => prev === userId ? null : userId);
     };
+
+    // Hàm cập nhật vai trò member (Promote to Leader / Set as Member)
+    const handleUpdateRole = async (memberId, currentRole, newRole) => {
+        if (currentRole === newRole) {
+            alert(`Thành viên này đã là ${newRole}.`);
+            setDropDown(null);
+            return;
+        }
+        try {
+            const token = localStorage.getItem("token");
+            const res = await fetch(`http://localhost:3000/api/member/${memberId}`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ role: newRole })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.message || "Cập nhật thất bại");
+            }
+
+            setMembers((prevMembers) =>
+                prevMembers.map((m) => (m._id === memberId ? { ...m, role: newRole } : m))
+            );
+            alert(`Đã cập nhật vai trò thành ${newRole} thành công!`);
+            setDropDown(null);
+        } catch (error) {
+            console.error("Lỗi update role:", error);
+            alert(error.message || "Có lỗi xảy ra khi cập nhật role.");
+        }
+    };
+
+    // Mời thành viên mới vào workspace
+    const handleInvite = async () => {
+        if (!inviteEmail.trim()) {
+            alert("Vui lòng nhập Email!");
+            return;
+        }
+
+        try {
+            const data = await inviteMember({
+                email: inviteEmail,
+                role: inviteRole,
+                projectId: projectId
+            });
+
+            if (data && data.member) {
+                setMembers((prevMembers) => [...prevMembers, data.member]);
+            }
+
+            setOpenInviteModal(false);
+            setInviteEmail("");
+            setInviteRole("Member");
+            alert("Đã gửi lời mời thành công!");
+            await loadData();
+        } catch (error) {
+            console.error("Lỗi gửi lời mời:", error);
+            const message = error.response?.data?.message || error.message || "Có lỗi kết nối đến server!";
+            alert(message);
+        }
+    };
+
+    const getInitials = (name) => {
+        if (!name) return '??';
+        const words = String(name).trim().split(/\s+/);
+        return words.length === 1
+            ? words[0].substring(0, 2).toUpperCase()
+            : (words[0][0] + words[words.length - 1][0]).toUpperCase();
+    };
+
+    // Lọc danh sách members theo từ khóa search
+    const filteredMembers = members.filter((m) => {
+        const username = m.userId?.username || m.username || "";
+        const email = m.userId?.email || m.email || "";
+        const search = searchMember.toLowerCase();
+        return username.toLowerCase().includes(search) || email.toLowerCase().includes(search);
+    });
 
     const handleSaveGeneralSettings = async (e) => {
         e.preventDefault();
-        if (!isManager) return;
+        if (!canManage) return;
 
         try {
             setSaving(true);
@@ -194,6 +302,7 @@ export default function ProjectSetting() {
 
             await updateProject(projectId, payload);
             await loadData();
+            alert("Cập nhật thông tin thành công!");
         } catch (err) {
             console.error('Lỗi khi lưu thông tin chung:', err);
         } finally {
@@ -201,34 +310,8 @@ export default function ProjectSetting() {
         }
     };
 
-    const handleSaveMembers = async () => {
-        if (!isManager) return;
-
-        try {
-            setSaving(true);
-
-            const validAssignees = selectedMembers
-                .map(id => String(id).trim())
-                .filter(id => id.length > 0);
-
-            const payload = {
-                name: formData.name.trim(),
-                description: formData.description.trim(),
-                color: formData.color,
-                assignees: validAssignees
-            };
-
-            await updateProject(projectId, payload);
-            await loadData();
-        } catch (err) {
-            console.error('Lỗi khi cập nhật thành viên:', err);
-        } finally {
-            setSaving(false);
-        }
-    };
-
     const handleDeleteProject = async () => {
-        if (!isManager) return;
+        if (!canManage) return;
 
         if (window.confirm('Bạn có chắc chắn muốn xóa dự án này không? Hành động này không thể hoàn tác.')) {
             try {
@@ -244,11 +327,7 @@ export default function ProjectSetting() {
         ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
         : 'Chưa đặt';
 
-    const displayedMembers = isManager
-        ? members
-        : members.filter(m => selectedMembers.includes(getMemberUserId(m)));
-
-    const disabledInputStyle = !isManager
+    const disabledInputStyle = !canManage
         ? { cursor: 'not-allowed', backgroundColor: 'var(--color-bg-muted, #f1f5f9)', opacity: 0.8 }
         : {};
 
@@ -335,10 +414,10 @@ export default function ProjectSetting() {
                                         className={`settings-nav-item ${activeTab === 'members' ? 'active' : ''}`}
                                         onClick={() => setActiveTab('members')}
                                     >
-                                        Members ({selectedMembers.length})
+                                        Members ({filteredMembers.length})
                                     </button>
 
-                                    {isManager && (
+                                    {canManage && (
                                         <button
                                             type="button"
                                             className={`settings-nav-item ${activeTab === 'danger' ? 'active' : ''}`}
@@ -361,7 +440,7 @@ export default function ProjectSetting() {
                                                     className="input"
                                                     value={formData.name}
                                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                                    disabled={!isManager}
+                                                    disabled={!canManage}
                                                     style={disabledInputStyle}
                                                     required
                                                 />
@@ -374,7 +453,7 @@ export default function ProjectSetting() {
                                                     rows="3"
                                                     value={formData.description}
                                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                                    disabled={!isManager}
+                                                    disabled={!canManage}
                                                     style={disabledInputStyle}
                                                 />
                                             </div>
@@ -388,14 +467,14 @@ export default function ProjectSetting() {
                                                             height: '38px',
                                                             width: '100%',
                                                             padding: '2px',
-                                                            cursor: isManager ? 'pointer' : 'not-allowed',
+                                                            cursor: canManage ? 'pointer' : 'not-allowed',
                                                             borderRadius: 'var(--radius-md)',
                                                             border: '1px solid var(--color-border)',
-                                                            opacity: isManager ? 1 : 0.7
+                                                            opacity: canManage ? 1 : 0.7
                                                         }}
                                                         value={formData.color}
                                                         onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                                                        disabled={!isManager}
+                                                        disabled={!canManage}
                                                     />
                                                 </div>
                                                 <div className="field">
@@ -405,13 +484,13 @@ export default function ProjectSetting() {
                                                         className="input"
                                                         value={formData.dueDate}
                                                         onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                                                        disabled={!isManager}
+                                                        disabled={!canManage}
                                                         style={disabledInputStyle}
                                                     />
                                                 </div>
                                             </div>
 
-                                            {isManager && (
+                                            {canManage && (
                                                 <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end' }}>
                                                     <button
                                                         type="submit"
@@ -429,84 +508,155 @@ export default function ProjectSetting() {
 
                                     {/* Tab Members */}
                                     <div className={`settings-section ${activeTab === 'members' ? 'active' : ''}`}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', flexWrap: 'wrap', gap: '12px' }}>
                                             <div>
-                                                <h2 style={{ fontSize: '18px', fontWeight: 700 }}>Members</h2>
+                                                <h2 style={{ fontSize: '18px', fontWeight: 700 }}>Workspace & Project Members</h2>
                                                 <p style={{ fontSize: '13px', color: 'var(--text-muted, #64748b)' }}>
-                                                    {isManager
-                                                        ? `Select members to include in this project (${selectedMembers.length} selected)`
-                                                        : `Project members list (${selectedMembers.length} members)`
-                                                    }
+                                                    Manage access and view members of this workspace.
                                                 </p>
                                             </div>
-                                            {isManager && (
-                                                <button
-                                                    type="button"
-                                                    onClick={handleSaveMembers}
-                                                    disabled={saving}
-                                                    className="btn btn-primary btn-sm"
-                                                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                                                >
-                                                    {saving ? <Loader2 className="icon" style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} /> : <Save className="icon" style={{ width: 16, height: 16 }} />}
-                                                    Save Members
-                                                </button>
-                                            )}
+
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                {canManage && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOpenInviteModal(true)}
+                                                        className="btn btn-primary btn-sm"
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                                                    >
+                                                        <UserPlus size={16} /> Invite
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
 
-                                        <div className="card" style={{ maxHeight: '360px', overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', border: '1px solid var(--color-border)' }}>
-                                            {displayedMembers.length === 0 ? (
-                                                <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>Không có thành viên nào.</p>
-                                            ) : (
-                                                displayedMembers.map((member) => {
-                                                    const memberId = getMemberUserId(member);
-                                                    const userObj = member.userId && typeof member.userId === 'object' ? member.userId : member;
-                                                    const displayName = userObj.username || userObj.name || userObj.email || 'User';
-                                                    const initials = displayName.slice(0, 2).toUpperCase();
-                                                    const isChecked = selectedMembers.includes(memberId);
+                                        {/* Ô Tìm Kiếm Member */}
+                                        <div className="input-icon-wrap" style={{ maxWidth: '320px', marginBottom: 'var(--space-4)', position: 'relative' }}>
+                                            <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+                                            <input
+                                                className="input"
+                                                placeholder="Search members…"
+                                                value={searchMember}
+                                                onChange={(e) => setSearchMember(e.target.value)}
+                                                style={{ paddingLeft: '32px' }}
+                                            />
+                                        </div>
+
+                                        {/* Bảng Danh Sách Member - Cố định chuẩn 4 cột */}
+                                        <div className="card">
+                                            <div className="member-table-header" style={{ display: 'grid', gridTemplateColumns: "1fr 106px 100px 40px", alignItems: 'center', padding: '12px', fontWeight: 600, borderBottom: '1px solid var(--color-border)', fontSize: '13px' }}>
+                                                <span>Member</span>
+                                                <span>Position</span>
+                                                <span>Status</span>
+                                                <span></span>
+                                            </div>
+
+                                            {filteredMembers.length > 0 ? (
+                                                filteredMembers.map((m, idx) => {
+                                                    const username = m.userId?.username || m.username || "Chưa cập nhật";
+                                                    const email = m.userId?.email || m.email || "Không có email";
+                                                    const role = m.role || "Member";
+                                                    const status = m.status || "Active";
 
                                                     return (
-                                                        <label
-                                                            key={memberId}
-                                                            style={{
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: '12px',
-                                                                padding: '8px 10px',
-                                                                borderRadius: '6px',
-                                                                cursor: isManager ? 'pointer' : 'not-allowed',
-                                                                backgroundColor: isChecked ? 'var(--color-bg-subtle, #f8fafc)' : 'transparent',
-                                                                border: '1px solid',
-                                                                borderColor: isChecked ? 'var(--color-primary-light, #e0e7ff)' : 'transparent'
-                                                            }}
-                                                        >
-                                                            {isManager && (
-                                                                <input
-                                                                    type="checkbox"
-                                                                    className="checkbox"
-                                                                    checked={isChecked}
-                                                                    onChange={() => toggleMemberSelection(memberId)}
-                                                                    style={{ cursor: isManager ? 'pointer' : 'not-allowed' }}
-                                                                />
-                                                            )}
-                                                            <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', width: '28px', height: '28px' }}>
-                                                                {initials}
-                                                            </span>
-                                                            <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                                                                <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
-                                                                <span style={{ fontSize: '11px', color: 'var(--text-muted, #64748b)' }}>{userObj.email || member.role || 'Member'}</span>
+                                                        <div key={m._id || idx} className="member-row" style={{ display: 'grid', gridTemplateColumns: "1fr 106px 100px 40px", alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid var(--color-border)' }}>
+                                                            {/* Thông tin cá nhân */}
+                                                            <div className="member-identity" style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                                                                <span className="avatar avatar-sm" style={{ background: '#4f46e5', color: '#fff', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', width: '32px', height: '32px', fontWeight: 600, flexShrink: 0 }}>
+                                                                    {getInitials(username)}
+                                                                </span>
+                                                                <div className="member-identity-text" style={{ overflow: 'hidden' }}>
+                                                                    <p className="member-name" style={{ fontSize: '14px', fontWeight: 600, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{username}</p>
+                                                                    <p className="member-email" style={{ fontSize: '12px', color: 'var(--text-muted, #64748b)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</p>
+                                                                </div>
                                                             </div>
-                                                            {isChecked && (
-                                                                <span style={{ fontSize: '12px', color: '#4f46e5', fontWeight: 600 }}>Added</span>
-                                                            )}
-                                                        </label>
+
+                                                            {/* Vai trò */}
+                                                            <div>
+                                                                <span
+                                                                    className="badge"
+                                                                    style={{
+                                                                        backgroundColor: role === 'Manager' ? '#8b5cf6' : role === 'Leader' ? '#f59e0b' : '#f1f5f9',
+                                                                        color: role === 'Manager' || role === 'Leader' ? '#ffffff' : '#475569',
+                                                                        border: role === 'Member' ? '1px solid #cbd5e1' : 'none',
+                                                                        padding: '2px 8px',
+                                                                        borderRadius: '8px',
+                                                                        fontSize: '12px',
+                                                                        fontWeight: '500'
+                                                                    }}
+                                                                >
+                                                                    {role}
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Trạng thái */}
+                                                            <div>
+                                                                <span className={`badge ${status === 'Active' ? 'badge-success' : 'badge-warning'}`}>
+                                                                    {status}
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Menu thao tác */}
+                                                            <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
+                                                                {(canManage || memberCurrentRole === "Manager") && m.role !== "Manager" && (
+                                                                    <>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => toggleDropdown(m._id)}
+                                                                            className="icon-btn icon-btn-sm"
+                                                                            style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
+                                                                        >
+                                                                            <MoreHorizontal size={18} />
+                                                                        </button>
+
+                                                                        {openDropdown === m._id && (
+                                                                            <div
+                                                                                className="dropdown-menu"
+                                                                                style={{
+                                                                                    position: 'absolute',
+                                                                                    right: 0,
+                                                                                    top: '100%',
+                                                                                    zIndex: 100,
+                                                                                    background: '#fff',
+                                                                                    border: '1px solid var(--color-border)',
+                                                                                    borderRadius: '6px',
+                                                                                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                                                                    padding: '4px 0',
+                                                                                    minWidth: '160px'
+                                                                                }}
+                                                                            >
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleUpdateRole(m._id, role, "Leader")}
+                                                                                    className="dropdown-item"
+                                                                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                >
+                                                                                    <UserCog size={14} /> Promote to Leader
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleUpdateRole(m._id, role, "Member")}
+                                                                                    className="dropdown-item"
+                                                                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 12px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                >
+                                                                                    <UserCog size={14} /> Set as Member
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
                                                     );
                                                 })
+                                            ) : (
+                                                <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>No members found</div>
                                             )}
                                         </div>
                                     </div>
 
                                     {/* Tab Danger Zone */}
-                                    {isManager && (
+                                    {canManage && (
                                         <div className={`settings-section ${activeTab === 'danger' ? 'active' : ''}`}>
                                             <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--color-danger, #dc2626)', marginBottom: 'var(--space-2)' }}>Danger Zone</h2>
                                             <p style={{ fontSize: '13px', color: 'var(--color-text-subtle)', marginBottom: 'var(--space-4)' }}>
@@ -528,6 +678,52 @@ export default function ProjectSetting() {
                     </>
                 )}
             </div>
+
+            {/* MODAL INVITE MEMBER */}
+            {openInviteModal && (
+                <div className="modal-overlay" id="inviteMemberModal" onClick={() => setOpenInviteModal(false)}>
+                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h2 className="modal-title">Invite a member</h2>
+                                <p className="modal-desc">Add a new person to this workspace.</p>
+                            </div>
+                            <button onClick={() => setOpenInviteModal(false)} className="icon-btn" aria-label="Close" style={{ cursor: 'pointer' }}>
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                            <div className="field">
+                                <label className="field-label">Email *</label>
+                                <input
+                                    value={inviteEmail}
+                                    onChange={(e) => setInviteEmail(e.target.value)}
+                                    className="input"
+                                    type="email"
+                                    placeholder="teammate@company.com"
+                                    required
+                                />
+                            </div>
+
+                            <div className="field">
+                                <label className="field-label">Role</label>
+                                <select
+                                    value={inviteRole}
+                                    onChange={(e) => setInviteRole(e.target.value)}
+                                    className="select"
+                                >
+                                    <option value="Member">Member</option>
+                                    <option value="Leader">Leader</option>
+                                    <option value="Manager">Manager</option>
+                                </select>
+                            </div>
+                            <button className="btn btn-primary" style={{ alignSelf: 'flex-start', cursor: 'pointer' }} onClick={handleInvite}>
+                                Add Member
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
