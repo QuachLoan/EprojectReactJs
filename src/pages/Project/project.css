@@ -1220,13 +1220,11 @@
     color: var(--color-primary-700);
 }
 
-.settings-content {
-    flex: 1;
-    max-width: 520px;
-}
-
-.settings-section {
-    display: none;
+.settings-content,
+.settings-section,
+.card {
+    width: 100% !important;
+    max-width: none !important; /* Hủy bỏ max-width cũ */
 }
 .settings-section.active {
     display: block;
