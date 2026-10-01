@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import Header from './../../components/layout/Header/Header.jsx';
 import Sidebar from './../../components/layout/Sidebar/Sidebar.jsx';
@@ -90,16 +90,33 @@ export default function ProjectList() {
     const [newTaskDate, setNewTaskDate] = useState('');
     const [selectedMembers, setSelectedMembers] = useState([]);
 
-    const memberList = Array.isArray(project?.assignees) ? project.assignees : [];
-
     const getCurrentUser = () => {
-        return JSON.parse(localStorage.getItem('user') || '{}');
+        return JSON.parse(localStorage.getItem('user') || localStorage.getItem('member') || '{}');
     };
 
     const currentUser = getCurrentUser();
-    const userRole = currentUser?.role || 'Member';
-    const isManager = userRole === 'Manager';
-    const isLeader = userRole === 'Leader';
+    const currentUserId = currentUser._id || currentUser.id || null;
+
+    // Lấy danh sách thành viên từ project
+    const currentMemberList = useMemo(() => {
+        return Array.isArray(project?.assignees) ? project.assignees : (project?.members || []);
+    }, [project]);
+
+    // Tìm record member tương ứng với user đang đăng nhập
+    const currentProjectMember = useMemo(() => {
+        if (!currentUserId || !currentMemberList.length) return null;
+        return currentMemberList.find(m => {
+            const mUserId = getMemberUserId(m);
+            return String(mUserId) === String(currentUserId);
+        });
+    }, [currentUserId, currentMemberList]);
+
+    // Lấy role từ dự án (hoặc fallback về role chung)
+    const currentUserRole = currentProjectMember?.role || currentUser?.role || 'Member';
+
+    const isManager = currentUserRole === 'Manager';
+    const isLeader = currentUserRole === 'Leader';
+    const isMember = currentUserRole === 'Member';
 
     const loadData = async () => {
         try {
@@ -149,8 +166,8 @@ export default function ProjectList() {
         setNewTaskPriority('Medium');
         setNewTaskPoints(0);
         setNewTaskDate('');
-        const currentUserId = currentUser._id || currentUser.id;
-        setSelectedMembers(currentUserId ? [currentUserId] : []);
+        const cUserId = currentUser._id || currentUser.id;
+        setSelectedMembers(cUserId ? [cUserId] : []);
         setActiveModal('quickCreateTaskModal');
     };
 
@@ -168,7 +185,6 @@ export default function ProjectList() {
 
             const pointValue = Number(newTaskPoints) || 0;
 
-            // Gửi đồng thời cả point và points xuống backend
             const payload = {
                 title: newTaskTitle,
                 description: newTaskDesc,
@@ -311,7 +327,7 @@ export default function ProjectList() {
                                     <p className="page-subtitle">{project.description || 'no description'}</p>
 
                                     <div className="project-meta-row" style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '13px', color: '#64748b' }}>
-                                        <span className="project-meta-item"><UsersRound className="icon icon-sm" />{memberList.length} members</span>
+                                        <span className="project-meta-item"><UsersRound className="icon icon-sm" />{currentMemberList.length} members</span>
                                         <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
                                         <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate || 'Chưa đặt'}</span>
                                     </div>
@@ -404,7 +420,7 @@ export default function ProjectList() {
                                                     <td style={{ padding: '12px 16px' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                             {taskAssignees.map((assignee, aIdx) => {
-                                                                const userInfo = getUserInfo(assignee, memberList);
+                                                                const userInfo = getUserInfo(assignee, currentMemberList);
                                                                 const name = getMemberDisplayName(userInfo);
                                                                 const memberId = typeof assignee === 'object'
                                                                     ? (assignee._id || assignee.id || aIdx)
@@ -530,7 +546,7 @@ export default function ProjectList() {
                     }}
                 >
                     <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', padding: '4px 6px' }}>Assign Member:</div>
-                    {memberList.map((m) => {
+                    {currentMemberList.map((m) => {
                         const mUserId = getMemberUserId(m);
                         const displayName = getMemberDisplayName(m);
                         const currentTask = tasks.find(t => String(t._id || t.id) === String(assigneeMenu.taskId));

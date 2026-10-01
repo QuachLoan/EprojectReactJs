@@ -655,6 +655,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [selectedTaskId, setSelectedTaskId] = useState(null);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
+    // State lưu thông tin task đang chờ Leader duyệt khi kéo vào cột Done
+    const [pendingReviewTask, setPendingReviewTask] = useState(null);
+
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskName, setNewTaskName] = useState('');
     const [newTaskColumnId, setNewTaskColumnId] = useState('');
@@ -671,20 +674,33 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const currentUser = getCurrentUser();
     const currentUserId = currentUser._id || currentUser.id || null;
 
-    const isManager = currentUser?.role === 'Manager';
-    const isLeader = currentUser?.role === 'Leader';
-    const isMember = currentUser?.role === 'Member';
+    // Lấy mảng danh sách thành viên dự án
+    const memberList = useMemo(() => {
+        return Array.isArray(project?.assignees) ? project.assignees : (project?.members || []);
+    }, [project]);
+
+    // Tìm thông tin member tương ứng với currentUserId trong dự án
+    const currentProjectMember = useMemo(() => {
+        if (!currentUserId || !memberList.length) return null;
+        return memberList.find(m => {
+            const mUserId = getMemberUserId(m);
+            return String(mUserId) === String(currentUserId);
+        });
+    }, [currentUserId, memberList]);
+
+    // Lấy role từ member tìm được trong project (nếu có), nếu không lấy role của currentUser
+    const currentUserRole = currentProjectMember?.role || currentUser?.role;
+
+    // Kiểm tra các quyền dựa trên role của member trong project
+    const isManager = currentUserRole === 'Manager';
+    const isLeader = currentUserRole === 'Leader';
+    const isMember = currentUserRole === 'Member';
     const canCreateTask = isManager || isLeader;
 
     // KIỂM TRA QUYỀN MEMBER TRONG PROJECT DÙNG ĐỂ CHẶN KÉO THẢ:
     const isProjectMember = useMemo(() => {
-        if (!currentUserId || !project) return false;
-        const memberList = Array.isArray(project.assignees) ? project.assignees : (project.members || []);
-        return memberList.some(m => {
-            const mUserId = getMemberUserId(m);
-            return String(mUserId) === String(currentUserId);
-        });
-    }, [currentUserId, project]);
+        return Boolean(currentProjectMember);
+    }, [currentProjectMember]);
 
     const fetchBoardData = async () => {
         if (!activeProjectId) return;
@@ -804,6 +820,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setTasks(prevTasks => prevTasks.filter(t => String(t._id) !== String(deletedTaskId)));
     };
 
+    // HÀM XỬ LÝ KÉO THẢ TASK
     const handleOnDragEnd = async (result) => {
         if (!isProjectMember) return;
 
@@ -813,6 +830,22 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             destination.droppableId === source.droppableId &&
             destination.index === source.index
         ) {
+            return;
+        }
+
+        // Tìm thông tin cột đích để kiểm tra xem có phải cột "Done" không
+        const destColumn = columns.find(c => String(c._id) === String(destination.droppableId));
+        const destColumnName = (destColumn?.name || destColumn?.title || '').toLowerCase();
+
+        // NẾU KÉO VÀO CỘT DONE -> HIỂN THỊ POPUP DUYỆT BẤM ACCEPT / NOT ACCEPT
+        if (destColumnName.includes('done')) {
+            const movedTask = tasks.find(t => String(t._id) === String(draggableId));
+            setPendingReviewTask({
+                task: movedTask,
+                sourceColumnId: source.droppableId,
+                destColumnId: destination.droppableId,
+                destinationIndex: destination.index
+            });
             return;
         }
 
@@ -841,6 +874,56 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             await moveTask(draggableId, payload);
         } catch (error) {
             console.error("Lỗi kéo thả task, hoàn tác UI:", error);
+            setTasks(previousTasks);
+        }
+    };
+
+    // HÀM XỬ LÝ QUYẾT ĐỊNH CỦA LEADER (ACCEPT / NOT ACCEPT)
+    const handleLeaderDecision = async (isAccepted) => {
+        if (!pendingReviewTask) return;
+
+        const { task, sourceColumnId, destColumnId } = pendingReviewTask;
+
+        // Tìm cột Accepted và In Review
+        const acceptedColumn = columns.find(c =>
+            (c.name || c.title || '').toLowerCase().includes('accepted')
+        );
+        const inReviewColumn = columns.find(c =>
+            (c.name || c.title || '').toLowerCase().includes('in review') ||
+            (c.name || c.title || '').toLowerCase().includes('review')
+        );
+
+        // Nếu bấm Accept -> Chuyển sang cột Accepted (nếu có) hoặc giữ cột Done
+        // Nếu bấm Not Accept -> Chuyển về cột In Review (nếu có) hoặc cột ban đầu (sourceColumnId)
+        let targetColumnId;
+        if (isAccepted) {
+            targetColumnId = acceptedColumn ? acceptedColumn._id : destColumnId;
+        } else {
+            targetColumnId = inReviewColumn ? inReviewColumn._id : sourceColumnId;
+        }
+
+        const previousTasks = [...tasks];
+
+        // Cập nhật UI ngay lập tức
+        setTasks((prevTasks) =>
+            prevTasks.map(t =>
+                String(t._id) === String(task._id)
+                    ? { ...t, columnId: extractColumnId(targetColumnId) }
+                    : t
+            )
+        );
+
+        setPendingReviewTask(null);
+
+        // Gọi API backend
+        try {
+            await moveTask(task._id, {
+                sourceColumnId: sourceColumnId === 'backlog' ? null : sourceColumnId,
+                destColumnId: targetColumnId,
+                destinationIndex: 0
+            });
+        } catch (error) {
+            console.error("Lỗi cập nhật trạng thái duyệt task:", error);
             setTasks(previousTasks);
         }
     };
@@ -911,7 +994,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         );
     }
 
-    const memberList = Array.isArray(project?.assignees) ? project.assignees : [];
     const formattedDueDate = (project?.date)
         ? new Date(project.date).toLocaleDateString('vi-VN')
         : 'N/A';
@@ -1159,6 +1241,56 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 isLeader={isLeader}
                 currentUserId={getCurrentUserId()}
             />
+
+            {/* MODAL DUYỆT TASK CHO LEADER / MANAGER */}
+            {pendingReviewTask && (
+                <div className="modal-overlay" onClick={() => setPendingReviewTask(null)}>
+                    <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px', padding: '24px', borderRadius: '12px', textAlign: 'center' }}>
+                        <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px', color: '#1f2937' }}>
+                            Xác nhận duyệt Task
+                        </h3>
+                        <p style={{ color: '#4b5563', fontSize: '14px', marginBottom: '24px', lineHeight: '1.5' }}>
+                            Task <strong>"{pendingReviewTask.task?.title || pendingReviewTask.task?.name}"</strong> đã được kéo vào cột Done.<br />
+                            Bạn muốn duyệt task này hay chuyển về cột In Review?
+                        </p>
+
+                        {isLeader || isManager ? (
+                            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                                <button
+                                    type="button"
+                                    className="btn"
+                                    style={{ backgroundColor: '#16a34a', color: '#ffffff', flex: 1, padding: '10px 16px', fontWeight: 600, cursor: 'pointer', borderRadius: '6px', border: 'none' }}
+                                    onClick={() => handleLeaderDecision(true)}
+                                >
+                                    ✓ Accept
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn"
+                                    style={{ backgroundColor: '#dc2626', color: '#ffffff', flex: 1, padding: '10px 16px', fontWeight: 600, cursor: 'pointer', borderRadius: '6px', border: 'none' }}
+                                    onClick={() => handleLeaderDecision(false)}
+                                >
+                                    ✕ Not Accept
+                                </button>
+                            </div>
+                        ) : (
+                            <div>
+                                <p style={{ color: '#d97706', fontSize: '13px', marginBottom: '16px', fontStyle: 'italic' }}>
+                                    ⏳ Đang chờ Leader hoặc Manager xác nhận duyệt task này.
+                                </p>
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary"
+                                    onClick={() => setPendingReviewTask(null)}
+                                    style={{ width: '100%', cursor: 'pointer' }}
+                                >
+                                    Đóng
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {canCreateTask && activeModal === 'quickCreateTaskModal' && (
                 <div className="modal-overlay" onClick={closeModal}>

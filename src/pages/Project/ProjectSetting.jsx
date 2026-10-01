@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Header from './../../components/layout/Header/Header.jsx';
 import Sidebar from './../../components/layout/Sidebar/Sidebar.jsx';
@@ -51,11 +51,41 @@ export default function ProjectSetting() {
     const [saving, setSaving] = useState(false);
 
     const getCurrentUser = () => {
-        return JSON.parse(localStorage.getItem('user') || '{}');
+        return JSON.parse(localStorage.getItem('user') || localStorage.getItem('member') || '{}');
     };
+
     const currentUser = getCurrentUser();
-    const userRole = currentUser?.role || 'Member';
-    const isManager = userRole === 'Manager';
+    const currentUserId = currentUser._id || currentUser.id || null;
+
+    // Hàm trích xuất Member ID linh hoạt
+    const extractMemberId = (m) => {
+        if (!m) return '';
+        if (typeof m === 'object') {
+            return String(m._id || m.id || m.userId?._id || m.userId?.id || m.userId || '');
+        }
+        return String(m);
+    };
+
+    // Lấy danh sách thành viên từ project
+    const currentMemberList = useMemo(() => {
+        return Array.isArray(project?.assignees) ? project.assignees : (project?.members || []);
+    }, [project]);
+
+    // Tìm record member tương ứng với user đang đăng nhập
+    const currentProjectMember = useMemo(() => {
+        if (!currentUserId || !currentMemberList.length) return null;
+        return currentMemberList.find(m => {
+            const mUserId = extractMemberId(m);
+            return String(mUserId) === String(currentUserId);
+        });
+    }, [currentUserId, currentMemberList]);
+
+    // Lấy role từ dự án (hoặc fallback về role chung)
+    const currentUserRole = currentProjectMember?.role || currentUser?.role || 'Member';
+
+    const isManager = currentUserRole === 'Manager';
+    const isLeader = currentUserRole === 'Leader';
+    const isMember = currentUserRole === 'Member';
 
     const formatDateForInput = (dateValue) => {
         if (!dateValue) return '';
@@ -65,15 +95,6 @@ export default function ProjectSetting() {
         const month = String(d.getMonth() + 1).padStart(2, '0');
         const day = String(d.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
-    };
-
-    // 🟢 Hàm trích xuất Member ID linh hoạt
-    const extractMemberId = (m) => {
-        if (!m) return '';
-        if (typeof m === 'object') {
-            return String(m._id || m.id || m.userId?._id || m.userId?.id || m.userId || '');
-        }
-        return String(m);
     };
 
     useEffect(() => {
@@ -130,7 +151,6 @@ export default function ProjectSetting() {
         );
     };
 
-    // 🟢 Đã sửa: Gửi kèm `assignees: selectedMembers` để giữ nguyên danh sách thành viên khi lưu thông tin chung
     const handleSaveGeneralSettings = async (e) => {
         e.preventDefault();
         if (!isManager) return;
@@ -149,7 +169,7 @@ export default function ProjectSetting() {
                 date: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
                 dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
                 endDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
-                assignees: validAssignees // Keep existing member list
+                assignees: validAssignees
             };
 
             await updateProject(projectId, payload);
@@ -199,8 +219,6 @@ export default function ProjectSetting() {
             }
         }
     };
-
-    const currentMemberList = Array.isArray(project?.assignees) ? project.assignees : [];
 
     const headerDueDate = (project?.date || project?.dueDate || project?.endDate)
         ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')

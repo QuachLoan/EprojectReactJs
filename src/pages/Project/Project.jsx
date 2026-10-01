@@ -54,25 +54,50 @@ export default function Projects() {
 
     const [toasts, setToasts] = useState([]);
 
-    // 🟢 Lấy thông tin user hiện tại và kiểm tra role Manager
+    // Lấy thông tin user hiện tại và kiểm tra role Manager
     const getCurrentUser = () => {
-        return JSON.parse(localStorage.getItem('user') || localStorage.getItem('member') || '{}');
+        try {
+            const raw = JSON.parse(localStorage.getItem('user') || localStorage.getItem('member') || '{}');
+            return raw?.user || raw?.data || raw;
+        } catch (e) {
+            return {};
+        }
     };
+
     const currentUser = getCurrentUser();
-    const isManager = currentUser?.role === 'Manager';
+    const currentUserId = currentUser._id || currentUser.id || null;
 
-    const getCurrentUserId = () => {
-        return currentUser._id || currentUser.id || null;
+// 🟢 Tìm record Member trong danh sách members khớp với currentUserId
+    const currentMemberRecord = members.find(m => {
+        const uId = m.userId?._id || m.userId?.id || m.userId || m._id || m.id;
+        return String(uId) === String(currentUserId);
+    });
+
+// 🟢 Ưu tiên lấy role từ model Member thu được
+    const currentUserRole = currentMemberRecord?.role || currentUser?.role || 'Member';
+    const isManager = currentUserRole === 'Manager';
+
+    // Hàm lấy role của user trong 1 project cụ thể
+    const getUserRoleInProject = (project) => {
+        const assignees = Array.isArray(project.assignees)
+            ? project.assignees
+            : (Array.isArray(project.members) ? project.members : []);
+
+        const member = assignees.find(m => {
+            const uId = m.userId?._id || m.userId || m._id || m.id;
+            return String(uId) === String(currentUserId);
+        });
+
+        return member?.role || currentUser?.role || 'Member';
     };
 
-    // 🟢 Tự động tích chọn chính mình khi reset/mở form tạo project
+    // Tự động tích chọn chính mình khi reset/mở form tạo project
     const resetProjectForm = () => {
         setProjectName('');
         setProjectDesc('');
         setProjectDueDate('');
         setSelectedColor('#4f46e5');
 
-        const currentUserId = getCurrentUserId();
         if (currentUserId && members.length > 0) {
             const currentMember = members.find(m => {
                 const uId = m.userId?._id || m.userId;
@@ -148,8 +173,6 @@ export default function Projects() {
             const list = Array.isArray(data) ? data : (data?.data || data?.users || []);
             setMembers(list);
 
-            const currentUserId = getCurrentUserId();
-
             if (currentUserId && list.length > 0) {
                 const currentMember = list.find(m => {
                     const uId = m.userId?._id || m.userId;
@@ -222,12 +245,10 @@ export default function Projects() {
 
     const handleCreateProject = async (e) => {
         e.preventDefault();
-        if (!isManager) return; // Bảo vệ nút gửi nếu không phải Manager
+        if (!isManager) return;
 
         setIsSubmittingProject(true);
         try {
-            const currentUserId = getCurrentUserId();
-
             const validAssignees = selectedMembers.filter(
                 (id) => typeof id === 'string' && id.trim().length > 0
             );
@@ -303,7 +324,7 @@ export default function Projects() {
                                 </p>
                             </div>
 
-                            {/* 🟢 Chỉ hiển thị nút Create Project đối với Manager */}
+                            {/* Chỉ hiển thị nút Create Project đối với Manager */}
                             {isManager && (
                                 <button
                                     className="btn btn-primary"
@@ -535,13 +556,12 @@ export default function Projects() {
                         className="modal-box"
                         onClick={(e) => e.stopPropagation()}
                         style={{
-                            maxHeight: '90vh',        // Giới hạn chiều cao tối đa bằng 90% màn hình
+                            maxHeight: '90vh',
                             display: 'flex',
                             flexDirection: 'column',
-                            overflow: 'hidden'        // Giữ cho header và footer cố định
+                            overflow: 'hidden'
                         }}
                     >
-                        {/* Header cố định */}
                         <div className="modal-header" style={{ flexShrink: 0 }}>
                             <div>
                                 <h2 className="modal-title">Create project</h2>
@@ -561,15 +581,14 @@ export default function Projects() {
                                 overflow: 'hidden'
                             }}
                         >
-                            {/* Body tự động cuộn khi nội dung vượt quá chiều cao */}
                             <div
                                 className="modal-body"
                                 style={{
                                     display: 'flex',
                                     flexDirection: 'column',
                                     gap: 'var(--space-4)',
-                                    overflowY: 'auto',       // Cho phép cuộn dọc phần này
-                                    paddingRight: '4px',     // Giúp thanh cuộn không đè sát mép
+                                    overflowY: 'auto',
+                                    paddingRight: '4px',
                                     flex: 1
                                 }}
                             >
@@ -622,9 +641,9 @@ export default function Projects() {
                                 </div>
 
                                 <div className="field">
-                        <span className="field-label">
-                            Members {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
-                        </span>
+                                    <span className="field-label">
+                                        Members {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
+                                    </span>
                                     <div className="card" style={{ maxHeight: '144px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         {loadingMembers ? (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', color: '#6b7280', fontSize: '13px' }}>
@@ -649,8 +668,8 @@ export default function Projects() {
                                                             onChange={() => toggleMemberSelection(memberId)}
                                                         />
                                                         <span className="avatar avatar-xs" style={{ background: '#4f46e5' }}>
-                                                {initials}
-                                            </span>
+                                                            {initials}
+                                                        </span>
                                                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                                                             <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
                                                             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{member.role || 'Member'}</span>
@@ -663,7 +682,6 @@ export default function Projects() {
                                 </div>
                             </div>
 
-                            {/* Footer chứa nút bấm luôn cố định ở đáy Modal */}
                             <div className="modal-footer" style={{ flexShrink: 0, marginTop: '16px' }}>
                                 <button type="button" className="btn btn-outline btn-sm" onClick={closeModal} style={{ cursor: 'pointer' }}>
                                     Cancel
