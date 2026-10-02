@@ -95,6 +95,67 @@ const extractColumnId = (columnId) => {
     return String(columnId);
 };
 
+// Hàm tính toán Week thực tế và trả về trạng thái On Track / Expiring / Overdue
+const calculateTaskWeekAndStatus = (task, project) => {
+    let currentWeek = Number(task?.week) || 1;
+
+    const projStart = project?.startDate || project?.createdDate || project?.createdAt;
+    const projEnd = project?.date || project?.dueDate || project?.endDate;
+
+    if (!projStart) {
+        return { displayWeek: currentWeek, status: 'On Track' };
+    }
+
+    // Format về 00:00:00 (bỏ qua giây phút)
+    const startDate = new Date(projStart);
+    startDate.setHours(0, 0, 0, 0);
+
+    const endDate = projEnd ? new Date(projEnd) : null;
+    if (endDate) endDate.setHours(0, 0, 0, 0);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // 1. Quá hạn dự án -> Overdue
+    if (endDate && today > endDate) {
+        return { displayWeek: currentWeek, status: 'Overdue' };
+    }
+
+    // 2. Tính số ngày đã trôi qua kể từ startDate
+    const diffTime = today.getTime() - startDate.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 3600 * 24));
+
+    if (diffDays >= 0) {
+        // Cứ đủ 7 ngày tự động tăng 1 Week
+        const calculatedWeek = Math.floor(diffDays / 7) + 1;
+        currentWeek = Math.max(currentWeek, calculatedWeek);
+    }
+
+    // 3. Tính ngày bắt đầu và kết thúc lý thuyết của currentWeek
+    const weekStart = new Date(startDate);
+    weekStart.setDate(weekStart.getDate() + (currentWeek - 1) * 7);
+
+    let weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+
+    // 4. Nếu là Week cuối (kết thúc bị giới hạn bởi endDate)
+    if (endDate && weekEnd > endDate) {
+        weekEnd = new Date(endDate);
+    }
+
+    // 5. Tính mốc Expiring:
+    // - Tuần thường: Rơi vào đúng ngày thứ 7 (weekEnd)
+    // - Tuần cuối (ví dụ 16/10 - 21/10): Sát endDate (tức là từ 20/10 và 21/10)
+    const expiringThreshold = new Date(weekEnd);
+    expiringThreshold.setDate(expiringThreshold.getDate() - 1); // 1 ngày trước ngày kết thúc
+
+    if (today >= expiringThreshold && today <= weekEnd) {
+        return { displayWeek: currentWeek, status: 'Expiring' };
+    }
+
+    return { displayWeek: currentWeek, status: 'On Track' };
+};
+
 // ==========================================
 // COMPONENT TASK DRAWER
 // ==========================================
@@ -470,7 +531,6 @@ function TaskDrawer({
                                 />
                             </div>
 
-                            {/* Trường Week giới hạn từ 1 đến maxWeeks */}
                             <div>
                                 <span className="drawer-field-label">Week</span>
                                 <select
@@ -491,7 +551,6 @@ function TaskDrawer({
                                     Assignees {task.assignees?.length > 0 && `(${task.assignees.length} selected)`}
                                 </span>
 
-                                {/* Ô TÌM KIẾM ASSIGNEE THEO EMAIL HOẶC TÊN */}
                                 <input
                                     className="input"
                                     type="text"
@@ -695,6 +754,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [loading, setLoading] = useState(true);
 
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedWeek, setSelectedWeek] = useState('all');
 
     const [activeModal, setActiveModal] = useState(null);
     const [isColumnFixed, setIsColumnFixed] = useState(false);
@@ -795,7 +855,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         fetchBoardData();
     }, [activeProjectId]);
 
-    // Tính toán số tuần tối đa dựa trên (endDate - startDate) / 7
     const totalProjectWeeks = useMemo(() => {
         if (!project) return 1;
 
@@ -808,22 +867,26 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         const endDateObj = new Date(end);
 
         const diffTime = endDateObj.getTime() - startDateObj.getTime();
-        const diffDays = diffTime / (1000 * 3600 * 24);
+        const diffDays = Math.floor(diffTime / (1000 * 3600 * 24)) + 1;
 
         if (diffDays <= 0) return 1;
 
         return Math.ceil(diffDays / 7);
     }, [project]);
 
+    // Lọc task kết hợp theo tên (searchQuery) và theo week động
     const filteredTasks = useMemo(() => {
-        if (!searchQuery.trim()) return tasks;
-        const query = searchQuery.toLowerCase().trim();
-
         return tasks.filter((task) => {
+            const query = searchQuery.toLowerCase().trim();
             const title = (task.title || task.name || '').toLowerCase();
-            return title.includes(query);
+            const matchesQuery = !query || title.includes(query);
+
+            const { displayWeek } = calculateTaskWeekAndStatus(task, project);
+            const matchesWeek = selectedWeek === 'all' || displayWeek === Number(selectedWeek);
+
+            return matchesQuery && matchesWeek;
         });
-    }, [tasks, searchQuery]);
+    }, [tasks, searchQuery, selectedWeek, project]);
 
     const getSortedTasksForColumn = (column) => {
         const columnTaskMap = new Map();
@@ -892,7 +955,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setTasks(prevTasks => prevTasks.filter(t => String(t._id) !== String(deletedTaskId)));
     };
 
-    // HÀM KÉO THẢ VÀ TỰ ĐỘNG GỬI CỜ CỘNG ĐIỂM
     const handleOnDragEnd = async (result) => {
         const { destination, source, draggableId } = result;
         if (!destination) return;
@@ -931,15 +993,12 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
         try {
             await moveTask(draggableId, payload);
-            if (isMovingToDone) {
-            }
         } catch (error) {
             console.error("Lỗi kéo thả task, hoàn tác UI:", error);
             setTasks(previousTasks);
         }
     };
 
-    // XỬ LÝ KHI LEADER / MANAGER NHẤN NOT ACCEPT HOẶC ACCEPT TASK
     const handleLeaderDecisionOnTask = async (e, task, currentColumnId, isAccepted) => {
         e.stopPropagation();
 
@@ -1017,7 +1076,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 points: createdTask.points ?? createdTask.point ?? pointValue,
                 point: createdTask.point ?? createdTask.points ?? pointValue,
                 week: createdTask.week ?? weekValue,
-                assignees: createdTask.assignees || []
+                assignees: createdTask.assignees || [],
+                startDate: createdTask.startDate || new Date().toISOString()
             };
 
             setTasks(prevTasks => [...prevTasks, formattedNewTask]);
@@ -1038,7 +1098,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         );
     }
 
-    // Lấy thông tin Start Date & End Date của Project
     const formattedStartDate = (project?.startDate || project?.createdDate || project?.createdAt)
         ? new Date(project.startDate || project.createdDate || project.createdAt).toLocaleDateString('vi-VN')
         : 'Chưa đặt';
@@ -1063,7 +1122,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             </div>
                             <p className="page-subtitle">{project?.description || 'No description'}</p>
 
-                            {/* Cập nhật danh sách thông tin chung */}
                             <div className="project-meta-row">
                                 <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} members</span>
                                 <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
@@ -1089,7 +1147,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 </div>
 
                 <main className="page-content">
-                    <div className="filter-bar" style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                    <div className="filter-bar" style={{ display: 'flex', gap: '12px', marginBottom: '16px', alignItems: 'center' }}>
                         <div className="input-icon-wrap" style={{ width: '260px', flexShrink: 0 }}>
                             <span className="input-icon">🔍</span>
                             <input
@@ -1099,6 +1157,20 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 style={{ width: '100%' }}
                             />
+                        </div>
+
+                        <div style={{ width: '150px', flexShrink: 0 }}>
+                            <select
+                                className="select"
+                                value={selectedWeek}
+                                onChange={(e) => setSelectedWeek(e.target.value)}
+                                style={{ cursor: 'pointer', height: '100%' }}
+                            >
+                                <option value="all">All Weeks</option>
+                                {Array.from({ length: totalProjectWeeks }, (_, i) => i + 1).map(w => (
+                                    <option key={w} value={w}>Week {w}</option>
+                                ))}
+                            </select>
                         </div>
 
                         {canCreateTask && (
@@ -1152,7 +1224,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                     {columnTasks.length === 0 ? (
                                                         <div className="empty-state" style={{ padding: '24px 0' }}>
                                                             <div className="empty-state-desc">
-                                                                {searchQuery ? 'Not found' : 'Empty'}
+                                                                {searchQuery || selectedWeek !== 'all' ? 'Not found' : 'Empty'}
                                                             </div>
                                                         </div>
                                                     ) : (
@@ -1166,6 +1238,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                 return currentUserId && assigneeId === String(currentUserId);
                                                             });
                                                             const canDragThisTask = isManager || isLeader || isTaskAssignee;
+
+                                                            // TÍNH TOÁN WEEK VÀ LẤY TRẠNG THÁI ON TRACK / EXPIRING / OVERDUE
+                                                            const { displayWeek, status } = calculateTaskWeekAndStatus(task, project);
 
                                                             return (
                                                                 <Draggable
@@ -1218,6 +1293,64 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 </div>
 
                                                                                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                                                                    {/* TAG TRẠNG THÁI TASK */}
+                                                                                    {status === 'Overdue' && (
+                                                                                        <span
+                                                                                            title="Task đã quá hạn dự án"
+                                                                                            style={{
+                                                                                                background: '#fef2f2',
+                                                                                                color: '#dc2626',
+                                                                                                border: '1px solid #fca5a5',
+                                                                                                borderRadius: '12px',
+                                                                                                padding: '1px 7px',
+                                                                                                fontSize: '11px',
+                                                                                                fontWeight: 600,
+                                                                                                lineHeight: '16px',
+                                                                                                whiteSpace: 'nowrap'
+                                                                                            }}
+                                                                                        >
+                                                                                            Overdue
+                                                                                        </span>
+                                                                                    )}
+
+                                                                                    {status === 'Expiring' && (
+                                                                                        <span
+                                                                                            title="Task sắp hết hạn tuần"
+                                                                                            style={{
+                                                                                                background: '#fef3c7',
+                                                                                                color: '#d97706',
+                                                                                                border: '1px solid #fde68a',
+                                                                                                borderRadius: '12px',
+                                                                                                padding: '1px 7px',
+                                                                                                fontSize: '11px',
+                                                                                                fontWeight: 600,
+                                                                                                lineHeight: '16px',
+                                                                                                whiteSpace: 'nowrap'
+                                                                                            }}
+                                                                                        >
+                                                                                            Expiring
+                                                                                        </span>
+                                                                                    )}
+
+                                                                                    {status === 'On Track' && (
+                                                                                        <span
+                                                                                            title="Task đang đúng tiến độ"
+                                                                                            style={{
+                                                                                                background: '#dcfce7',
+                                                                                                color: '#15803d',
+                                                                                                border: '1px solid #bbf7d0',
+                                                                                                borderRadius: '12px',
+                                                                                                padding: '1px 7px',
+                                                                                                fontSize: '11px',
+                                                                                                fontWeight: 600,
+                                                                                                lineHeight: '16px',
+                                                                                                whiteSpace: 'nowrap'
+                                                                                            }}
+                                                                                        >
+                                                                                            On Track
+                                                                                        </span>
+                                                                                    )}
+
                                                                                     <span
                                                                                         title="Week"
                                                                                         style={{
@@ -1232,7 +1365,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                             whiteSpace: 'nowrap'
                                                                                         }}
                                                                                     >
-                                                                                        W{task.week || 1}
+                                                                                        W{displayWeek}
                                                                                     </span>
                                                                                     <span
                                                                                         title="Story Points"
@@ -1449,7 +1582,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                     />
                                 </div>
 
-                                {/* Chọn Week giới hạn từ 1 đến totalProjectWeeks */}
                                 <div className="form-group">
                                     <label className="form-label">Week</label>
                                     <select
