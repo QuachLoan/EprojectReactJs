@@ -1,5 +1,4 @@
-import { useState } from "react";
-import FilterBar from "./FilterBar/FilterBar";
+import { useEffect, useState } from "react";
 import NavTasks from "./Task/Task";
 import Tasks from "./Task/Task";
 function MyTasks(){
@@ -7,6 +6,84 @@ function MyTasks(){
      const [isDrawerOpen, setIsDrawerOpen] = useState(false);
      const handleOpenDrawer = () => setIsDrawerOpen(true);
     const handleCloseDrawer = () => setIsDrawerOpen(false);
+        const [tasks, setTasks] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+useEffect(() => {
+    const loadMyTasks = async () => {
+        try {
+            setLoading(true);
+            setError("");
+
+            const token = localStorage.getItem("token");
+
+            const res = await fetch(
+                "http://localhost:3000/api/task/my-task",
+                {
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
+            );
+
+            if (!res.ok) {
+                throw new Error(`HTTP error: ${res.status}`);
+            }
+
+            const data = await res.json();
+
+            console.log("MY TASKS API:", data);
+
+            setTasks(Array.isArray(data) ? data : []);
+        } catch (error) {
+            console.error("Lỗi lấy My Tasks:", error);
+            setError("Không thể tải danh sách công việc.");
+            setTasks([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    loadMyTasks();
+}, []);
+const filteredTasks = tasks.filter((task) => {
+    if (!task.dueDate) return activeTab === "all";
+
+    const today = new Date();
+    const dueDate = new Date(task.dueDate);
+
+    today.setHours(0, 0, 0, 0);
+    dueDate.setHours(0, 0, 0, 0);
+
+    if (activeTab === "today") {
+        return dueDate.getTime() === today.getTime();
+    }
+
+    if (activeTab === "upcoming") {
+        return dueDate > today;
+    }
+
+    if (activeTab === "overdue") {
+        return dueDate < today;
+    }
+
+    return true;
+});
+const getInitials = (name) => {
+    if (!name) return "ME";
+
+    const words = String(name).trim().split(/\s+/);
+
+    if (words.length === 1) {
+        return words[0].substring(0, 2).toUpperCase();
+    }
+
+    return (
+        words[0][0] +
+        words[words.length - 1][0]
+    ).toUpperCase();
+};
     return(
     <>
         <main className="page-content">
@@ -18,87 +95,109 @@ function MyTasks(){
                     <button className={`pill-tab ${activeTab === "upcoming" ? "active" : ""}`} onClick={()=>setActiveTab('upcoming')} data-tab-group="myTasks" data-tab="upcoming">Upcoming</button>
                     <button className={`pill-tab ${activeTab === "overdue" ? "active" : ""}`} onClick={()=>setActiveTab('overdue')} data-tab-group="myTasks" data-tab="overdue">Overdue</button>
                 </div>
-                 <FilterBar/>
-                 {
-                    activeTab ==="all" && (
-                    <div className="card" data-tab-panel="myTasks" data-tab="all">
-                        <button className="task-list-row" onClick={handleOpenDrawer}>
-                        <div className="task-list-title-cell"><div className="task-list-title-top"><span className="priority-badge" style={{ color: '#2563eb', background: '#eff6ff' }}><span className="icon icon-xs" data-icon="arrowDown"></span></span><span className="task-title-text">Prepare capstone presentation</span></div>
-                            <div className="task-list-title-sub"><span className="task-list-project-name">TeamFlow Platform</span><span className="task-list-sub-meta"><span className="icon icon-xs" data-icon="checkSquare"></span>0/2</span></div></div>
-                        <span className="task-list-column-cell"><span className="project-color-dot" style={{ background: '#94a3b8' }}></span>Todo</span>
-                        <span className="task-list-assignee-cell"><span className="avatar avatar-sm" style={{ background: '#4f46e5' }}>CS</span></span>
-                        <span className="task-list-extra-labels"></span>
-                        <span className="task-list-due-cell">Sep 14</span>
-                        </button>
-                        <button className="task-list-row" onClick={() => {}}>
-                        <div className="task-list-title-cell"><div className="task-list-title-top"><span className="priority-badge" style={{ color: '#f97316', background: '#fff7ed' }}><span className="icon icon-xs" data-icon="arrowUp"></span></span><span className="task-title-text">Task detail drawer</span></div>
-                            <div className="task-list-title-sub"><span className="task-list-project-name">TeamFlow Platform</span><span className="task-list-sub-meta"><span className="icon icon-xs" data-icon="checkSquare"></span>5/5</span><span className="task-list-sub-meta"><span className="icon icon-xs" data-icon="messageSquare"></span>4</span></div></div>
-                        <span className="task-list-column-cell"><span className="project-color-dot" style={{ background: '#9333ea' }}></span>Review</span>
-                        <span className="task-list-assignee-cell"><span className="avatar avatar-sm" style={{ background: '#4f46e5' }}>CS</span></span>
-                        <span className="task-list-extra-labels"></span>
-                        <span className="task-list-due-cell due-overdue">Aug 25</span>
-                        </button>
-                        <button className="task-list-row" onClick={() => {}}>
-                        <div className="task-list-title-cell"><div className="task-list-title-top"><span className="priority-badge" style={{ color: '#2563eb', background: '#eff6ff' }}><span className="icon icon-xs" data-icon="arrowDown"></span></span><span className="task-title-text">Write documentation</span></div>
-                            <div className="task-list-title-sub"><span className="task-list-project-name">TeamFlow Platform</span><span className="task-list-sub-meta"><span className="icon icon-xs" data-icon="checkSquare"></span>3/3</span><span className="task-list-sub-meta"><span className="icon icon-xs" data-icon="messageSquare"></span>2</span></div></div>
-                        <span className="task-list-column-cell"><span className="project-color-dot" style={{ background: '#16a34a' }}></span>Done</span>
-                        <span className="task-list-assignee-cell"><span className="avatar avatar-sm" style={{ background: '#4f46e5' }}>CS</span></span>
-                        <span className="task-list-extra-labels"></span>
-                        <span className="task-list-due-cell">Aug 20</span>
-                        </button>
-                        <button className="task-list-row" onClick={() => {}}>
-                        <div className="task-list-title-cell"><div className="task-list-title-top"><span className="priority-badge" style={{ color: '#f59e0b', background: '#fffbeb' }}><span className="icon icon-xs" data-icon="minus"></span></span><span className="task-title-text">User research interviews</span></div>
-                    <div className="task-list-title-sub"><span className="task-list-project-name">TeamFlow Platform</span><span className="task-list-sub-meta"><span className="icon icon-xs" data-icon="checkSquare"></span>5/5</span><span className="task-list-sub-meta"><span className="icon icon-xs" data-icon="messageSquare"></span>3</span></div></div>
-                        <span className="task-list-column-cell"><span className="project-color-dot" style={{ background: '#16a34a' }}></span>Done</span>
-                        <span className="task-list-assignee-cell"><span className="avatar avatar-sm" style={{ background: '#4f46e5' }}>CS</span></span>
-                        <span className="task-list-extra-labels"></span>
-                        <span className="task-list-due-cell">Aug 10</span>
-                        </button>
-                    </div>
+                 
+                        {!loading && !error && filteredTasks.length > 0 && (
+                            <div className="card">
+                                {filteredTasks.map((task) => (
+                                    <button
+                                        key={task._id}
+                                        className="task-list-row"
+                                        onClick={handleOpenDrawer}
+                                    >
+                                        <div className="task-list-title-cell">
 
-                    )
-                 }
-                 {
-                    activeTab === "today" && (
-                        <div className="card" data-tab-panel="myTasks" data-tab="today">
+                                            <div className="task-list-title-top">
+                                                <span className="priority-badge">
+                                                    {task.priority || "Normal"}
+                                                </span>
+
+                                                <span className="task-title-text">
+                                                    {task.title}
+                                                </span>
+                                            </div>
+
+                                            <div className="task-list-title-sub">
+
+                                                <span className="task-list-project-name">
+                                                    {task.projectId?.name || "No project"}
+                                                </span>
+
+                                                <span className="task-list-sub-meta">
+                                                    <span
+                                                        className="icon icon-xs"
+                                                        data-icon="checkSquare"
+                                                    >
+                                                    </span>
+
+                                                    {task.subtasks?.length || 0}
+                                                </span>
+
+                                            </div>
+                                        </div>
+
+                                        <span className="task-list-column-cell">
+
+                                            <span
+                                                className="project-color-dot"
+                                                style={{
+                                                    background:
+                                                        task.projectId?.color || "#94a3b8"
+                                                }}
+                                            >
+                                            </span>
+
+                                            {task.columnId?.title || "No status"}
+
+                                        </span>
+
+                                        <span className="task-list-assignee-cell">
+                                            <span className="avatar avatar-sm">
+                                                {getInitials(
+                                                    task.assignees?.[0]?.username || "Me"
+                                                )}
+                                            </span>
+                                        </span>
+
+                                        <span className="task-list-extra-labels">
+                                        </span>
+
+                                        <span className="task-list-due-cell">
+                                            {task.dueDate
+                                                ? new Date(task.dueDate).toLocaleDateString()
+                                                : "No due date"}
+                                        </span>
+
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    {loading && (
+                        <div className="card">
                             <div className="empty-state">
-                            <span className="empty-state-icon"><span className="icon icon-lg" data-icon="listTodo"><svg viewBox="0 0 24 24"><path d="M13 5h8"></path><path d="M13 12h8"></path><path d="M13 19h8"></path><path d="m3 17 2 2 4-4"></path><rect x="3" y="4" width="6" height="6" rx="1"></rect></svg></span></span>
-                            <p className="empty-state-title">No tasks here</p>
-                            <p className="empty-state-desc">Nothing matches this view right now.</p>
+                                <p className="empty-state-title">Loading tasks...</p>
+                            </div>
                         </div>
-                    </div>
-                     )
-                }
-                {
-                    activeTab === "upcoming" &&(
-                      <div className="card" data-tab-panel="myTasks" data-tab="upcoming">
-                          <button className="task-list-row">
-                          <div className="task-list-title-cell"><div className="task-list-title-top"><span className="priority-badge" style={{ color: '#2563eb', background: '#eff6ff' }}><span className="icon icon-xs" data-icon="arrowDown"><svg viewBox="0 0 24 24"><path d="M12 5v14"></path><path d="m19 12-7 7-7-7"></path></svg></span></span><span className="task-title-text">Prepare capstone presentation</span></div>
-                          <div className="task-list-title-sub"><span className="task-list-project-name">TeamFlow Platform</span><span className="task-list-sub-meta"><span className="icon icon-xs" data-icon="checkSquare"></span>0/2</span></div></div>
-                          <span className="task-list-column-cell"><span className="project-color-dot" style={{ background: '#94a3b8' }}></span>Todo</span>
-                          <span className="task-list-assignee-cell"><span className="avatar avatar-sm" style={{ background: '#4f46e5' }}>CS</span></span>
-                          <span className="task-list-extra-labels"></span>
-                          <span className="task-list-due-cell">Sep 14</span>
-                    </button>
-                </div>
-                    )
-                }
-                {
-                    activeTab === "overdue" && (
-                        <div className="card" data-tab-panel="myTasks" data-tab="overdue">
-                            <button className="task-list-row">
-                            <div className="task-list-title-cell"><div className="task-list-title-top"><span className="priority-badge" style={{ color: '#f97316', background: '#fff7ed' }}><span className="icon icon-xs" data-icon="arrowUp"><svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"></path><path d="M12 19V5"></path></svg></span></span><span className="task-title-text">Task detail drawer</span></div>
-                                <div className="task-list-title-sub"><span className="task-list-project-name">TeamFlow Platform</span><span className="task-list-sub-meta"><span className="icon icon-xs" data-icon="checkSquare"></span>5/5</span><span className="task-list-sub-meta"><span className="icon icon-xs" data-icon="messageSquare"></span>4</span></div></div>
-                            <span className="task-list-column-cell"><span className="project-color-dot" style={{ background: '#9333ea' }}></span>Review</span>
-                            <span className="task-list-assignee-cell"><span className="avatar avatar-sm" style={{ background: '#4f46e5' }}>CS</span></span>
-                            <span className="task-list-extra-labels"></span>
-                            <span className="task-list-due-cell due-overdue">Aug 25</span>
-                            </button>
-                        </div>
+                    )}
 
-                    )
-                }
-            
+                    {!loading && error && (
+                        <div className="card">
+                            <div className="empty-state">
+                                <p className="empty-state-title">{error}</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {!loading && !error && filteredTasks.length === 0 && (
+                        <div className="card">
+                            <div className="empty-state">
+                                <p className="empty-state-title">No tasks here</p>
+                                <p className="empty-state-desc">
+                                    Nothing matches this view right now.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                                
             </div>
           </main>
                 <div className={`drawer-overlay ${isDrawerOpen ? "" : "hidden"}`} id="taskDrawer">
