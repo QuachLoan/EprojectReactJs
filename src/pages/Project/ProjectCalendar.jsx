@@ -15,7 +15,8 @@ import {
     CalendarClock,
     ChevronLeft,
     ChevronRight,
-    Trash2, Calendar
+    Trash2,
+    Calendar
 } from 'lucide-react';
 
 import {
@@ -26,7 +27,43 @@ import {
     deleteTask
 } from '../../../api.jsx';
 
-// Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa
+// English month names list
+const MONTH_NAMES = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+// Helper function to format Date into YYYY-MM-DD string based on Local Time (prevents UTC timezone drift)
+const formatDateToLocalString = (dateInput) => {
+    if (!dateInput) return '';
+
+    // If dateInput is already a string like "YYYY-MM-DD" or "YYYY-MM-DDT..."
+    if (typeof dateInput === 'string') {
+        const cleanStr = dateInput.trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
+            return cleanStr;
+        }
+        // If ISO string from DB like "2026-10-02T00:00:00.000Z", extract YYYY-MM-DD directly if no specific time set
+        if (cleanStr.includes('T')) {
+            const parts = cleanStr.split('T');
+            const datePart = parts[0];
+            const timePart = parts[1];
+            if (timePart.startsWith('00:00:00')) {
+                return datePart;
+            }
+        }
+    }
+
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return '';
+
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+// Helper function to extract 2 uppercase initial letters
 const getInitials = (name) => {
     if (!name) return '??';
     const words = String(name).trim().split(/\s+/);
@@ -36,7 +73,7 @@ const getInitials = (name) => {
     return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 };
 
-// Helper trích xuất User ID từ record Member
+// Helper function to extract User ID from Member record
 const extractUserId = (member) => {
     if (!member) return '';
     if (typeof member.userId === 'object') {
@@ -50,7 +87,7 @@ const getMemberUserId = (member) => {
     return extractUserId(member);
 };
 
-// Hàm lấy tên hiển thị của Member
+// Helper function to get Member display name
 const getMemberDisplayName = (member) => {
     if (!member) return 'User';
     if (typeof member === 'object') {
@@ -76,10 +113,10 @@ export default function ProjectCalendar() {
     const [loading, setLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Trạng thái ngày/tháng hiển thị trên Lịch
+    // Month/Year display state for Calendar
     const [currentDate, setCurrentDate] = useState(new Date());
 
-    // State tạo Task mới
+    // New Task creation state
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
     const [newTaskPoints, setNewTaskPoints] = useState(0);
@@ -99,7 +136,7 @@ export default function ProjectCalendar() {
     const currentUser = getCurrentUser();
     const currentUserId = currentUser._id || currentUser.id || null;
 
-    // Lấy role hiện tại từ API
+    // Fetch current user's role from API
     const fetchCurrentMemberRole = async () => {
         try {
             const token = localStorage.getItem("token");
@@ -111,7 +148,7 @@ export default function ProjectCalendar() {
             const data = await res.json();
             setMemberRole(data.memberRole || "");
         } catch (err) {
-            console.error("Không thể lấy thông tin role hiện tại:", err);
+            console.error("Failed to fetch current user role:", err);
         }
     };
 
@@ -119,7 +156,7 @@ export default function ProjectCalendar() {
         fetchCurrentMemberRole();
     }, []);
 
-    // Tìm thông tin member của user hiện tại trong dự án
+    // Find current user's member info in project
     const currentProjectMember = useMemo(() => {
         if (!currentUserId || !projectMembers.length) return null;
         return projectMembers.find(m => {
@@ -154,7 +191,7 @@ export default function ProjectCalendar() {
             setTasks(realTasks);
             setProjectMembers(realMembers);
         } catch (err) {
-            console.error('Lỗi khi tải dữ liệu calendar:', err);
+            console.error('Error loading calendar data:', err);
         } finally {
             setLoading(false);
         }
@@ -177,7 +214,7 @@ export default function ProjectCalendar() {
     const handleOpenCreateModal = (selectedDateStr = '') => {
         if (!canCreateTask) return;
         resetTaskForm();
-        setNewTaskDate(selectedDateStr || new Date().toISOString().split('T')[0]);
+        setNewTaskDate(selectedDateStr || formatDateToLocalString(new Date()));
         setActiveModal('quickCreateTaskModal');
     };
 
@@ -212,7 +249,7 @@ export default function ProjectCalendar() {
                 point: pointValue,
                 points: pointValue,
                 startDate: newTaskStartDate ? new Date(newTaskStartDate) : null,
-                date: newTaskDate ? new Date(newTaskDate) : new Date(),
+                date: newTaskDate ? newTaskDate : formatDateToLocalString(new Date()),
                 assignees: cleanMembers,
                 members: cleanMembers
             };
@@ -221,11 +258,20 @@ export default function ProjectCalendar() {
             const createdTask = response?.data || response;
 
             if (createdTask && (createdTask._id || createdTask.id)) {
-                setTasks(prev => [...prev, createdTask]);
+                const newId = String(createdTask._id || createdTask.id);
+                setTasks(prev => {
+                    // Deduplicate task before adding to state
+                    const exists = prev.some(t => String(t._id || t.id) === newId);
+                    if (exists) return prev;
+                    return [...prev, createdTask];
+                });
+                closeModal();
+            } else {
+                await loadData();
                 closeModal();
             }
         } catch (error) {
-            console.error('Lỗi khi tạo task:', error);
+            console.error('Error creating task:', error);
         } finally {
             setIsSubmitting(false);
         }
@@ -234,18 +280,18 @@ export default function ProjectCalendar() {
     const handleDeleteTask = async (taskId, e) => {
         e.stopPropagation();
         if (!isManager) return;
-        if (!window.confirm('Bạn có chắc chắn muốn xóa task này không?')) return;
+        if (!window.confirm('Are you sure you want to delete this task?')) return;
 
         try {
             setTasks(prev => prev.filter(t => String(t._id || t.id) !== String(taskId)));
             await deleteTask(taskId);
         } catch (err) {
-            console.error('Lỗi khi xóa task:', err);
+            console.error('Error deleting task:', err);
             loadData();
         }
     };
 
-    // --- LOGIC XỬ LÝ LỊCH ---
+    // --- CALENDAR GRID COMPUTATION ---
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
 
@@ -289,14 +335,20 @@ export default function ProjectCalendar() {
         return days;
     }, [year, month]);
 
+    // Group tasks by date (deduplicated & timezone corrected)
     const tasksByDate = useMemo(() => {
         const map = {};
+        const seenIds = new Set();
+
         tasks.forEach(task => {
+            const taskId = String(task._id || task.id);
+            if (!taskId || seenIds.has(taskId)) return; // Avoid duplicate task IDs
+            seenIds.add(taskId);
+
             const rawDate = task.date || task.dueDate;
             if (rawDate) {
-                const d = new Date(rawDate);
-                if (!isNaN(d.getTime())) {
-                    const dateStr = d.toISOString().split('T')[0];
+                const dateStr = formatDateToLocalString(rawDate);
+                if (dateStr) {
                     if (!map[dateStr]) map[dateStr] = [];
                     map[dateStr].push(task);
                 }
@@ -306,12 +358,12 @@ export default function ProjectCalendar() {
     }, [tasks]);
 
     const formattedStartDate = (project?.startDate || project?.start_date || project?.createdAt)
-        ? new Date(project.startDate || project.start_date || project.createdAt).toLocaleDateString('vi-VN')
-        : 'Chưa đặt';
+        ? new Date(project.startDate || project.start_date || project.createdAt).toLocaleDateString('en-US')
+        : 'Not set';
 
     const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
-        ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
-        : 'Chưa đặt';
+        ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('en-US')
+        : 'Not set';
 
     return (
         <div className="app-shell">
@@ -335,7 +387,7 @@ export default function ProjectCalendar() {
                     </div>
                 ) : (
                     <>
-                        {/* Header Dự Án */}
+                        {/* Project Header */}
                         <div className="project-header">
                             <div className="project-header-top">
                                 <div style={{ minWidth: 0 }}>
@@ -372,12 +424,12 @@ export default function ProjectCalendar() {
                             </nav>
                         </div>
 
-                        {/* Nội dung chính: Lịch */}
+                        {/* Main Content: Calendar */}
                         <main className="page-content" style={{ padding: '20px' }}>
-                            {/* Toolbar điều hướng tháng/năm */}
+                            {/* Navigation Toolbar */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                                 <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#0f172a' }}>
-                                    {currentDate.toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' })}
+                                    {`${MONTH_NAMES[month]} ${year}`}
                                 </h2>
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -395,19 +447,20 @@ export default function ProjectCalendar() {
                                 </div>
                             </div>
 
-                            {/* Lưới Lịch */}
+                            {/* Calendar Grid */}
                             <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 600, fontSize: '13px', color: '#64748b' }}>
-                                    {['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật'].map((dayName) => (
+                                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayName) => (
                                         <div key={dayName} style={{ padding: '10px 0' }}>{dayName}</div>
                                     ))}
                                 </div>
 
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: 'minmax(120px, auto)', gap: '1px', background: '#e2e8f0' }}>
                                     {calendarGrid.map((cell, idx) => {
-                                        const dateStr = cell.date.toISOString().split('T')[0];
+                                        const dateStr = formatDateToLocalString(cell.date);
                                         const dayTasks = tasksByDate[dateStr] || [];
-                                        const isToday = new Date().toISOString().split('T')[0] === dateStr;
+                                        const todayStr = formatDateToLocalString(new Date());
+                                        const isToday = todayStr === dateStr;
 
                                         return (
                                             <div
@@ -484,8 +537,6 @@ export default function ProjectCalendar() {
                     </>
                 )}
             </div>
-
-
         </div>
     );
 }
