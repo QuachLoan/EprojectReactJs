@@ -89,7 +89,7 @@ export const fetchMembers = async () => {
 };
 
 export const fetchMembersByProject = async (projectId) => {
-    const res = await fetch(`${API_BASE_URL}/project/${projectId}/member`, {
+    const res = await fetch(`${API_BASE_URL}/member/project/${projectId}`, {
         headers: getAuthHeaders()
     });
     return handleResponse(res);
@@ -100,6 +100,14 @@ export const inviteMember = async (payload) => {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(payload)
+    });
+    return handleResponse(res);
+};
+
+export const deleteMemberByProject = async (projectId, memberUserId) => {
+    const res = await fetch(`${API_BASE_URL}/member/${memberUserId}/project/${projectId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
     });
     return handleResponse(res);
 };
@@ -240,6 +248,15 @@ export const register = async (userData) => {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify(userData)
+    });
+    return handleResponse(res);
+};
+
+export const reviewTask = async (taskId, isAccepted) => {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}/review`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ action: isAccepted ? 'accept' : 'not_accept' })
     });
     return handleResponse(res);
 };

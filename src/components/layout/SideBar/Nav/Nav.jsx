@@ -50,21 +50,6 @@ function Nav() {
                 <span className="nav-label">Projects</span>
             </NavLink>
 
-           {
-           (member === "Manager" || member === "Leader") &&(
-              <>
-            <NavLink to="/members" className={getNavClass}>
-                <span className="icon" data-icon="users">
-                  <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><path d="M16 3.128a4 4 0 0 1 0 7.744"></path><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><circle cx="9" cy="7" r="4"></circle></svg>
-                </span>
-                <span className="nav-label">Members</span>
-            </NavLink>
-              </>
-
-            )
-           }
-
-
             {
               
               currentUserRole === "Admin" && (
@@ -77,12 +62,6 @@ function Nav() {
                 <span className="nav-label">Users</span>
             </NavLink>
 
-            <NavLink to="/adminmoderation" className={getNavClass}>
-        <span className="icon" data-icon="flag">
-          <svg viewBox="0 0 24 24"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"></path></svg>
-        </span>
-                <span className="nav-label">Moderation</span>
-            </NavLink>
                 </>
            
               )
