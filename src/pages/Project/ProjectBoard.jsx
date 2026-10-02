@@ -104,6 +104,7 @@ function TaskDrawer({
                         handleCloseDrawer,
                         columns = [],
                         projectMembers = [],
+                        maxWeeks = 1,
                         onTaskUpdated,
                         onTaskDeleted,
                         isManager = false,
@@ -119,8 +120,6 @@ function TaskDrawer({
     const [commentText, setCommentText] = useState('');
     const [activities, setActivities] = useState([]);
     const [assigneeSearchQuery, setAssigneeSearchQuery] = useState('');
-
-    const todayStr = new Date().toISOString().split('T')[0];
 
     const canEditAll = isManager;
     const canEditManagement = isManager || isLeader;
@@ -148,9 +147,9 @@ function TaskDrawer({
                         ...realTask,
                         name: realTask.name || realTask.title || '',
                         columnId: extractColumnId(realTask.columnId),
-                        date: realTask.date ? new Date(realTask.date).toISOString().split('T')[0] : '',
                         assignees: formattedAssignees,
-                        points: realTask.points ?? realTask.point ?? 0
+                        points: realTask.points ?? realTask.point ?? 0,
+                        week: realTask.week ?? 1
                     });
                     setComments(Array.isArray(commentsData) ? commentsData : (commentsData?.data || []));
                     setActivities(Array.isArray(activitiesData) ? activitiesData : (activitiesData?.data || []));
@@ -175,15 +174,6 @@ function TaskDrawer({
     const handleUpdateTaskField = async (updatedFields) => {
         if (!task || isSaving) return;
 
-        if (updatedFields.date) {
-            const selectedDate = new Date(updatedFields.date).setHours(0, 0, 0, 0);
-            const today = new Date().setHours(0, 0, 0, 0);
-            if (selectedDate < today) {
-                alert("Ngày kết thúc không được ở trong quá khứ!");
-                return;
-            }
-        }
-
         if (updatedFields.columnId) {
             updatedFields.columnId = extractColumnId(updatedFields.columnId);
         }
@@ -192,6 +182,10 @@ function TaskDrawer({
             const val = Number(updatedFields.points ?? updatedFields.point) || 0;
             updatedFields.points = val;
             updatedFields.point = val;
+        }
+
+        if (updatedFields.week !== undefined) {
+            updatedFields.week = Number(updatedFields.week) || 1;
         }
 
         const previousTask = { ...task };
@@ -210,7 +204,8 @@ function TaskDrawer({
                     ...updatedTaskLocal,
                     ...returnedTask,
                     columnId: extractColumnId(returnedTask.columnId) || updatedTaskLocal.columnId,
-                    points: returnedTask.points ?? returnedTask.point ?? updatedTaskLocal.points
+                    points: returnedTask.points ?? returnedTask.point ?? updatedTaskLocal.points,
+                    week: returnedTask.week ?? updatedTaskLocal.week
                 };
                 setTask(finalTask);
                 if (onTaskUpdated) onTaskUpdated(finalTask);
@@ -475,17 +470,20 @@ function TaskDrawer({
                                 />
                             </div>
 
+                            {/* Trường Week giới hạn từ 1 đến maxWeeks */}
                             <div>
-                                <span className="drawer-field-label">End date</span>
-                                <input
-                                    className="input"
-                                    type="date"
-                                    min={todayStr}
-                                    value={task.date ? String(task.date).split('T')[0] : ''}
+                                <span className="drawer-field-label">Week</span>
+                                <select
+                                    className="select"
+                                    value={task.week || 1}
                                     disabled={!canEditAll}
                                     style={{ backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6', cursor: canEditAll ? 'pointer' : 'not-allowed' }}
-                                    onChange={(e) => handleUpdateTaskField({ date: e.target.value })}
-                                />
+                                    onChange={(e) => handleUpdateTaskField({ week: Number(e.target.value) })}
+                                >
+                                    {Array.from({ length: maxWeeks }, (_, i) => i + 1).map(w => (
+                                        <option key={w} value={w}>Week {w}</option>
+                                    ))}
+                                </select>
                             </div>
 
                             <div style={{ gridColumn: 'span 2' }}>
@@ -709,11 +707,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [newTaskColumnId, setNewTaskColumnId] = useState('');
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
     const [newTaskPoints, setNewTaskPoints] = useState(0);
+    const [newTaskWeek, setNewTaskWeek] = useState(1);
     const [newTaskDesc, setNewTaskDesc] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [newTaskDate, setNewTaskDate] = useState('');
-
-    const todayStr = new Date().toISOString().split('T')[0];
 
     const getCurrentUser = () => {
         try {
@@ -799,6 +795,26 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         fetchBoardData();
     }, [activeProjectId]);
 
+    // Tính toán số tuần tối đa dựa trên (endDate - startDate) / 7
+    const totalProjectWeeks = useMemo(() => {
+        if (!project) return 1;
+
+        const start = project.startDate || project.createdDate || project.createdAt;
+        const end = project.date || project.dueDate || project.endDate;
+
+        if (!start || !end) return 1;
+
+        const startDateObj = new Date(start);
+        const endDateObj = new Date(end);
+
+        const diffTime = endDateObj.getTime() - startDateObj.getTime();
+        const diffDays = diffTime / (1000 * 3600 * 24);
+
+        if (diffDays <= 0) return 1;
+
+        return Math.ceil(diffDays / 7);
+    }, [project]);
+
     const filteredTasks = useMemo(() => {
         if (!searchQuery.trim()) return tasks;
         const query = searchQuery.toLowerCase().trim();
@@ -845,7 +861,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setNewTaskDesc('');
         setNewTaskPriority('Medium');
         setNewTaskPoints(0);
-        setNewTaskDate('');
+        setNewTaskWeek(1);
     };
 
     const closeModal = () => {
@@ -970,18 +986,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             return;
         }
 
-        if (newTaskDate) {
-            const selectedDate = new Date(newTaskDate).setHours(0, 0, 0, 0);
-            const today = new Date().setHours(0, 0, 0, 0);
-            if (selectedDate < today) {
-                alert("Ngày kết thúc không được ở trong quá khứ!");
-                return;
-            }
-        }
-
         try {
             setIsSubmitting(true);
             const pointValue = Number(newTaskPoints) || 0;
+            const weekValue = Number(newTaskWeek) || 1;
 
             const payload = {
                 title: newTaskTitle,
@@ -992,7 +1000,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 priority: newTaskPriority,
                 point: pointValue,
                 points: pointValue,
-                date: newTaskDate ? new Date(newTaskDate) : new Date(),
+                week: weekValue,
                 assignees: [],
                 members: []
             };
@@ -1008,7 +1016,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 priority: createdTask.priority || newTaskPriority,
                 points: createdTask.points ?? createdTask.point ?? pointValue,
                 point: createdTask.point ?? createdTask.points ?? pointValue,
-                date: createdTask.date || (newTaskDate ? new Date(newTaskDate) : new Date()),
+                week: createdTask.week ?? weekValue,
                 assignees: createdTask.assignees || []
             };
 
@@ -1030,7 +1038,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         );
     }
 
-    // 🟢 Lấy thông tin Start Date & End Date của Project
+    // Lấy thông tin Start Date & End Date của Project
     const formattedStartDate = (project?.startDate || project?.createdDate || project?.createdAt)
         ? new Date(project.startDate || project.createdDate || project.createdAt).toLocaleDateString('vi-VN')
         : 'Chưa đặt';
@@ -1055,7 +1063,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             </div>
                             <p className="page-subtitle">{project?.description || 'No description'}</p>
 
-                            {/* 🟢 Cập nhật danh sách thông tin chung để hiển thị cả Start date & End date */}
+                            {/* Cập nhật danh sách thông tin chung */}
                             <div className="project-meta-row">
                                 <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} members</span>
                                 <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
@@ -1149,9 +1157,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                         </div>
                                                     ) : (
                                                         columnTasks.map((task, index) => {
-                                                            const taskDueDateFormatted = task.date
-                                                                ? new Date(task.date).toLocaleDateString('vi-VN')
-                                                                : 'N/A';
                                                             const assignees = Array.isArray(task.assignees) ? task.assignees : [];
                                                             const taskPoints = task.points ?? task.point ?? 0;
                                                             const showNotAcceptBtn = (isDoneColumn && isLeader) || (isDoneColumn && isManager);
@@ -1212,23 +1217,40 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                     {task.title || task.name}
                                                                                 </div>
 
-                                                                                <span
-                                                                                    title="Story Points"
-                                                                                    style={{
-                                                                                        background: '#f1f5f9',
-                                                                                        color: '#475569',
-                                                                                        border: '1px solid #e2e8f0',
-                                                                                        borderRadius: '12px',
-                                                                                        padding: '1px 7px',
-                                                                                        fontSize: '11px',
-                                                                                        fontWeight: 600,
-                                                                                        lineHeight: '16px',
-                                                                                        whiteSpace: 'nowrap',
-                                                                                        flexShrink: 0
-                                                                                    }}
-                                                                                >
-                                                                                    {taskPoints} pts
-                                                                                </span>
+                                                                                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                                                                    <span
+                                                                                        title="Week"
+                                                                                        style={{
+                                                                                            background: '#e0e7ff',
+                                                                                            color: '#3730a3',
+                                                                                            border: '1px solid #c7d2fe',
+                                                                                            borderRadius: '12px',
+                                                                                            padding: '1px 7px',
+                                                                                            fontSize: '11px',
+                                                                                            fontWeight: 600,
+                                                                                            lineHeight: '16px',
+                                                                                            whiteSpace: 'nowrap'
+                                                                                        }}
+                                                                                    >
+                                                                                        W{task.week || 1}
+                                                                                    </span>
+                                                                                    <span
+                                                                                        title="Story Points"
+                                                                                        style={{
+                                                                                            background: '#f1f5f9',
+                                                                                            color: '#475569',
+                                                                                            border: '1px solid #e2e8f0',
+                                                                                            borderRadius: '12px',
+                                                                                            padding: '1px 7px',
+                                                                                            fontSize: '11px',
+                                                                                            fontWeight: 600,
+                                                                                            lineHeight: '16px',
+                                                                                            whiteSpace: 'nowrap'
+                                                                                        }}
+                                                                                    >
+                                                                                        {taskPoints} pts
+                                                                                    </span>
+                                                                                </div>
                                                                             </div>
 
                                                                             <div
@@ -1242,9 +1264,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 }}
                                                                             >
                                                                                 <div className="task-card-meta" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                                    <span className="task-card-meta-item" style={{ fontSize: '12px', color: '#6b7280' }}>
-                                                                                        📅 {taskDueDateFormatted}
-                                                                                    </span>
                                                                                     <span className={`priority-tag priority-${task.priority?.toLowerCase()}`}>
                                                                                         {task.priority || 'Medium'}
                                                                                     </span>
@@ -1339,6 +1358,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 handleCloseDrawer={handleCloseTaskDrawer}
                 columns={columns}
                 projectMembers={projectMembers}
+                maxWeeks={totalProjectWeeks}
                 onTaskUpdated={handleTaskUpdatedFromDrawer}
                 onTaskDeleted={handleTaskDeletedFromDrawer}
                 isManager={isManager}
@@ -1429,15 +1449,19 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                     />
                                 </div>
 
+                                {/* Chọn Week giới hạn từ 1 đến totalProjectWeeks */}
                                 <div className="form-group">
-                                    <label className="form-label">End date</label>
-                                    <input
-                                        type="date"
-                                        className="input"
-                                        min={todayStr}
-                                        value={newTaskDate}
-                                        onChange={(e) => setNewTaskDate(e.target.value)}
-                                    />
+                                    <label className="form-label">Week</label>
+                                    <select
+                                        className="select"
+                                        value={newTaskWeek}
+                                        onChange={(e) => setNewTaskWeek(Number(e.target.value))}
+                                        style={{ cursor: 'pointer' }}
+                                    >
+                                        {Array.from({ length: totalProjectWeeks }, (_, i) => i + 1).map(w => (
+                                            <option key={w} value={w}>Week {w}</option>
+                                        ))}
+                                    </select>
                                 </div>
 
                                 <div className="form-group">

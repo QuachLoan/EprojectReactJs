@@ -1,19 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Header from './../../components/layout/Header/Header.jsx';
-<<<<<<< HEAD
-// import Sidebar from './../../components/layout/Sidebar/Sidebar.jsx';
-// import {
-//     fetchProjectById,
-//     updateProject,
-//     deleteProject,
-//     addProjectAssignee,
-//     removeProjectAssignee,
-//     fetchUsers 
-// } from '../../../api.jsx';
-=======
+
 import Sidebar from './../../components/layout/Sidebar/Sidebar.jsx';
->>>>>>> c21a71edaf752577502be9e8c6339e3e3b1b5a7b
 
 import {
     LayoutGrid,

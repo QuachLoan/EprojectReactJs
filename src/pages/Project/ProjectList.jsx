@@ -46,8 +46,8 @@ export default function ProjectList() {
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
     const [newTaskPoints, setNewTaskPoints] = useState(0);
     const [newTaskDesc, setNewTaskDesc] = useState('');
-    const [newTaskStartDate, setNewTaskStartDate] = useState('');
-    const [newTaskDate, setNewTaskDate] = useState('');
+    // Chuyển newTaskWeek mặc định thành 1 (dạng số) giống ProjectBoard
+    const [newTaskWeek, setNewTaskWeek] = useState(1);
 
     const getCurrentUser = () => {
         try {
@@ -60,7 +60,6 @@ export default function ProjectList() {
     const currentUser = getCurrentUser();
     const currentUserId = currentUser._id || currentUser.id || null;
 
-    // Lấy thông tin Member Role trực tiếp từ server API
     const fetchCurrentMemberRole = async () => {
         try {
             const token = localStorage.getItem("token");
@@ -80,7 +79,6 @@ export default function ProjectList() {
         fetchCurrentMemberRole();
     }, []);
 
-    // Tìm record member của user hiện tại trong project
     const currentProjectMember = useMemo(() => {
         if (!currentUserId || !projectMembers.length) return null;
 
@@ -90,7 +88,6 @@ export default function ProjectList() {
         }) || null;
     }, [currentUserId, projectMembers]);
 
-    // Tính toán chính xác Role
     const currentUserRole = currentProjectMember?.role || currentUser?.role || memberCurrentRole;
 
     const isAdmin = String(currentUser?.role).toLowerCase() === 'admin';
@@ -122,7 +119,6 @@ export default function ProjectList() {
                 realColumns.map(c => String(c._id || c.id)).filter(Boolean)
             );
 
-            // Các task thuộc Backlog (chưa được gán cột hoặc cột không hợp lệ)
             const backlogTasks = realTasks.filter(t => {
                 const rawCol = t.columnId;
                 const cId = typeof rawCol === 'object' && rawCol !== null
@@ -146,14 +142,35 @@ export default function ProjectList() {
         loadData();
     }, [projectId]);
 
+    // ==========================================
+    // TÍNH TỔNG SỐ TUẦN DỰ ÁN GIỐNG PROJECTBOARD
+    // ==========================================
+    const totalProjectWeeks = useMemo(() => {
+        if (!project) return 1;
+
+        const start = project.startDate || project.createdDate || project.createdAt;
+        const end = project.date || project.dueDate || project.endDate;
+
+        if (!start || !end) return 1;
+
+        const startDateObj = new Date(start);
+        const endDateObj = new Date(end);
+
+        const diffTime = endDateObj.getTime() - startDateObj.getTime();
+        const diffDays = diffTime / (1000 * 3600 * 24);
+
+        if (diffDays <= 0) return 1;
+
+        return Math.ceil(diffDays / 7);
+    }, [project]);
+
     const handleOpenCreateModal = () => {
         if (!isManager) return;
         setNewTaskTitle('');
         setNewTaskDesc('');
         setNewTaskPriority('Medium');
         setNewTaskPoints(0);
-        setNewTaskStartDate('');
-        setNewTaskDate('');
+        setNewTaskWeek(1);
         setActiveModal('quickCreateTaskModal');
     };
 
@@ -165,32 +182,12 @@ export default function ProjectList() {
         e.preventDefault();
         if (!isManager || !newTaskTitle.trim()) return;
 
-        if (newTaskStartDate && newTaskDate) {
-            const startDate = new Date(newTaskStartDate);
-            const endDate = new Date(newTaskDate);
-
-            if (endDate < startDate) {
-                alert('Ngày kết thúc (End date) phải diễn ra sau ngày bắt đầu (Start date)!');
-                return;
-            }
-        }
-
-        if (newTaskDate) {
-            const selectedDate = new Date(newTaskDate);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-
-            if (selectedDate < today) {
-                alert('Ngày kết thúc (End date) không được chọn trong quá khứ!');
-                return;
-            }
-        }
-
         try {
             setIsSubmitting(true);
             if (!projectId) return;
 
             const pointValue = Number(newTaskPoints) || 0;
+            const weekValue = Number(newTaskWeek) || 1;
 
             const payload = {
                 title: newTaskTitle,
@@ -199,8 +196,7 @@ export default function ProjectList() {
                 priority: newTaskPriority,
                 point: pointValue,
                 points: pointValue,
-                startDate: newTaskStartDate ? new Date(newTaskStartDate) : null,
-                date: newTaskDate ? new Date(newTaskDate) : new Date(),
+                week: weekValue,
                 assignees: []
             };
 
@@ -260,8 +256,6 @@ export default function ProjectList() {
     const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
         ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
         : 'Chưa đặt';
-
-    const todayString = new Date().toISOString().split('T')[0];
 
     return (
         <div className="app-shell">
@@ -340,7 +334,7 @@ export default function ProjectList() {
                                         <th style={{ padding: '12px 16px' }}>Title</th>
                                         <th style={{ padding: '12px 16px' }}>Priority</th>
                                         <th style={{ padding: '12px 16px' }}>Points</th>
-                                        <th style={{ padding: '12px 16px' }}>End date</th>
+                                        <th style={{ padding: '12px 16px' }}>Week</th>
                                         <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>
                                     </tr>
                                     </thead>
@@ -348,18 +342,9 @@ export default function ProjectList() {
                                     {tasks.length > 0 ? (
                                         tasks.map((task, index) => {
                                             const taskId = task._id || task.id || `task-fallback-${index}`;
-
-                                            const rawDate = task.date || task.dueDate;
-                                            let formattedDate = 'No date';
-                                            if (rawDate) {
-                                                const parsedDate = new Date(rawDate);
-                                                if (!isNaN(parsedDate.getTime())) {
-                                                    formattedDate = parsedDate.toLocaleDateString('vi-VN');
-                                                }
-                                            }
-
                                             const displayTitle = task.title || task.name || 'Untitled Task';
                                             const taskPoints = task.points ?? task.point ?? 0;
+                                            const taskWeek = task.week || 1;
 
                                             return (
                                                 <tr key={taskId} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -384,8 +369,20 @@ export default function ProjectList() {
                                                         </span>
                                                     </td>
 
-                                                    <td style={{ padding: '12px 16px', color: '#64748b', fontSize: '13px' }}>
-                                                        {formattedDate}
+                                                    {/* ĐỊNH DẠNG BẢNG HIỂN THỊ WEEK GIỐNG BOARD */}
+                                                    <td style={{ padding: '12px 16px' }}>
+                                                        <span style={{
+                                                            background: '#e0e7ff',
+                                                            color: '#3730a3',
+                                                            border: '1px solid #c7d2fe',
+                                                            borderRadius: '12px',
+                                                            padding: '2px 8px',
+                                                            fontSize: '12px',
+                                                            fontWeight: 600,
+                                                            display: 'inline-block'
+                                                        }}>
+                                                            Week {taskWeek}
+                                                        </span>
                                                     </td>
 
                                                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
@@ -476,25 +473,19 @@ export default function ProjectList() {
                                     />
                                 </div>
 
+                                {/* THAY THẾ DROPDOWN SELECT WEEK GIỐNG PROJECTBOARD */}
                                 <div className="form-group">
-                                    <label className="form-label">Start date</label>
-                                    <input
-                                        type="date"
-                                        className="input"
-                                        value={newTaskStartDate}
-                                        onChange={(e) => setNewTaskStartDate(e.target.value)}
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">End date</label>
-                                    <input
-                                        type="date"
-                                        className="input"
-                                        min={newTaskStartDate || todayString}
-                                        value={newTaskDate}
-                                        onChange={(e) => setNewTaskDate(e.target.value)}
-                                    />
+                                    <label className="form-label">Week</label>
+                                    <select
+                                        className="select"
+                                        value={newTaskWeek}
+                                        onChange={(e) => setNewTaskWeek(Number(e.target.value))}
+                                        style={{ cursor: 'pointer' }}
+                                    >
+                                        {Array.from({ length: totalProjectWeeks }, (_, i) => i + 1).map(w => (
+                                            <option key={w} value={w}>Week {w}</option>
+                                        ))}
+                                    </select>
                                 </div>
 
                                 <div className="form-group">
