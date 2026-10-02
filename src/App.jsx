@@ -13,6 +13,7 @@ import ProjectCalendar from "./pages/Project/ProjectCalendar.jsx";
 import ProjectSetting from "./pages/Project/ProjectSetting.jsx";
 import Register from './pages/Register/Register.jsx'
 import ForgetPassword from './pages/ForgetPassword/ForgetPassword.jsx'
+import ResetPassword from './pages/ForgetPassword/ResetPassword/ResetPassword.jsx'
 function App() {
 
   return (
@@ -28,6 +29,7 @@ function App() {
           <Route path = "/Login" element={<Login/>}/>
            <Route path = "/register" element={<Register/>}/>
            <Route path = "/forgot" element={<ForgetPassword/>}/>
+           <Route path = "/resetPassword" element={<ResetPassword/>}/>
           <Route path="/projectboard/:id" element={<ProjectBoard />} />
           <Route path = "/projectlist/:id" element = {<ProjectList/>}/>
           <Route path = "/projectcalendar/:id" element = {<ProjectCalendar/>}/>
