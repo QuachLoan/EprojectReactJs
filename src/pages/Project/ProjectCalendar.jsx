@@ -84,6 +84,7 @@ export default function ProjectCalendar() {
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
     const [newTaskPoints, setNewTaskPoints] = useState(0);
     const [newTaskDesc, setNewTaskDesc] = useState('');
+    const [newTaskStartDate, setNewTaskStartDate] = useState('');
     const [newTaskDate, setNewTaskDate] = useState('');
     const [selectedMembers, setSelectedMembers] = useState([]);
 
@@ -168,6 +169,7 @@ export default function ProjectCalendar() {
         setNewTaskDesc('');
         setNewTaskPriority('Medium');
         setNewTaskPoints(0);
+        setNewTaskStartDate('');
         setNewTaskDate('');
         setSelectedMembers(currentUserId ? [String(currentUserId)] : []);
     };
@@ -209,6 +211,7 @@ export default function ProjectCalendar() {
                 priority: newTaskPriority,
                 point: pointValue,
                 points: pointValue,
+                startDate: newTaskStartDate ? new Date(newTaskStartDate) : null,
                 date: newTaskDate ? new Date(newTaskDate) : new Date(),
                 assignees: cleanMembers,
                 members: cleanMembers
@@ -302,6 +305,10 @@ export default function ProjectCalendar() {
         return map;
     }, [tasks]);
 
+    const formattedStartDate = (project?.startDate || project?.start_date || project?.createdAt)
+        ? new Date(project.startDate || project.start_date || project.createdAt).toLocaleDateString('vi-VN')
+        : 'Chưa đặt';
+
     const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
         ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
         : 'Chưa đặt';
@@ -338,9 +345,10 @@ export default function ProjectCalendar() {
                                     </div>
                                     <p className="page-subtitle">{project.description || 'no description'}</p>
 
-                                    <div className="project-meta-row" style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '13px', color: '#64748b' }}>
+                                    <div className="project-meta-row" style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '13px', color: '#64748b', flexWrap: 'wrap' }}>
                                         <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} members</span>
                                         <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
+                                        <span className="project-meta-item"><CalendarClock className="icon icon-sm" />start date: {formattedStartDate}</span>
                                         <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate}</span>
                                     </div>
                                 </div>
@@ -384,8 +392,6 @@ export default function ProjectCalendar() {
                                             <ChevronRight className="w-4 h-4" />
                                         </button>
                                     </div>
-
-
                                 </div>
                             </div>
 
@@ -465,8 +471,6 @@ export default function ProjectCalendar() {
                                                                 >
                                                                     {task.title || 'Untitled'}
                                                                 </span>
-
-
                                                             </div>
                                                         );
                                                     })}
@@ -481,125 +485,7 @@ export default function ProjectCalendar() {
                 )}
             </div>
 
-            {/* CREATE TASK MODAL */}
-            {canCreateTask && activeModal === 'quickCreateTaskModal' && (
-                <div className="modal-overlay" onClick={closeModal}>
-                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                        <form onSubmit={handleCreateTask}>
-                            <div className="modal-header">
-                                <h2>Add Task to Calendar</h2>
-                                <button type="button" className="btn-icon" onClick={closeModal} style={{ cursor: 'pointer' }}>✕</button>
-                            </div>
-                            <div className="modal-body">
-                                <div className="form-group">
-                                    <label className="form-label">Title *</label>
-                                    <input
-                                        className="input"
-                                        placeholder="e.g: My task title"
-                                        value={newTaskTitle}
-                                        onChange={(e) => setNewTaskTitle(e.target.value)}
-                                        required
-                                    />
-                                </div>
 
-                                <div className="form-group">
-                                    <label className="form-label">
-                                        Assignees {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
-                                    </label>
-                                    <div className="card" style={{ maxHeight: '144px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                        {projectMembers.length === 0 ? (
-                                            <p style={{ fontSize: '13px', color: '#6b7280', padding: '4px' }}>
-                                                Dự án chưa có thành viên nào.
-                                            </p>
-                                        ) : (
-                                            projectMembers.map((member, idx) => {
-                                                const memberUserId = getMemberUserId(member);
-                                                const displayName = getMemberDisplayName(member);
-                                                const initials = getInitials(displayName);
-
-                                                return (
-                                                    <label key={memberUserId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', borderRadius: '6px', cursor: 'pointer' }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            className="checkbox"
-                                                            style={{ cursor: 'pointer' }}
-                                                            checked={selectedMembers.includes(String(memberUserId))}
-                                                            onChange={() => toggleMemberSelection(memberUserId)}
-                                                        />
-                                                        <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '11px', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                            {initials}
-                                                        </span>
-                                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                            <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
-                                                        </div>
-                                                        <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: 'auto' }}>
-                                                            {member.role || 'Member'}
-                                                        </span>
-                                                    </label>
-                                                );
-                                            })
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Points</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        className="input"
-                                        placeholder="0"
-                                        value={newTaskPoints}
-                                        onChange={(e) => setNewTaskPoints(e.target.value === '' ? '' : Number(e.target.value))}
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">End date</label>
-                                    <input
-                                        type="date"
-                                        className="input"
-                                        value={newTaskDate}
-                                        onChange={(e) => setNewTaskDate(e.target.value)}
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Priority</label>
-                                    <select
-                                        className="select"
-                                        value={newTaskPriority}
-                                        onChange={(e) => setNewTaskPriority(e.target.value)}
-                                        style={{ cursor: 'pointer' }}
-                                    >
-                                        <option value="Low">Low</option>
-                                        <option value="Medium">Medium</option>
-                                        <option value="High">High</option>
-                                        <option value="Urgent">Urgent</option>
-                                    </select>
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">Description</label>
-                                    <textarea
-                                        className="textarea"
-                                        placeholder="Add task description..."
-                                        value={newTaskDesc}
-                                        onChange={(e) => setNewTaskDesc(e.target.value)}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={closeModal} style={{ cursor: 'pointer' }}>Cancel</button>
-                                <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ cursor: isSubmitting ? 'not-allowed' : 'pointer' }}>
-                                    {isSubmitting ? 'Adding...' : 'Add'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

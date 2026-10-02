@@ -1030,6 +1030,11 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         );
     }
 
+    // 🟢 Lấy thông tin Start Date & End Date của Project
+    const formattedStartDate = (project?.startDate || project?.createdDate || project?.createdAt)
+        ? new Date(project.startDate || project.createdDate || project.createdAt).toLocaleDateString('vi-VN')
+        : 'Chưa đặt';
+
     const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
         ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
         : 'Chưa đặt';
@@ -1050,9 +1055,11 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             </div>
                             <p className="page-subtitle">{project?.description || 'No description'}</p>
 
+                            {/* 🟢 Cập nhật danh sách thông tin chung để hiển thị cả Start date & End date */}
                             <div className="project-meta-row">
                                 <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} members</span>
                                 <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
+                                <span className="project-meta-item"><Calendar className="icon icon-sm" />start date: {formattedStartDate}</span>
                                 <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate}</span>
                             </div>
                         </div>
@@ -1349,13 +1356,12 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             display: 'flex',
                             flexDirection: 'column',
                             overflowY: 'auto',
-                            padding: '24px',          /* Thêm padding đồng đều cho cả 4 phía */
-                            boxSizing: 'border-box',   /* Giữ lề phải không bị tràn */
+                            padding: '24px',
+                            boxSizing: 'border-box',
                             width: '100%',
                             maxWidth: '520px'
                         }}
                     >
-                        {/* NỘI DUNG FORM HÃY ĐẢM BẢO CÓ width: 100% và boxSizing: 'border-box' */}
                         <form
                             onSubmit={handleCreateTask}
                             style={{

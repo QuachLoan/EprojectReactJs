@@ -46,6 +46,7 @@ export default function ProjectList() {
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
     const [newTaskPoints, setNewTaskPoints] = useState(0);
     const [newTaskDesc, setNewTaskDesc] = useState('');
+    const [newTaskStartDate, setNewTaskStartDate] = useState('');
     const [newTaskDate, setNewTaskDate] = useState('');
 
     const getCurrentUser = () => {
@@ -151,6 +152,7 @@ export default function ProjectList() {
         setNewTaskDesc('');
         setNewTaskPriority('Medium');
         setNewTaskPoints(0);
+        setNewTaskStartDate('');
         setNewTaskDate('');
         setActiveModal('quickCreateTaskModal');
     };
@@ -162,6 +164,16 @@ export default function ProjectList() {
     const handleCreateTask = async (e) => {
         e.preventDefault();
         if (!isManager || !newTaskTitle.trim()) return;
+
+        if (newTaskStartDate && newTaskDate) {
+            const startDate = new Date(newTaskStartDate);
+            const endDate = new Date(newTaskDate);
+
+            if (endDate < startDate) {
+                alert('Ngày kết thúc (End date) phải diễn ra sau ngày bắt đầu (Start date)!');
+                return;
+            }
+        }
 
         if (newTaskDate) {
             const selectedDate = new Date(newTaskDate);
@@ -187,6 +199,7 @@ export default function ProjectList() {
                 priority: newTaskPriority,
                 point: pointValue,
                 points: pointValue,
+                startDate: newTaskStartDate ? new Date(newTaskStartDate) : null,
                 date: newTaskDate ? new Date(newTaskDate) : new Date(),
                 assignees: []
             };
@@ -240,6 +253,10 @@ export default function ProjectList() {
         }
     };
 
+    const formattedStartDate = (project?.startDate || project?.start_date || project?.createdAt)
+        ? new Date(project.startDate || project.start_date || project.createdAt).toLocaleDateString('vi-VN')
+        : 'Chưa đặt';
+
     const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
         ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
         : 'Chưa đặt';
@@ -277,9 +294,10 @@ export default function ProjectList() {
                                     </div>
                                     <p className="page-subtitle">{project.description || 'no description'}</p>
 
-                                    <div className="project-meta-row" style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '13px', color: '#64748b' }}>
+                                    <div className="project-meta-row" style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '13px', color: '#64748b', flexWrap: 'wrap' }}>
                                         <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} members</span>
                                         <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
+                                        <span className="project-meta-item"><CalendarClock className="icon icon-sm" />start date: {formattedStartDate}</span>
                                         <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate}</span>
                                     </div>
                                 </div>
@@ -459,11 +477,21 @@ export default function ProjectList() {
                                 </div>
 
                                 <div className="form-group">
+                                    <label className="form-label">Start date</label>
+                                    <input
+                                        type="date"
+                                        className="input"
+                                        value={newTaskStartDate}
+                                        onChange={(e) => setNewTaskStartDate(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="form-group">
                                     <label className="form-label">End date</label>
                                     <input
                                         type="date"
                                         className="input"
-                                        min={todayString}
+                                        min={newTaskStartDate || todayString}
                                         value={newTaskDate}
                                         onChange={(e) => setNewTaskDate(e.target.value)}
                                     />

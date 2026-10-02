@@ -72,6 +72,7 @@ export default function Projects() {
 
     const [projectName, setProjectName] = useState('');
     const [projectDesc, setProjectDesc] = useState('');
+    const [projectStartDate, setProjectStartDate] = useState(todayStr); // 🟢 Start Date state
     const [projectDueDate, setProjectDueDate] = useState('');
     const [selectedColor, setSelectedColor] = useState('#4f46e5');
     const [selectedMembers, setSelectedMembers] = useState([]);
@@ -112,6 +113,7 @@ export default function Projects() {
     const resetProjectForm = () => {
         setProjectName('');
         setProjectDesc('');
+        setProjectStartDate(todayStr); // Reset về ngày hiện tại
         setProjectDueDate('');
         setSelectedColor('#4f46e5');
         setSelectedMembers([]);
@@ -257,6 +259,12 @@ export default function Projects() {
             return;
         }
 
+        // 🟢 Validate Start Date không được lớn hơn End Date
+        if (projectStartDate && projectDueDate && projectStartDate > projectDueDate) {
+            showToast('Lỗi', 'Start date không được sau End date.', 'error');
+            return;
+        }
+
         setIsSubmittingProject(true);
         try {
             const validAssignees = selectedMembers.filter(
@@ -272,6 +280,7 @@ export default function Projects() {
                 description: projectDesc.trim(),
                 color: selectedColor,
                 userId: currentUserId,
+                startDate: projectStartDate || todayStr, // Gửi startDate lên Server
                 date: projectDueDate || todayStr,
                 assignees: validAssignees
             };
@@ -568,7 +577,7 @@ export default function Projects() {
                                         <input
                                             className="input"
                                             type="date"
-                                            min={todayStr} // 🟢 Chặn chọn ngày quá khứ trong bộ chọn lịch
+                                            min={todayStr}
                                             value={taskDueDate}
                                             onChange={(e) => setTaskDueDate(e.target.value)}
                                         />
@@ -661,16 +670,30 @@ export default function Projects() {
                                         onChange={(e) => setProjectDesc(e.target.value)}
                                     ></textarea>
                                 </div>
-                                <div className="field">
-                                    <label className="field-label">End date </label>
-                                    <input
-                                        className="input"
-                                        type="date"
-                                        min={todayStr} // 🟢 Chặn chọn ngày quá khứ trong bộ chọn lịch
-                                        value={projectDueDate}
-                                        onChange={(e) => setProjectDueDate(e.target.value)}
-                                    />
+
+                                {/* 🟢 Bổ sung Start date và chia lưới 2 cột cho Ngày bắt đầu & Ngày kết thúc */}
+                                <div className="grid-2">
+                                    <div className="field">
+                                        <label className="field-label">Start date</label>
+                                        <input
+                                            className="input"
+                                            type="date"
+                                            value={projectStartDate}
+                                            onChange={(e) => setProjectStartDate(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="field">
+                                        <label className="field-label">End date</label>
+                                        <input
+                                            className="input"
+                                            type="date"
+                                            min={projectStartDate || todayStr} // Chặn chọn ngày bé hơn Start date
+                                            value={projectDueDate}
+                                            onChange={(e) => setProjectDueDate(e.target.value)}
+                                        />
+                                    </div>
                                 </div>
+
                                 <div className="field">
                                     <span className="field-label">Color</span>
                                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>

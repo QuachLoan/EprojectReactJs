@@ -47,6 +47,7 @@ export default function ProjectSetting() {
         name: '',
         description: '',
         color: '#4f46e5',
+        startDate: '',
         dueDate: ''
     });
 
@@ -163,8 +164,11 @@ export default function ProjectSetting() {
                 ? membersData
                 : (membersData?.data || membersData?.members || []);
 
-            const rawDate = realProject.date || realProject.dueDate || realProject.endDate;
-            const formattedDate = formatDateForInput(rawDate);
+            const rawStartDate = realProject.startDate || realProject.start_date || realProject.createdAt;
+            const formattedStartDate = formatDateForInput(rawStartDate);
+
+            const rawDueDate = realProject.date || realProject.dueDate || realProject.endDate;
+            const formattedDueDate = formatDateForInput(rawDueDate);
 
             setProject(realProject);
             setProjectMembers(realMembers);
@@ -173,7 +177,8 @@ export default function ProjectSetting() {
                 name: realProject.name || '',
                 description: realProject.description || realProject.desc || '',
                 color: realProject.color || '#4f46e5',
-                dueDate: formattedDate
+                startDate: formattedStartDate,
+                dueDate: formattedDueDate
             });
 
             setTasks(realTasks);
@@ -284,7 +289,18 @@ export default function ProjectSetting() {
         e.preventDefault();
         if (!canManage) return;
 
-        // Chặn chọn ngày trong quá khứ
+        // Kiểm tra hợp lệ giữa Start date và End date
+        if (formData.startDate && formData.dueDate) {
+            const startDate = new Date(formData.startDate);
+            const dueDate = new Date(formData.dueDate);
+
+            if (startDate > dueDate) {
+                alert('Ngày bắt đầu (Start date) không thể sau ngày kết thúc (End date)!');
+                return;
+            }
+        }
+
+        // Chặn chọn ngày trong quá khứ đối với End date
         if (formData.dueDate) {
             const selectedDate = new Date(formData.dueDate);
             const today = new Date();
@@ -303,6 +319,8 @@ export default function ProjectSetting() {
                 name: formData.name.trim(),
                 description: formData.description.trim(),
                 color: formData.color,
+                startDate: formData.startDate ? new Date(formData.startDate).toISOString() : null,
+                start_date: formData.startDate ? new Date(formData.startDate).toISOString() : null,
                 date: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
                 dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
                 endDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
@@ -316,6 +334,8 @@ export default function ProjectSetting() {
                 name: payload.name,
                 description: payload.description,
                 color: payload.color,
+                startDate: payload.startDate,
+                start_date: payload.start_date,
                 date: payload.date,
                 dueDate: payload.dueDate,
                 endDate: payload.endDate
@@ -339,6 +359,10 @@ export default function ProjectSetting() {
             }
         }
     };
+
+    const headerStartDate = (project?.startDate || project?.start_date || project?.createdAt)
+        ? new Date(project.startDate || project.start_date || project.createdAt).toLocaleDateString('vi-VN')
+        : 'Chưa đặt';
 
     const headerDueDate = (project?.date || project?.dueDate || project?.endDate)
         ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
@@ -388,6 +412,9 @@ export default function ProjectSetting() {
                                         </span>
                                         <span className="project-meta-item">
                                             <ListChecks className="icon icon-sm" />{tasks.length} tasks
+                                        </span>
+                                        <span className="project-meta-item">
+                                            <CalendarClock className="icon icon-sm" />start date: {headerStartDate}
                                         </span>
                                         <span className="project-meta-item">
                                             <CalendarClock className="icon icon-sm" />end date: {headerDueDate}
@@ -476,7 +503,7 @@ export default function ProjectSetting() {
                                                 />
                                             </div>
 
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)' }}>
                                                 <div className="field">
                                                     <label className="field-label">Color</label>
                                                     <input
@@ -493,6 +520,17 @@ export default function ProjectSetting() {
                                                         value={formData.color}
                                                         onChange={(e) => setFormData({ ...formData, color: e.target.value })}
                                                         disabled={!canManage}
+                                                    />
+                                                </div>
+                                                <div className="field">
+                                                    <label className="field-label">Start date</label>
+                                                    <input
+                                                        type="date"
+                                                        className="input"
+                                                        value={formData.startDate}
+                                                        onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                                                        disabled={!canManage}
+                                                        style={disabledInputStyle}
                                                     />
                                                 </div>
                                                 <div className="field">
@@ -604,9 +642,9 @@ export default function ProjectSetting() {
                                                         >
                                                             {/* Thông tin cá nhân */}
                                                             <div className="member-identity" style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
-                            <span className="avatar avatar-sm" style={{ background: '#4f46e5', color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', width: '40px', height: '40px', fontWeight: 600, flexShrink: 0 }}>
-                                {getInitials(username)}
-                            </span>
+                                                                <span className="avatar avatar-sm" style={{ background: '#4f46e5', color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', width: '40px', height: '40px', fontWeight: 600, flexShrink: 0 }}>
+                                                                    {getInitials(username)}
+                                                                </span>
                                                                 <div className="member-identity-text" style={{ overflow: 'hidden' }}>
                                                                     <p className="member-name" style={{ fontSize: '15px', fontWeight: 600, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{username}</p>
                                                                     <p className="member-email" style={{ fontSize: '13px', color: 'var(--text-muted, #64748b)', margin: '2px 0 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</p>
@@ -615,34 +653,34 @@ export default function ProjectSetting() {
 
                                                             {/* Điểm số (Point) */}
                                                             <div>
-                            <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>
-                                {points} pts
-                            </span>
+                                                                <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>
+                                                                    {points} pts
+                                                                </span>
                                                             </div>
 
                                                             {/* Vai trò */}
                                                             <div>
-                            <span
-                                className="badge"
-                                style={{
-                                    backgroundColor: role === 'Manager' ? '#8b5cf6' : role === 'Leader' ? '#f59e0b' : '#f1f5f9',
-                                    color: role === 'Manager' || role === 'Leader' ? '#ffffff' : '#475569',
-                                    border: role === 'Member' ? '1px solid #cbd5e1' : 'none',
-                                    padding: '4px 12px',
-                                    borderRadius: '12px',
-                                    fontSize: '13px',
-                                    fontWeight: '500'
-                                }}
-                            >
-                                {role}
-                            </span>
+                                                                <span
+                                                                    className="badge"
+                                                                    style={{
+                                                                        backgroundColor: role === 'Manager' ? '#8b5cf6' : role === 'Leader' ? '#f59e0b' : '#f1f5f9',
+                                                                        color: role === 'Manager' || role === 'Leader' ? '#ffffff' : '#475569',
+                                                                        border: role === 'Member' ? '1px solid #cbd5e1' : 'none',
+                                                                        padding: '4px 12px',
+                                                                        borderRadius: '12px',
+                                                                        fontSize: '13px',
+                                                                        fontWeight: '500'
+                                                                    }}
+                                                                >
+                                                                    {role}
+                                                                </span>
                                                             </div>
 
                                                             {/* Trạng thái */}
                                                             <div>
-                            <span className={`badge ${status === 'Active' ? 'badge-success' : 'badge-warning'}`} style={{ padding: '4px 12px', fontSize: '13px' }}>
-                                {status}
-                            </span>
+                                                                <span className={`badge ${status === 'Active' ? 'badge-success' : 'badge-warning'}`} style={{ padding: '4px 12px', fontSize: '13px' }}>
+                                                                    {status}
+                                                                </span>
                                                             </div>
 
                                                             {/* Menu thao tác */}
