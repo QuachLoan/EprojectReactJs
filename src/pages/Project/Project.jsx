@@ -32,7 +32,7 @@ const COLOR_OPTIONS = [
     '#dc2626'
 ];
 
-// 🟢 Lấy ngày hiện tại dạng YYYY-MM-DD để đặt thuộc tính min cho input date
+// Lấy ngày hiện tại dạng YYYY-MM-DD để đặt thuộc tính min cho input date
 const todayStr = new Date().toISOString().split('T')[0];
 
 const getInitials = (name) => {
@@ -55,6 +55,29 @@ const getMemberDisplayName = (member) => {
     return 'User';
 };
 
+// Hàm tính toán trạng thái badge dựa trên End Date
+const getProjectStatus = (dueDateStr) => {
+    if (!dueDateStr) return { label: 'On track', class: 'badge-success' };
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const endDate = new Date(dueDateStr);
+    endDate.setHours(0, 0, 0, 0);
+
+    // Tính chênh lệch số ngày
+    const diffTime = endDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+        return { label: 'Overdue', class: 'badge-danger' };
+    } else if (diffDays <= 1) {
+        return { label: 'Expiring', class: 'badge-warning' };
+    }
+
+    return { label: 'On track', class: 'badge-success' };
+};
+
 export default function Projects() {
     const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
     const [activeModal, setActiveModal] = useState(null);
@@ -72,7 +95,7 @@ export default function Projects() {
 
     const [projectName, setProjectName] = useState('');
     const [projectDesc, setProjectDesc] = useState('');
-    const [projectStartDate, setProjectStartDate] = useState(todayStr); // 🟢 Start Date state
+    const [projectStartDate, setProjectStartDate] = useState(todayStr);
     const [projectDueDate, setProjectDueDate] = useState('');
     const [selectedColor, setSelectedColor] = useState('#4f46e5');
     const [selectedMembers, setSelectedMembers] = useState([]);
@@ -113,7 +136,7 @@ export default function Projects() {
     const resetProjectForm = () => {
         setProjectName('');
         setProjectDesc('');
-        setProjectStartDate(todayStr); // Reset về ngày hiện tại
+        setProjectStartDate(todayStr);
         setProjectDueDate('');
         setSelectedColor('#4f46e5');
         setSelectedMembers([]);
@@ -253,13 +276,11 @@ export default function Projects() {
         e.preventDefault();
         if (!canCreateProject) return;
 
-        // 🟢 Validate ngày kết thúc của Project không được nhỏ hơn ngày hôm nay
         if (projectDueDate && projectDueDate < todayStr) {
             showToast('Lỗi', 'End date không được là ngày trong quá khứ.', 'error');
             return;
         }
 
-        // 🟢 Validate Start Date không được lớn hơn End Date
         if (projectStartDate && projectDueDate && projectStartDate > projectDueDate) {
             showToast('Lỗi', 'Start date không được sau End date.', 'error');
             return;
@@ -280,7 +301,7 @@ export default function Projects() {
                 description: projectDesc.trim(),
                 color: selectedColor,
                 userId: currentUserId,
-                startDate: projectStartDate || todayStr, // Gửi startDate lên Server
+                startDate: projectStartDate || todayStr,
                 date: projectDueDate || todayStr,
                 assignees: validAssignees
             };
@@ -301,7 +322,6 @@ export default function Projects() {
     const handleCreateTask = async (e) => {
         e.preventDefault();
 
-        // 🟢 Validate ngày kết thúc của Task không được nhỏ hơn ngày hôm nay
         if (taskDueDate && taskDueDate < todayStr) {
             showToast('Lỗi', 'End date không được là ngày trong quá khứ.', 'error');
             return;
@@ -385,6 +405,7 @@ export default function Projects() {
                                     const memberList = projectMembersMap[pId] || [];
                                     const totalTask = getTaskCount(project);
                                     const progressPercent = calculateProgress(project);
+                                    const statusObj = getProjectStatus(project.date || project.dueDate);
 
                                     return (
                                         <Link
@@ -400,8 +421,8 @@ export default function Projects() {
                                                     ></span>
                                                     <span className="project-card-name">{project.name}</span>
                                                 </div>
-                                                <span className={`badge ${project.badgeClass || 'badge-success'}`}>
-                                                    {project.status || 'On track'}
+                                                <span className={`badge ${statusObj.class}`}>
+                                                    {statusObj.label}
                                                 </span>
                                             </div>
                                             <p className="project-card-desc">{project.description || project.desc}</p>
@@ -671,7 +692,6 @@ export default function Projects() {
                                     ></textarea>
                                 </div>
 
-                                {/* 🟢 Bổ sung Start date và chia lưới 2 cột cho Ngày bắt đầu & Ngày kết thúc */}
                                 <div className="grid-2">
                                     <div className="field">
                                         <label className="field-label">Start date</label>
@@ -687,7 +707,7 @@ export default function Projects() {
                                         <input
                                             className="input"
                                             type="date"
-                                            min={projectStartDate || todayStr} // Chặn chọn ngày bé hơn Start date
+                                            min={projectStartDate || todayStr}
                                             value={projectDueDate}
                                             onChange={(e) => setProjectDueDate(e.target.value)}
                                         />
