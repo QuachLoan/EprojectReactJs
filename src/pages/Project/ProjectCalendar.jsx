@@ -16,7 +16,9 @@ import {
     ChevronLeft,
     ChevronRight,
     Trash2,
-    Calendar
+    Calendar,
+    StickyNote,
+    X
 } from 'lucide-react';
 
 import {
@@ -24,7 +26,10 @@ import {
     fetchTasksByProject,
     fetchMembersByProject,
     createTask,
-    deleteTask
+    deleteTask,
+    fetchNotesByProject,
+    createNote,
+    deleteNote
 } from '../../../api.jsx';
 
 // English month names list
@@ -33,17 +38,15 @@ const MONTH_NAMES = [
     'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-// Helper function to format Date into YYYY-MM-DD string based on Local Time (prevents UTC timezone drift)
+// Helper function to format Date into YYYY-MM-DD string based on Local Time
 const formatDateToLocalString = (dateInput) => {
     if (!dateInput) return '';
 
-    // If dateInput is already a string like "YYYY-MM-DD" or "YYYY-MM-DDT..."
     if (typeof dateInput === 'string') {
         const cleanStr = dateInput.trim();
         if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStr)) {
             return cleanStr;
         }
-        // If ISO string from DB like "2026-10-02T00:00:00.000Z", extract YYYY-MM-DD directly if no specific time set
         if (cleanStr.includes('T')) {
             const parts = cleanStr.split('T');
             const datePart = parts[0];
@@ -63,16 +66,6 @@ const formatDateToLocalString = (dateInput) => {
     return `${year}-${month}-${day}`;
 };
 
-// Helper function to extract 2 uppercase initial letters
-const getInitials = (name) => {
-    if (!name) return '??';
-    const words = String(name).trim().split(/\s+/);
-    if (words.length === 1) {
-        return words[0].substring(0, 2).toUpperCase();
-    }
-    return (words[0][0] + words[words.length - 1][0]).toUpperCase();
-};
-
 // Helper function to extract User ID from Member record
 const extractUserId = (member) => {
     if (!member) return '';
@@ -81,22 +74,6 @@ const extractUserId = (member) => {
     }
     if (member.userId) return String(member.userId);
     return String(member._id || member.id || '');
-};
-
-const getMemberUserId = (member) => {
-    return extractUserId(member);
-};
-
-// Helper function to get Member display name
-const getMemberDisplayName = (member) => {
-    if (!member) return 'User';
-    if (typeof member === 'object') {
-        if (member.userId && typeof member.userId === 'object') {
-            return member.userId.username || member.userId.name || member.userId.email || 'User';
-        }
-        return member.username || member.name || member.email || 'User';
-    }
-    return 'User';
 };
 
 export default function ProjectCalendar() {
@@ -110,6 +87,7 @@ export default function ProjectCalendar() {
     const [projectMembers, setProjectMembers] = useState([]);
     const [memberCurrentRole, setMemberRole] = useState("");
     const [tasks, setTasks] = useState([]);
+    const [notes, setNotes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -124,6 +102,11 @@ export default function ProjectCalendar() {
     const [newTaskStartDate, setNewTaskStartDate] = useState('');
     const [newTaskDate, setNewTaskDate] = useState('');
     const [selectedMembers, setSelectedMembers] = useState([]);
+
+    // State cho Note
+    const [selectedNoteDate, setSelectedNoteDate] = useState('');
+    const [noteContent, setNoteContent] = useState('');
+    const [isSubmittingNote, setIsSubmittingNote] = useState(false);
 
     const getCurrentUser = () => {
         try {
@@ -171,14 +154,18 @@ export default function ProjectCalendar() {
     const isManager = currentUserRole === 'Manager' || isAdmin;
     const canCreateTask = isManager || isLeader;
 
+    // PHÂN QUYỀN QUẢN LÝ NOTE: Chỉ Admin, Manager, Leader mới có quyền tạo/xóa note
+    const canManageNote = isAdmin || isLeader || isManager;
+
     const loadData = async () => {
         if (!projectId) return;
         try {
             setLoading(true);
-            const [pData, tskList, membersData] = await Promise.all([
+            const [pData, tskList, membersData, notesData] = await Promise.all([
                 fetchProjectById(projectId).catch(() => ({})),
                 fetchTasksByProject(projectId).catch(() => []),
-                fetchMembersByProject(projectId).catch(() => [])
+                fetchMembersByProject(projectId).catch(() => []),
+                fetchNotesByProject ? fetchNotesByProject(projectId).catch(() => []) : Promise.resolve([])
             ]);
 
             const realProject = pData?.data || pData || {};
@@ -186,10 +173,12 @@ export default function ProjectCalendar() {
             const realMembers = Array.isArray(membersData)
                 ? membersData
                 : (membersData?.data || membersData?.members || []);
+            const realNotes = Array.isArray(notesData) ? notesData : (notesData?.data || []);
 
             setProject(realProject);
             setTasks(realTasks);
             setProjectMembers(realMembers);
+            setNotes(realNotes);
         } catch (err) {
             console.error('Error loading calendar data:', err);
         } finally {
@@ -221,15 +210,7 @@ export default function ProjectCalendar() {
     const closeModal = () => {
         setActiveModal(null);
         resetTaskForm();
-    };
-
-    const toggleMemberSelection = (id) => {
-        const idStr = String(id);
-        setSelectedMembers((prev) =>
-            prev.includes(idStr)
-                ? prev.filter((item) => item !== idStr)
-                : [...prev, idStr]
-        );
+        setNoteContent('');
     };
 
     const handleCreateTask = async (e) => {
@@ -260,7 +241,6 @@ export default function ProjectCalendar() {
             if (createdTask && (createdTask._id || createdTask.id)) {
                 const newId = String(createdTask._id || createdTask.id);
                 setTasks(prev => {
-                    // Deduplicate task before adding to state
                     const exists = prev.some(t => String(t._id || t.id) === newId);
                     if (exists) return prev;
                     return [...prev, createdTask];
@@ -287,6 +267,55 @@ export default function ProjectCalendar() {
             await deleteTask(taskId);
         } catch (err) {
             console.error('Error deleting task:', err);
+            loadData();
+        }
+    };
+
+    // --- XỬ LÝ NOTE (KIỂM TRA QUYỀN canManageNote) ---
+    const handleOpenNoteModal = (dateStr, e) => {
+        e.stopPropagation(); // Ngăn mở modal tạo task của ô lịch gốc
+        if (!canManageNote) return;
+        setSelectedNoteDate(dateStr);
+        setNoteContent('');
+        setActiveModal('createNoteModal');
+    };
+
+    const handleCreateNoteSubmit = async (e) => {
+        e.preventDefault();
+        if (!canManageNote || !noteContent.trim() || !selectedNoteDate) return;
+
+        try {
+            setIsSubmittingNote(true);
+            const res = await createNote({
+                projectId,
+                content: noteContent,
+                date: selectedNoteDate
+            });
+            const createdNote = res?.data || res;
+
+            if (createdNote && (createdNote._id || createdNote.id)) {
+                setNotes(prev => [...prev, createdNote]);
+            } else {
+                await loadData();
+            }
+            setActiveModal(null);
+            setNoteContent('');
+        } catch (err) {
+            console.error('Error creating note:', err);
+        } finally {
+            setIsSubmittingNote(false);
+        }
+    };
+
+    const handleDeleteNote = async (noteId, e) => {
+        e.stopPropagation();
+        if (!canManageNote) return;
+        if (!window.confirm('Are you sure you want to delete this note?')) return;
+        try {
+            setNotes(prev => prev.filter(n => String(n._id || n.id) !== String(noteId)));
+            await deleteNote(noteId);
+        } catch (err) {
+            console.error('Error deleting note:', err);
             loadData();
         }
     };
@@ -335,14 +364,14 @@ export default function ProjectCalendar() {
         return days;
     }, [year, month]);
 
-    // Group tasks by date (deduplicated & timezone corrected)
+    // Group tasks by date
     const tasksByDate = useMemo(() => {
         const map = {};
         const seenIds = new Set();
 
         tasks.forEach(task => {
             const taskId = String(task._id || task.id);
-            if (!taskId || seenIds.has(taskId)) return; // Avoid duplicate task IDs
+            if (!taskId || seenIds.has(taskId)) return;
             seenIds.add(taskId);
 
             const rawDate = task.date || task.dueDate;
@@ -356,6 +385,27 @@ export default function ProjectCalendar() {
         });
         return map;
     }, [tasks]);
+
+    // Group notes by date
+    const notesByDate = useMemo(() => {
+        const map = {};
+        const seenIds = new Set();
+
+        notes.forEach(note => {
+            const noteId = String(note._id || note.id);
+            if (seenIds.has(noteId)) return;
+            seenIds.add(noteId);
+
+            if (note.date) {
+                const dateStr = formatDateToLocalString(note.date);
+                if (dateStr) {
+                    if (!map[dateStr]) map[dateStr] = [];
+                    map[dateStr].push(note);
+                }
+            }
+        });
+        return map;
+    }, [notes]);
 
     const formattedStartDate = (project?.startDate || project?.start_date || project?.createdAt)
         ? new Date(project.startDate || project.start_date || project.createdAt).toLocaleDateString('en-US')
@@ -459,6 +509,7 @@ export default function ProjectCalendar() {
                                     {calendarGrid.map((cell, idx) => {
                                         const dateStr = formatDateToLocalString(cell.date);
                                         const dayTasks = tasksByDate[dateStr] || [];
+                                        const dayNotes = notesByDate[dateStr] || [];
                                         const todayStr = formatDateToLocalString(new Date());
                                         const isToday = todayStr === dateStr;
 
@@ -491,9 +542,82 @@ export default function ProjectCalendar() {
                                                     }}>
                                                         {cell.date.getDate()}
                                                     </span>
+
+                                                    {/* NÚT DẤU CỘNG (+) TẠO NOTE: Chỉ hiển thị cho Admin, Leader, Manager */}
+                                                    {canManageNote && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => handleOpenNoteModal(dateStr, e)}
+                                                            title="Tạo ghi chú"
+                                                            style={{
+                                                                border: 'none',
+                                                                background: '#e0e7ff',
+                                                                color: '#4f46e5',
+                                                                borderRadius: '4px',
+                                                                width: '20px',
+                                                                height: '20px',
+                                                                cursor: 'pointer',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                padding: 0
+                                                            }}
+                                                        >
+                                                            <Plus size={13} />
+                                                        </button>
+                                                    )}
                                                 </div>
 
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflowY: 'auto', maxHeight: '90px' }}>
+                                                    {/* HIỂN THỊ NOTES NẾU CÓ */}
+                                                    {dayNotes.map(note => {
+                                                        const noteId = note._id || note.id;
+                                                        return (
+                                                            <div
+                                                                key={noteId}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                style={{
+                                                                    fontSize: '11px',
+                                                                    padding: '3px 6px',
+                                                                    borderRadius: '4px',
+                                                                    background: '#fef3c7',
+                                                                    borderLeft: '3px solid #f59e0b',
+                                                                    color: '#92400e',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'space-between',
+                                                                    gap: '4px'
+                                                                }}
+                                                            >
+                                                                <span
+                                                                    title={note.content}
+                                                                    style={{
+                                                                        whiteSpace: 'nowrap',
+                                                                        overflow: 'hidden',
+                                                                        textOverflow: 'ellipsis',
+                                                                        fontWeight: 500,
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '3px'
+                                                                    }}
+                                                                >
+                                                                    <StickyNote size={10} style={{ flexShrink: 0 }} />
+                                                                    {note.content}
+                                                                </span>
+
+                                                                {/* NÚT XÓA NOTE: Chỉ hiển thị cho Admin, Leader, Manager */}
+                                                                {canManageNote && (
+                                                                    <Trash2
+                                                                        size={11}
+                                                                        style={{ cursor: 'pointer', flexShrink: 0, opacity: 0.8 }}
+                                                                        onClick={(e) => handleDeleteNote(noteId, e)}
+                                                                    />
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+
+                                                    {/* HIỂN THỊ TASKS GỐC */}
                                                     {dayTasks.map(task => {
                                                         const taskId = task._id || task.id;
                                                         return (
@@ -524,6 +648,13 @@ export default function ProjectCalendar() {
                                                                 >
                                                                     {task.title || 'Untitled'}
                                                                 </span>
+                                                                {isManager && (
+                                                                    <Trash2
+                                                                        size={12}
+                                                                        style={{ cursor: 'pointer', color: '#94a3b8' }}
+                                                                        onClick={(e) => handleDeleteTask(taskId, e)}
+                                                                    />
+                                                                )}
                                                             </div>
                                                         );
                                                     })}
@@ -534,6 +665,51 @@ export default function ProjectCalendar() {
                                 </div>
                             </div>
                         </main>
+
+                        {/* MODAL TẠO NOTE KHI BẤM DẤU CỘNG */}
+                        {canManageNote && activeModal === 'createNoteModal' && (
+                            <div style={{
+                                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                                background: 'rgba(15, 23, 42, 0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+                            }}>
+                                <div style={{ background: '#fff', borderRadius: '8px', padding: '20px', width: '380px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                                        <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a' }}>Tạo ghi chú ({selectedNoteDate})</h3>
+                                        <button onClick={() => setActiveModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+                                    <form onSubmit={handleCreateNoteSubmit}>
+                                        <textarea
+                                            value={noteContent}
+                                            onChange={(e) => setNoteContent(e.target.value)}
+                                            placeholder="Nhập nội dung ghi chú..."
+                                            rows={3}
+                                            required
+                                            autoFocus
+                                            style={{
+                                                width: '100%',
+                                                padding: '8px 12px',
+                                                borderRadius: '6px',
+                                                border: '1px solid #cbd5e1',
+                                                outline: 'none',
+                                                resize: 'none',
+                                                fontSize: '14px',
+                                                boxSizing: 'border-box'
+                                            }}
+                                        />
+                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '14px' }}>
+                                            <button type="button" onClick={() => setActiveModal(null)} className="btn btn-secondary btn-sm" style={{ padding: '6px 12px', fontSize: '13px' }}>
+                                                Hủy
+                                            </button>
+                                            <button type="submit" disabled={isSubmittingNote} className="btn btn-primary btn-sm" style={{ background: '#4f46e5', color: '#fff', padding: '6px 14px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                {isSubmittingNote ? <Loader2 className="animate-spin" size={14} /> : 'Lưu ghi chú'}
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
                     </>
                 )}
             </div>

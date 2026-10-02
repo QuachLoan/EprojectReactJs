@@ -260,3 +260,29 @@ export const reviewTask = async (taskId, isAccepted) => {
     });
     return handleResponse(res);
 };
+
+// ==================== NOTES ====================
+
+export const fetchNotesByProject = async (projectId) => {
+    const res = await fetch(`${API_BASE_URL}/note/project/${projectId}`, {
+        headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
+
+export const createNote = async (noteData) => {
+    const res = await fetch(`${API_BASE_URL}/note`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(noteData)
+    });
+    return handleResponse(res);
+};
+
+export const deleteNote = async (noteId) => {
+    const res = await fetch(`${API_BASE_URL}/note/${noteId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
