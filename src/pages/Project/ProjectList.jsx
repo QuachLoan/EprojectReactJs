@@ -11,8 +11,6 @@ import {
     Plus,
     Loader2,
     ArrowRightCircle,
-    UserPlus,
-    Check,
     UsersRound,
     ListChecks,
     CalendarClock,
@@ -25,66 +23,9 @@ import {
     fetchColumnsByProject,
     fetchMembersByProject,
     createTask,
-    updateTask,
     moveTask,
     deleteTask
 } from '../../../api.jsx';
-
-// Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa
-const getInitials = (name) => {
-    if (!name) return '??';
-    const words = String(name).trim().split(/\s+/);
-    if (words.length === 1) {
-        return words[0].substring(0, 2).toUpperCase();
-    }
-    return (words[0][0] + words[words.length - 1][0]).toUpperCase();
-};
-
-// Helper trích xuất User ID từ record Member
-const extractUserId = (member) => {
-    if (!member) return '';
-    if (typeof member.userId === 'object') {
-        return String(member.userId?._id || member.userId?.id || '');
-    }
-    if (member.userId) return String(member.userId);
-    return String(member._id || member.id || '');
-};
-
-// Hàm trích xuất User ID chính xác từ Member object hoặc ID
-const getMemberUserId = (member) => {
-    return extractUserId(member);
-};
-
-// Hàm lấy tên hiển thị của Member
-const getMemberDisplayName = (member) => {
-    if (!member) return 'User';
-    if (typeof member === 'object') {
-        if (member.userId && typeof member.userId === 'object') {
-            return member.userId.username || member.userId.name || member.userId.email || 'User';
-        }
-        return member.username || member.name || member.email || 'User';
-    }
-    return 'User';
-};
-
-// Hàm tìm kiếm thông tin user theo ID
-const getUserInfo = (userOrId, projectMembers = []) => {
-    if (!userOrId) return null;
-
-    if (typeof userOrId === 'object' && (userOrId.username || userOrId.name || userOrId.userId)) {
-        return userOrId;
-    }
-
-    const targetId = typeof userOrId === 'object' ? String(userOrId._id || userOrId.id) : String(userOrId);
-
-    const found = projectMembers.find(m => {
-        const mUserId = getMemberUserId(m);
-        const mId = String(m._id || m.id);
-        return mUserId === targetId || mId === targetId;
-    });
-
-    return found || userOrId;
-};
 
 export default function ProjectList() {
     const { id: projectId } = useParams();
@@ -100,8 +41,6 @@ export default function ProjectList() {
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
-
-    const [assigneeMenu, setAssigneeMenu] = useState({ open: false, taskId: null, pos: { top: 0, left: 0 } });
 
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
@@ -145,12 +84,12 @@ export default function ProjectList() {
         if (!currentUserId || !projectMembers.length) return null;
 
         return projectMembers.find(m => {
-            const uId = extractUserId(m);
-            return uId === String(currentUserId);
+            const uId = m.userId?._id || m.userId?.id || m.userId || m._id || m.id;
+            return String(uId) === String(currentUserId);
         }) || null;
     }, [currentUserId, projectMembers]);
 
-    // Tính toán chính xác Role dựa trên logic từ ProjectBoard/ProjectSetting
+    // Tính toán chính xác Role
     const currentUserRole = currentProjectMember?.role || currentUser?.role || memberCurrentRole;
 
     const isAdmin = String(currentUser?.role).toLowerCase() === 'admin';
@@ -224,7 +163,6 @@ export default function ProjectList() {
         e.preventDefault();
         if (!isManager || !newTaskTitle.trim()) return;
 
-        // Chặn nhập ngày quá khứ
         if (newTaskDate) {
             const selectedDate = new Date(newTaskDate);
             const today = new Date();
@@ -280,26 +218,6 @@ export default function ProjectList() {
         }
     };
 
-    const handleOpenAssigneeMenu = (e, taskId) => {
-        if (!isLeader && !isManager) return;
-        e.stopPropagation();
-        const rect = e.currentTarget.getBoundingClientRect();
-
-        const spaceBelow = window.innerHeight - rect.bottom;
-        const topPos = spaceBelow < 200
-            ? rect.top + window.scrollY - 180
-            : rect.bottom + window.scrollY + 4;
-
-        setAssigneeMenu({
-            open: true,
-            taskId,
-            pos: {
-                top: topPos,
-                left: rect.left + window.scrollX - 140
-            }
-        });
-    };
-
     const handlePushToBoard = async (task) => {
         if (!isLeader) return;
         const todoColumn = columns[0];
@@ -322,41 +240,14 @@ export default function ProjectList() {
         }
     };
 
-    const handleToggleTaskAssignee = async (task, memberUserId) => {
-        if ((!isLeader) || !task) return;
-
-        const taskId = task._id || task.id;
-        const currentAssignees = Array.isArray(task.assignees)
-            ? task.assignees.map(a => typeof a === 'object' ? (a._id || a.id) : a).filter(Boolean).map(id => String(id))
-            : [];
-
-        const targetMemberId = String(memberUserId);
-
-        const updatedAssignees = currentAssignees.includes(targetMemberId)
-            ? []
-            : [targetMemberId];
-
-        setTasks(prev => prev.map(t => {
-            const tId = t._id || t.id;
-            return String(tId) === String(taskId) ? { ...t, assignees: updatedAssignees } : t;
-        }));
-
-        try {
-            await updateTask(taskId, { assignees: updatedAssignees, members: updatedAssignees });
-        } catch (err) {
-            console.error('Error updating assignee:', err);
-        }
-    };
-
     const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
         ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
         : 'Chưa đặt';
 
-    // Ngày hôm nay theo chuẩn ISO YYYY-MM-DD
     const todayString = new Date().toISOString().split('T')[0];
 
     return (
-        <div className="app-shell" onClick={() => setAssigneeMenu({ open: false, taskId: null, pos: {} })}>
+        <div className="app-shell">
             <Sidebar
                 collapsed={sidebarCollapsed}
                 setCollapsed={setSidebarCollapsed}
@@ -431,7 +322,6 @@ export default function ProjectList() {
                                         <th style={{ padding: '12px 16px' }}>Title</th>
                                         <th style={{ padding: '12px 16px' }}>Priority</th>
                                         <th style={{ padding: '12px 16px' }}>Points</th>
-                                        <th style={{ padding: '12px 16px' }}>Assignee</th>
                                         <th style={{ padding: '12px 16px' }}>End date</th>
                                         <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>
                                     </tr>
@@ -440,7 +330,6 @@ export default function ProjectList() {
                                     {tasks.length > 0 ? (
                                         tasks.map((task, index) => {
                                             const taskId = task._id || task.id || `task-fallback-${index}`;
-                                            const taskAssignees = Array.isArray(task.assignees) ? task.assignees : [];
 
                                             const rawDate = task.date || task.dueDate;
                                             let formattedDate = 'No date';
@@ -475,58 +364,6 @@ export default function ProjectList() {
                                                         <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 600, background: '#f1f5f9', color: '#475569' }}>
                                                             {taskPoints} pts
                                                         </span>
-                                                    </td>
-
-                                                    <td style={{ padding: '12px 16px' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                            {taskAssignees.map((assignee, aIdx) => {
-                                                                const userInfo = getUserInfo(assignee, projectMembers);
-                                                                const name = getMemberDisplayName(userInfo);
-                                                                const memberId = typeof assignee === 'object'
-                                                                    ? (assignee._id || assignee.id || aIdx)
-                                                                    : assignee;
-
-                                                                return (
-                                                                    <span
-                                                                        key={`assignee-${memberId}-${aIdx}`}
-                                                                        title={name}
-                                                                        style={{
-                                                                            background: '#4f46e5',
-                                                                            color: '#fff',
-                                                                            fontSize: '10px',
-                                                                            width: '26px',
-                                                                            height: '26px',
-                                                                            borderRadius: '50%',
-                                                                            display: 'inline-flex',
-                                                                            alignItems: 'center',
-                                                                            justifyContent: 'center'
-                                                                        }}
-                                                                    >
-                                                                        {getInitials(name)}
-                                                                    </span>
-                                                                );
-                                                            })}
-
-                                                            {(isLeader) && (
-                                                                <button
-                                                                    onClick={(e) => handleOpenAssigneeMenu(e, taskId)}
-                                                                    style={{
-                                                                        border: '1px dashed #cbd5e1',
-                                                                        borderRadius: '50%',
-                                                                        width: '26px',
-                                                                        height: '26px',
-                                                                        display: 'inline-flex',
-                                                                        alignItems: 'center',
-                                                                        justifyContent: 'center',
-                                                                        cursor: 'pointer',
-                                                                        background: '#fff'
-                                                                    }}
-                                                                    title="Assign member"
-                                                                >
-                                                                    <UserPlus className="w-3.5 h-3.5 text-slate-500" />
-                                                                </button>
-                                                            )}
-                                                        </div>
                                                     </td>
 
                                                     <td style={{ padding: '12px 16px', color: '#64748b', fontSize: '13px' }}>
@@ -575,7 +412,7 @@ export default function ProjectList() {
                                         })
                                     ) : (
                                         <tr>
-                                            <td colSpan="6" style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                                            <td colSpan="5" style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
                                                 No pending backlog tasks.
                                             </td>
                                         </tr>
@@ -587,49 +424,6 @@ export default function ProjectList() {
                     </>
                 )}
             </div>
-
-            {/* ASSIGNEE POPUP */}
-            {(isLeader || isManager) && assigneeMenu.open && (
-                <div
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                        position: 'fixed',
-                        top: `${assigneeMenu.pos.top}px`,
-                        left: `${assigneeMenu.pos.left}px`,
-                        zIndex: 99999,
-                        background: '#fff',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: '8px',
-                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2)',
-                        width: '200px',
-                        padding: '6px',
-                    }}
-                >
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', padding: '4px 6px' }}>Assign Member:</div>
-                    {projectMembers.map((m) => {
-                        const mUserId = getMemberUserId(m);
-                        const displayName = getMemberDisplayName(m);
-                        const currentTask = tasks.find(t => String(t._id || t.id) === String(assigneeMenu.taskId));
-                        const taskAssignees = Array.isArray(currentTask?.assignees) ? currentTask.assignees : [];
-                        const isChecked = taskAssignees.some(a => String(typeof a === 'object' ? (a._id || a.id) : a) === String(mUserId));
-
-                        return (
-                            <div
-                                key={mUserId}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleToggleTaskAssignee(currentTask, mUserId);
-                                }}
-                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}
-                                className="hover:bg-slate-100"
-                            >
-                                <span>{displayName}</span>
-                                {isChecked && <Check className="w-4 h-4 text-indigo-600" />}
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
 
             {/* CREATE TASK MODAL */}
             {isManager && activeModal === 'quickCreateTaskModal' && (

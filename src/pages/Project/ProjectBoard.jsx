@@ -58,6 +58,17 @@ const getMemberDisplayName = (member) => {
     return 'User';
 };
 
+const getMemberEmail = (member) => {
+    if (!member) return '';
+    if (typeof member === 'object') {
+        if (member.userId && typeof member.userId === 'object') {
+            return member.userId.email || '';
+        }
+        return member.email || '';
+    }
+    return '';
+};
+
 const getUserInfo = (userOrId, projectMembers = []) => {
     if (!userOrId) return null;
 
@@ -107,6 +118,7 @@ function TaskDrawer({
     const [comments, setComments] = useState([]);
     const [commentText, setCommentText] = useState('');
     const [activities, setActivities] = useState([]);
+    const [assigneeSearchQuery, setAssigneeSearchQuery] = useState('');
 
     const todayStr = new Date().toISOString().split('T')[0];
 
@@ -119,6 +131,7 @@ function TaskDrawer({
     useEffect(() => {
         if (isDrawerOpen && taskId) {
             setLoading(true);
+            setAssigneeSearchQuery('');
             Promise.all([
                 fetchTaskById(taskId),
                 fetchTaskComments(taskId).catch(() => []),
@@ -146,6 +159,16 @@ function TaskDrawer({
                 .finally(() => setLoading(false));
         }
     }, [taskId, isDrawerOpen]);
+
+    const filteredProjectMembers = useMemo(() => {
+        if (!assigneeSearchQuery.trim()) return projectMembers;
+        const query = assigneeSearchQuery.toLowerCase().trim();
+        return projectMembers.filter(member => {
+            const email = getMemberEmail(member).toLowerCase();
+            const name = getMemberDisplayName(member).toLowerCase();
+            return email.includes(query) || name.includes(query);
+        });
+    }, [projectMembers, assigneeSearchQuery]);
 
     if (!isDrawerOpen) return null;
 
@@ -469,13 +492,27 @@ function TaskDrawer({
                                 <span className="drawer-field-label">
                                     Assignees {task.assignees?.length > 0 && `(${task.assignees.length} selected)`}
                                 </span>
+
+                                {/* Ô TÌM KIẾM ASSIGNEE THEO EMAIL HOẶC TÊN */}
+                                <input
+                                    className="input"
+                                    type="text"
+                                    placeholder="Search assignee by email..."
+                                    value={assigneeSearchQuery}
+                                    onChange={(e) => setAssigneeSearchQuery(e.target.value)}
+                                    style={{ marginBottom: '6px', fontSize: '13px' }}
+                                />
+
                                 <div className="card" style={{ maxHeight: '140px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    {projectMembers.length === 0 ? (
-                                        <span style={{ fontSize: '13px', color: '#6b7280' }}>Chưa có thành viên dự án</span>
+                                    {filteredProjectMembers.length === 0 ? (
+                                        <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                                            {assigneeSearchQuery ? 'Not found' : 'No members'}
+                                        </span>
                                     ) : (
-                                        projectMembers.map((member, idx) => {
+                                        filteredProjectMembers.map((member, idx) => {
                                             const memberUserId = getMemberUserId(member);
                                             const name = getMemberDisplayName(member);
+                                            const email = getMemberEmail(member);
                                             const isChecked = task.assignees?.some(id => String(id) === String(memberUserId));
 
                                             return (
@@ -491,7 +528,10 @@ function TaskDrawer({
                                                     <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '10px', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                         {getInitials(name)}
                                                     </span>
-                                                    <span>{name}</span>
+                                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                        <span>{name}</span>
+                                                        {email && <span style={{ fontSize: '11px', color: '#6b7280' }}>{email}</span>}
+                                                    </div>
                                                 </label>
                                             );
                                         })
@@ -655,7 +695,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [columns, setColumns] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [selectedMembers, setSelectedMembers] = useState([]);
 
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -807,23 +846,11 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setNewTaskPriority('Medium');
         setNewTaskPoints(0);
         setNewTaskDate('');
-
-        const cUserId = getCurrentUserId();
-        setSelectedMembers(cUserId ? [String(cUserId)] : []);
     };
 
     const closeModal = () => {
         setActiveModal(null);
         resetTaskForm();
-    };
-
-    const toggleMemberSelection = (id) => {
-        const idStr = String(id);
-        setSelectedMembers((prev) =>
-            prev.includes(idStr)
-                ? prev.filter((item) => item !== idStr)
-                : [...prev, idStr]
-        );
     };
 
     const handleOpenTaskDrawer = (taskId) => {
@@ -954,7 +981,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
         try {
             setIsSubmitting(true);
-            const cleanMembers = selectedMembers.filter(id => Boolean(id));
             const pointValue = Number(newTaskPoints) || 0;
 
             const payload = {
@@ -967,8 +993,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 point: pointValue,
                 points: pointValue,
                 date: newTaskDate ? new Date(newTaskDate) : new Date(),
-                assignees: cleanMembers,
-                members: cleanMembers
+                assignees: [],
+                members: []
             };
 
             const response = await createTask(payload);
@@ -983,7 +1009,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 points: createdTask.points ?? createdTask.point ?? pointValue,
                 point: createdTask.point ?? createdTask.points ?? pointValue,
                 date: createdTask.date || (newTaskDate ? new Date(newTaskDate) : new Date()),
-                assignees: createdTask.assignees || cleanMembers
+                assignees: createdTask.assignees || []
             };
 
             setTasks(prevTasks => [...prevTasks, formattedNewTask]);
@@ -1322,9 +1348,14 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             maxHeight: '90vh',
                             display: 'flex',
                             flexDirection: 'column',
-                            overflow: 'hidden'
+                            overflowY: 'auto',
+                            padding: '24px',          /* Thêm padding đồng đều cho cả 4 phía */
+                            boxSizing: 'border-box',   /* Giữ lề phải không bị tràn */
+                            width: '100%',
+                            maxWidth: '520px'
                         }}
                     >
+                        {/* NỘI DUNG FORM HÃY ĐẢM BẢO CÓ width: 100% và boxSizing: 'border-box' */}
                         <form
                             onSubmit={handleCreateTask}
                             style={{
@@ -1416,43 +1447,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                         <option value="High">High</option>
                                         <option value="Urgent">Urgent</option>
                                     </select>
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label">
-                                        Assignees {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
-                                    </label>
-                                    <div className="card" style={{ maxHeight: '144px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                        {projectMembers.length === 0 ? (
-                                            <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>
-                                                Dự án chưa có thành viên nào.
-                                            </p>
-                                        ) : (
-                                            projectMembers.map((member, idx) => {
-                                                const memberUserId = getMemberUserId(member);
-                                                const displayName = getMemberDisplayName(member);
-                                                const initials = getInitials(displayName);
-
-                                                return (
-                                                    <label key={memberUserId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', borderRadius: '6px', cursor: 'pointer' }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            className="checkbox"
-                                                            style={{ cursor: 'pointer' }}
-                                                            checked={selectedMembers.includes(String(memberUserId))}
-                                                            onChange={() => toggleMemberSelection(memberUserId)}
-                                                        />
-                                                        <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '11px', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                            {initials}
-                                                        </span>
-                                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                            <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
-                                                        </div>
-                                                    </label>
-                                                );
-                                            })
-                                        )}
-                                    </div>
                                 </div>
 
                                 <div className="form-group">
