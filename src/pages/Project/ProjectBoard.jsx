@@ -18,7 +18,7 @@ import {
     fetchTaskComments,
     addComment,
     fetchTaskActivities,
-    moveTask
+    moveTask,
 } from './../../../api.jsx';
 import "./project.css";
 import {Calendar, CalendarClock, LayoutGrid, List, ListChecks, Settings, UsersRound, Loader2, Check, X} from "lucide-react";
@@ -43,12 +43,10 @@ const extractUserId = (member) => {
     return String(member._id || member.id || '');
 };
 
-// Hàm trích xuất User ID chính xác từ Member object hoặc ID
 const getMemberUserId = (member) => {
     return extractUserId(member);
 };
 
-// Hàm lấy tên hiển thị của Member
 const getMemberDisplayName = (member) => {
     if (!member) return 'User';
     if (typeof member === 'object') {
@@ -60,7 +58,6 @@ const getMemberDisplayName = (member) => {
     return 'User';
 };
 
-// Hàm tìm kiếm thông tin user theo ID
 const getUserInfo = (userOrId, projectMembers = []) => {
     if (!userOrId) return null;
 
@@ -79,7 +76,6 @@ const getUserInfo = (userOrId, projectMembers = []) => {
     return found || userOrId;
 };
 
-// Hàm bóc tách chuẩn hoá columnId về dạng String ID
 const extractColumnId = (columnId) => {
     if (!columnId) return '';
     if (typeof columnId === 'object') {
@@ -107,13 +103,13 @@ function TaskDrawer({
     const [loading, setLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
-    // Dynamic states
     const [checklistText, setChecklistText] = useState('');
     const [comments, setComments] = useState([]);
     const [commentText, setCommentText] = useState('');
     const [activities, setActivities] = useState([]);
 
-    // LOGIC PHÂN QUYỀN:
+    const todayStr = new Date().toISOString().split('T')[0];
+
     const canEditAll = isManager;
     const canEditManagement = isManager || isLeader;
     const canDeleteTask = isManager;
@@ -155,6 +151,15 @@ function TaskDrawer({
 
     const handleUpdateTaskField = async (updatedFields) => {
         if (!task || isSaving) return;
+
+        if (updatedFields.date) {
+            const selectedDate = new Date(updatedFields.date).setHours(0, 0, 0, 0);
+            const today = new Date().setHours(0, 0, 0, 0);
+            if (selectedDate < today) {
+                alert("Ngày kết thúc không được ở trong quá khứ!");
+                return;
+            }
+        }
 
         if (updatedFields.columnId) {
             updatedFields.columnId = extractColumnId(updatedFields.columnId);
@@ -209,7 +214,6 @@ function TaskDrawer({
         });
     };
 
-    // CHỌN NHIỀU ASSIGNEES TRONG TASK DRAWER
     const handleToggleAssignee = (memberUserId) => {
         if (!canEditManagement) return;
 
@@ -453,6 +457,7 @@ function TaskDrawer({
                                 <input
                                     className="input"
                                     type="date"
+                                    min={todayStr}
                                     value={task.date ? String(task.date).split('T')[0] : ''}
                                     disabled={!canEditAll}
                                     style={{ backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6', cursor: canEditAll ? 'pointer' : 'not-allowed' }}
@@ -669,6 +674,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [newTaskDate, setNewTaskDate] = useState('');
 
+    const todayStr = new Date().toISOString().split('T')[0];
+
     const getCurrentUser = () => {
         try {
             return JSON.parse(localStorage.getItem('user') || '{}');
@@ -810,7 +817,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         resetTaskForm();
     };
 
-    // TÍNH NĂNG CHỌN NHIỀU LEADER / MEMBER KHI TẠO TASK
     const toggleMemberSelection = (id) => {
         const idStr = String(id);
         setSelectedMembers((prev) =>
@@ -843,7 +849,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setTasks(prevTasks => prevTasks.filter(t => String(t._id) !== String(deletedTaskId)));
     };
 
-    // HÀM KÉO THẢ MƯỢT MÀ
+    // HÀM KÉO THẢ VÀ TỰ ĐỘNG GỬI CỜ CỘNG ĐIỂM
     const handleOnDragEnd = async (result) => {
         const { destination, source, draggableId } = result;
         if (!destination) return;
@@ -853,6 +859,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         ) {
             return;
         }
+
+        const targetColumn = columns.find(c => String(c._id) === String(destination.droppableId));
+        const targetColumnName = (targetColumn?.name || targetColumn?.title || '').toLowerCase();
+        const isMovingToDone = targetColumnName.includes('done');
 
         const previousTasks = [...tasks];
 
@@ -872,37 +882,36 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         const payload = {
             sourceColumnId: source.droppableId === 'backlog' ? null : source.droppableId,
             destColumnId: destination.droppableId,
-            destinationIndex: destination.index
+            destinationIndex: destination.index,
+            action: isMovingToDone ? 'accept' : undefined
         };
 
         try {
             await moveTask(draggableId, payload);
+            if (isMovingToDone) {
+            }
         } catch (error) {
             console.error("Lỗi kéo thả task, hoàn tác UI:", error);
             setTasks(previousTasks);
         }
     };
 
+    // XỬ LÝ KHI LEADER / MANAGER NHẤN NOT ACCEPT HOẶC ACCEPT TASK
     const handleLeaderDecisionOnTask = async (e, task, currentColumnId, isAccepted) => {
         e.stopPropagation();
 
-        const inReviewColumn = columns.find(c =>
-            (c.name || c.title || '').toLowerCase().includes('review')
-        );
+        const targetColumn = columns.find(c => {
+            const name = (c.name || c.title || '').toLowerCase();
+            return isAccepted ? name.includes('done') : (name.includes('review') || name.includes('in review'));
+        }) || columns[0];
 
-        let targetColumnId;
-        if (isAccepted) {
-            targetColumnId = currentColumnId;
-        } else {
-            targetColumnId = inReviewColumn ? inReviewColumn._id : (columns[0]?._id || currentColumnId);
-        }
-
+        const destColumnId = targetColumn ? targetColumn._id : currentColumnId;
         const previousTasks = [...tasks];
 
         setTasks((prevTasks) =>
             prevTasks.map(t =>
                 String(t._id) === String(task._id)
-                    ? { ...t, columnId: extractColumnId(targetColumnId) }
+                    ? { ...t, columnId: extractColumnId(destColumnId) }
                     : t
             )
         );
@@ -910,8 +919,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         try {
             await moveTask(task._id, {
                 sourceColumnId: currentColumnId,
-                destColumnId: targetColumnId,
-                destinationIndex: 0
+                destColumnId: destColumnId,
+                destinationIndex: 0,
+                action: isAccepted ? 'accept' : 'not_accept'
             });
         } catch (error) {
             console.error("Lỗi cập nhật trạng thái duyệt task:", error);
@@ -931,6 +941,15 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         e.preventDefault();
         if (!canCreateTask || !newTaskTitle.trim() || !newTaskColumnId) {
             return;
+        }
+
+        if (newTaskDate) {
+            const selectedDate = new Date(newTaskDate).setHours(0, 0, 0, 0);
+            const today = new Date().setHours(0, 0, 0, 0);
+            if (selectedDate < today) {
+                alert("Ngày kết thúc không được ở trong quá khứ!");
+                return;
+            }
         }
 
         try {
@@ -991,7 +1010,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
     return (
         <div className="app-shell">
-            {/* Sử dụng Sidebar chung không truyền local states */}
             <Sidebar />
 
             <div className="app-main">
@@ -1150,7 +1168,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 className="task-card-top"
                                                                                 style={{
                                                                                     display: 'flex',
-                                                                                    justify: 'space-between',
+                                                                                    justifyContent: 'space-between',
                                                                                     alignItems: 'flex-start',
                                                                                     gap: '8px',
                                                                                     marginBottom: '8px',
@@ -1184,7 +1202,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 className="task-card-bottom"
                                                                                 style={{
                                                                                     display: 'flex',
-                                                                                    justify: 'space-between',
+                                                                                    justifyContent: 'space-between',
                                                                                     alignItems: 'center',
                                                                                     marginTop: 'auto',
                                                                                     paddingRight: showNotAcceptBtn ? '32px' : '0'
@@ -1268,7 +1286,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                         {canCreateTask && (
                                             <button
                                                 className="add-task-btn"
-                                                style={{ width: '100%', cursor: 'pointer', marginTop: '4px' }}
+                                                style={{ width: '260px', cursor: 'pointer', marginTop: '4px' }}
                                                 onClick={() => handleOpenCreateModal(column._id, true)}
                                             >
                                                 + Add Task
@@ -1379,6 +1397,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                     <input
                                         type="date"
                                         className="input"
+                                        min={todayStr}
                                         value={newTaskDate}
                                         onChange={(e) => setNewTaskDate(e.target.value)}
                                     />

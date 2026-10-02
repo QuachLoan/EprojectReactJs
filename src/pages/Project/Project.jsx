@@ -17,7 +17,7 @@ import {
     fetchMembers,
     createTask,
     fetchTasksByProject,
-    fetchMembersByProject // 🟢 Import thêm API lấy member theo project
+    fetchMembersByProject
 } from './../../../api.jsx';
 import { Link } from "react-router-dom";
 
@@ -32,7 +32,9 @@ const COLOR_OPTIONS = [
     '#dc2626'
 ];
 
-// 🟢 Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa cho Avatar
+// 🟢 Lấy ngày hiện tại dạng YYYY-MM-DD để đặt thuộc tính min cho input date
+const todayStr = new Date().toISOString().split('T')[0];
+
 const getInitials = (name) => {
     if (!name) return '??';
     const words = String(name).trim().split(/\s+/);
@@ -42,7 +44,6 @@ const getInitials = (name) => {
     return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 };
 
-// 🟢 Hàm lấy tên hiển thị chuẩn từ object Member
 const getMemberDisplayName = (member) => {
     if (!member) return 'User';
     if (typeof member === 'object') {
@@ -61,10 +62,7 @@ export default function Projects() {
     const [projects, setProjects] = useState([]);
     const [members, setMembers] = useState([]);
 
-    // Lưu số liệu task: { [projectId]: { total: number, done: number } }
     const [projectTaskStats, setProjectTaskStats] = useState({});
-
-    // 🟢 Lưu danh sách members riêng cho từng project: { [projectId]: Member[] }
     const [projectMembersMap, setProjectMembersMap] = useState({});
 
     const [loadingProjects, setLoadingProjects] = useState(true);
@@ -86,7 +84,6 @@ export default function Projects() {
 
     const [toasts, setToasts] = useState([]);
 
-    // Lấy thông tin user hiện tại từ localStorage
     const getCurrentUser = () => {
         try {
             const raw = JSON.parse(localStorage.getItem('user') || localStorage.getItem('member') || '{}');
@@ -99,7 +96,6 @@ export default function Projects() {
     const currentUser = getCurrentUser();
     const currentUserId = currentUser._id || currentUser.id || null;
 
-    // Tìm record Member trong danh sách members khớp với currentUserId (nếu có)
     const currentMemberRecord = members.find(m => {
         const uId = m.userId?._id || m.userId?.id || m.userId || m._id || m.id;
         return String(uId) === String(currentUserId);
@@ -126,7 +122,6 @@ export default function Projects() {
         resetProjectForm();
     };
 
-    // Fetch danh sách project, đếm task & lấy chính xác members của từng project
     const loadProjects = async () => {
         setLoadingProjects(true);
         try {
@@ -145,7 +140,6 @@ export default function Projects() {
                 list.map(async (project) => {
                     const pId = project._id || project.id;
 
-                    // 1. Fetch Tasks & tính tiến độ
                     try {
                         const tasksData = await fetchTasksByProject(pId);
                         const tasksList = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
@@ -168,7 +162,6 @@ export default function Projects() {
                         statsMap[pId] = { total: 0, done: 0 };
                     }
 
-                    // 2. 🟢 Fetch danh sách Members chính xác của từng project
                     try {
                         const projectMembersData = await fetchMembersByProject(pId);
                         const realMembers = Array.isArray(projectMembersData)
@@ -176,7 +169,6 @@ export default function Projects() {
                             : (projectMembersData?.data || projectMembersData?.members || []);
                         membersMap[pId] = realMembers;
                     } catch (err) {
-                        // Nếu lỗi hoặc API fallback, ưu tiên dùng assignees/members có sẵn trong project object
                         membersMap[pId] = Array.isArray(project.assignees)
                             ? project.assignees
                             : (Array.isArray(project.members) ? project.members : []);
@@ -259,6 +251,12 @@ export default function Projects() {
         e.preventDefault();
         if (!canCreateProject) return;
 
+        // 🟢 Validate ngày kết thúc của Project không được nhỏ hơn ngày hôm nay
+        if (projectDueDate && projectDueDate < todayStr) {
+            showToast('Lỗi', 'End date không được là ngày trong quá khứ.', 'error');
+            return;
+        }
+
         setIsSubmittingProject(true);
         try {
             const validAssignees = selectedMembers.filter(
@@ -269,14 +267,12 @@ export default function Projects() {
                 validAssignees.push(currentUserId);
             }
 
-            const today = new Date().toISOString().split('T')[0];
-
             const payload = {
                 name: projectName.trim(),
                 description: projectDesc.trim(),
                 color: selectedColor,
                 userId: currentUserId,
-                date: projectDueDate || today,
+                date: projectDueDate || todayStr,
                 assignees: validAssignees
             };
 
@@ -295,6 +291,13 @@ export default function Projects() {
 
     const handleCreateTask = async (e) => {
         e.preventDefault();
+
+        // 🟢 Validate ngày kết thúc của Task không được nhỏ hơn ngày hôm nay
+        if (taskDueDate && taskDueDate < todayStr) {
+            showToast('Lỗi', 'End date không được là ngày trong quá khứ.', 'error');
+            return;
+        }
+
         setIsSubmittingTask(true);
         try {
             await createTask({
@@ -370,10 +373,7 @@ export default function Projects() {
                             <div className="grid-cards">
                                 {projects.map((project) => {
                                     const pId = project._id || project.id;
-
-                                    // 🟢 Lấy danh sách member đã qua xử lý chuẩn
                                     const memberList = projectMembersMap[pId] || [];
-
                                     const totalTask = getTaskCount(project);
                                     const progressPercent = calculateProgress(project);
 
@@ -434,7 +434,6 @@ export default function Projects() {
                                                 </div>
                                             </div>
 
-                                            {/* 🟢 FOOTER PROJECT CARD: render logo & số lượng member */}
                                             <div className="project-card-footer">
                                                 <span className="avatar-group" style={{ display: 'flex', alignItems: 'center' }}>
                                                     {memberList.slice(0, 4).map((member, index) => {
@@ -565,8 +564,14 @@ export default function Projects() {
                                         </select>
                                     </div>
                                     <div className="field">
-                                        <label className="field-label">Due date</label>
-                                        <input className="input" type="date" value={taskDueDate} onChange={(e) => setTaskDueDate(e.target.value)} />
+                                        <label className="field-label">End date</label>
+                                        <input
+                                            className="input"
+                                            type="date"
+                                            min={todayStr} // 🟢 Chặn chọn ngày quá khứ trong bộ chọn lịch
+                                            value={taskDueDate}
+                                            onChange={(e) => setTaskDueDate(e.target.value)}
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -597,13 +602,15 @@ export default function Projects() {
                         className="modal-box"
                         onClick={(e) => e.stopPropagation()}
                         style={{
-                            maxHeight: '90vh',
+                            width: '100%',
+                            maxWidth: '640px',
+                            maxHeight: '85vh',
                             display: 'flex',
                             flexDirection: 'column',
                             overflow: 'hidden'
                         }}
                     >
-                        <div className="modal-header" style={{ flexShrink: 0 }}>
+                        <div className="modal-header" style={{ flexShrink: 0, padding: '20px 24px 16px' }}>
                             <div>
                                 <h2 className="modal-title">Create project</h2>
                                 <p className="modal-desc">Set up a new board for your team.</p>
@@ -629,7 +636,7 @@ export default function Projects() {
                                     flexDirection: 'column',
                                     gap: 'var(--space-4)',
                                     overflowY: 'auto',
-                                    paddingRight: '4px',
+                                    padding: '0 24px 8px',
                                     flex: 1
                                 }}
                             >
@@ -655,8 +662,14 @@ export default function Projects() {
                                     ></textarea>
                                 </div>
                                 <div className="field">
-                                    <label className="field-label">Due date</label>
-                                    <input className="input" type="date" value={projectDueDate} onChange={(e) => setProjectDueDate(e.target.value)} />
+                                    <label className="field-label">End date </label>
+                                    <input
+                                        className="input"
+                                        type="date"
+                                        min={todayStr} // 🟢 Chặn chọn ngày quá khứ trong bộ chọn lịch
+                                        value={projectDueDate}
+                                        onChange={(e) => setProjectDueDate(e.target.value)}
+                                    />
                                 </div>
                                 <div className="field">
                                     <span className="field-label">Color</span>
@@ -682,7 +695,7 @@ export default function Projects() {
                                 </div>
                             </div>
 
-                            <div className="modal-footer" style={{ flexShrink: 0, marginTop: '16px' }}>
+                            <div className="modal-footer" style={{ flexShrink: 0, padding: '16px 24px 20px' }}>
                                 <button type="button" className="btn btn-outline btn-sm" onClick={closeModal} style={{ cursor: 'pointer' }}>
                                     Cancel
                                 </button>

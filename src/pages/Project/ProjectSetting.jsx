@@ -65,6 +65,9 @@ export default function ProjectSetting() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
+    // Ngày hôm nay theo chuẩn ISO YYYY-MM-DD dùng cho thuộc tính min của input date
+    const todayString = new Date().toISOString().split('T')[0];
+
     const getCurrentUser = () => {
         try {
             return JSON.parse(localStorage.getItem('user') || '{}');
@@ -281,6 +284,18 @@ export default function ProjectSetting() {
         e.preventDefault();
         if (!canManage) return;
 
+        // Chặn chọn ngày trong quá khứ
+        if (formData.dueDate) {
+            const selectedDate = new Date(formData.dueDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            if (selectedDate < today) {
+                alert('Ngày kết thúc dự án (End date) không được nằm trong quá khứ!');
+                return;
+            }
+        }
+
         try {
             setSaving(true);
 
@@ -485,6 +500,7 @@ export default function ProjectSetting() {
                                                     <input
                                                         type="date"
                                                         className="input"
+                                                        min={todayString}
                                                         value={formData.dueDate}
                                                         onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
                                                         disabled={!canManage}
@@ -586,9 +602,9 @@ export default function ProjectSetting() {
                                                         >
                                                             {/* Thông tin cá nhân */}
                                                             <div className="member-identity" style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
-                                                                <span className="avatar avatar-sm" style={{ background: '#4f46e5', color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', width: '40px', height: '40px', fontWeight: 600, flexShrink: 0 }}>
-                                                                    {getInitials(username)}
-                                                                </span>
+                            <span className="avatar avatar-sm" style={{ background: '#4f46e5', color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', width: '40px', height: '40px', fontWeight: 600, flexShrink: 0 }}>
+                                {getInitials(username)}
+                            </span>
                                                                 <div className="member-identity-text" style={{ overflow: 'hidden' }}>
                                                                     <p className="member-name" style={{ fontSize: '15px', fontWeight: 600, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{username}</p>
                                                                     <p className="member-email" style={{ fontSize: '13px', color: 'var(--text-muted, #64748b)', margin: '2px 0 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</p>
@@ -597,32 +613,32 @@ export default function ProjectSetting() {
 
                                                             {/* Vai trò */}
                                                             <div>
-                                                                <span
-                                                                    className="badge"
-                                                                    style={{
-                                                                        backgroundColor: role === 'Manager' ? '#8b5cf6' : role === 'Leader' ? '#f59e0b' : '#f1f5f9',
-                                                                        color: role === 'Manager' || role === 'Leader' ? '#ffffff' : '#475569',
-                                                                        border: role === 'Member' ? '1px solid #cbd5e1' : 'none',
-                                                                        padding: '4px 12px',
-                                                                        borderRadius: '12px',
-                                                                        fontSize: '13px',
-                                                                        fontWeight: '500'
-                                                                    }}
-                                                                >
-                                                                    {role}
-                                                                </span>
+                            <span
+                                className="badge"
+                                style={{
+                                    backgroundColor: role === 'Manager' ? '#8b5cf6' : role === 'Leader' ? '#f59e0b' : '#f1f5f9',
+                                    color: role === 'Manager' || role === 'Leader' ? '#ffffff' : '#475569',
+                                    border: role === 'Member' ? '1px solid #cbd5e1' : 'none',
+                                    padding: '4px 12px',
+                                    borderRadius: '12px',
+                                    fontSize: '13px',
+                                    fontWeight: '500'
+                                }}
+                            >
+                                {role}
+                            </span>
                                                             </div>
 
                                                             {/* Trạng thái */}
                                                             <div>
-                                                                <span className={`badge ${status === 'Active' ? 'badge-success' : 'badge-warning'}`} style={{ padding: '4px 12px', fontSize: '13px' }}>
-                                                                    {status}
-                                                                </span>
+                            <span className={`badge ${status === 'Active' ? 'badge-success' : 'badge-warning'}`} style={{ padding: '4px 12px', fontSize: '13px' }}>
+                                {status}
+                            </span>
                                                             </div>
 
                                                             {/* Menu thao tác */}
                                                             <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
-                                                                {(canManage || memberCurrentRole === "Manager") && m.role !== "Manager" && (
+                                                                {(canManage || memberCurrentRole === "Manager") && (
                                                                     <>
                                                                         <button
                                                                             type="button"
@@ -649,22 +665,69 @@ export default function ProjectSetting() {
                                                                                     minWidth: '170px'
                                                                                 }}
                                                                             >
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => handleUpdateRole(m._id, role, "Leader")}
-                                                                                    className="dropdown-item"
-                                                                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                                                                                >
-                                                                                    <UserCog size={16} /> Promote to Leader
-                                                                                </button>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => handleUpdateRole(m._id, role, "Member")}
-                                                                                    className="dropdown-item"
-                                                                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                                                                                >
-                                                                                    <UserCog size={16} /> Set as Member
-                                                                                </button>
+                                                                                {/* Logic theo từng vai trò */}
+                                                                                {role === 'Manager' && (
+                                                                                    <>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => handleUpdateRole(m._id, role, "Leader")}
+                                                                                            className="dropdown-item"
+                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                        >
+                                                                                            <UserCog size={16} /> Set as Leader
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => handleUpdateRole(m._id, role, "Member")}
+                                                                                            className="dropdown-item"
+                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                        >
+                                                                                            <UserCog size={16} /> Set as Member
+                                                                                        </button>
+                                                                                    </>
+                                                                                )}
+
+                                                                                {role === 'Leader' && (
+                                                                                    <>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => handleUpdateRole(m._id, role, "Manager")}
+                                                                                            className="dropdown-item"
+                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                        >
+                                                                                            <UserCog size={16} /> Set as Manager
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => handleUpdateRole(m._id, role, "Member")}
+                                                                                            className="dropdown-item"
+                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                        >
+                                                                                            <UserCog size={16} /> Set as Member
+                                                                                        </button>
+                                                                                    </>
+                                                                                )}
+
+                                                                                {role === 'Member' && (
+                                                                                    <>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => handleUpdateRole(m._id, role, "Leader")}
+                                                                                            className="dropdown-item"
+                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                        >
+                                                                                            <UserCog size={16} /> Set as Leader
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => handleUpdateRole(m._id, role, "Manager")}
+                                                                                            className="dropdown-item"
+                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                        >
+                                                                                            <UserCog size={16} /> Set as Manager
+                                                                                        </button>
+                                                                                    </>
+                                                                                )}
 
                                                                                 {/* NÚT XÓA THÀNH VIÊN */}
                                                                                 <button

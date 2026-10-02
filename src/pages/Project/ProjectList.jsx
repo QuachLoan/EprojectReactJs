@@ -224,6 +224,18 @@ export default function ProjectList() {
         e.preventDefault();
         if (!isManager || !newTaskTitle.trim()) return;
 
+        // Chặn nhập ngày quá khứ
+        if (newTaskDate) {
+            const selectedDate = new Date(newTaskDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            if (selectedDate < today) {
+                alert('Ngày kết thúc (End date) không được chọn trong quá khứ!');
+                return;
+            }
+        }
+
         try {
             setIsSubmitting(true);
             if (!projectId) return;
@@ -339,6 +351,9 @@ export default function ProjectList() {
     const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
         ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
         : 'Chưa đặt';
+
+    // Ngày hôm nay theo chuẩn ISO YYYY-MM-DD
+    const todayString = new Date().toISOString().split('T')[0];
 
     return (
         <div className="app-shell" onClick={() => setAssigneeMenu({ open: false, taskId: null, pos: {} })}>
@@ -654,6 +669,7 @@ export default function ProjectList() {
                                     <input
                                         type="date"
                                         className="input"
+                                        min={todayString}
                                         value={newTaskDate}
                                         onChange={(e) => setNewTaskDate(e.target.value)}
                                     />

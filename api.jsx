@@ -251,3 +251,12 @@ export const register = async (userData) => {
     });
     return handleResponse(res);
 };
+
+export const reviewTask = async (taskId, isAccepted) => {
+    const res = await fetch(`${API_BASE_URL}/task/${taskId}/review`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ action: isAccepted ? 'accept' : 'not_accept' })
+    });
+    return handleResponse(res);
+};
