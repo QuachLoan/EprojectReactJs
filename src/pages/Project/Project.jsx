@@ -54,7 +54,7 @@ export default function Projects() {
 
     const [toasts, setToasts] = useState([]);
 
-    // Lấy thông tin user hiện tại và kiểm tra role Manager
+    // Lấy thông tin user hiện tại từ localStorage
     const getCurrentUser = () => {
         try {
             const raw = JSON.parse(localStorage.getItem('user') || localStorage.getItem('member') || '{}');
@@ -67,15 +67,21 @@ export default function Projects() {
     const currentUser = getCurrentUser();
     const currentUserId = currentUser._id || currentUser.id || null;
 
-// 🟢 Tìm record Member trong danh sách members khớp với currentUserId
+    // Tìm record Member trong danh sách members khớp với currentUserId (nếu có)
     const currentMemberRecord = members.find(m => {
         const uId = m.userId?._id || m.userId?.id || m.userId || m._id || m.id;
         return String(uId) === String(currentUserId);
     });
 
-// 🟢 Ưu tiên lấy role từ model Member thu được
-    const currentUserRole = currentMemberRecord?.role || currentUser?.role || 'Member';
+    // Lấy role trực tiếp từ user object (ví dụ: 'admin') hoặc từ record Member
+    const userRoleInUserTable = currentUser?.role;
+    const userRoleInMemberTable = currentMemberRecord?.role;
+    const currentUserRole = userRoleInMemberTable || userRoleInUserTable || 'Member';
+
+    // 🟢 Quyền tạo project: Cho phép nếu role ở bảng user là 'admin' hoặc 'Manager'
+    const isAdmin = String(userRoleInUserTable).toLowerCase() === 'admin';
     const isManager = currentUserRole === 'Manager';
+    const canCreateProject = isAdmin || isManager;
 
     // Hàm lấy role của user trong 1 project cụ thể
     const getUserRoleInProject = (project) => {
@@ -91,24 +97,12 @@ export default function Projects() {
         return member?.role || currentUser?.role || 'Member';
     };
 
-    // Tự động tích chọn chính mình khi reset/mở form tạo project
+    // Reset form tạo project
     const resetProjectForm = () => {
         setProjectName('');
         setProjectDesc('');
         setProjectDueDate('');
         setSelectedColor('#4f46e5');
-
-        if (currentUserId && members.length > 0) {
-            const currentMember = members.find(m => {
-                const uId = m.userId?._id || m.userId;
-                return String(uId) === String(currentUserId);
-            });
-
-            if (currentMember) {
-                setSelectedMembers([currentMember._id || currentMember.id]);
-                return;
-            }
-        }
         setSelectedMembers([]);
     };
 
@@ -172,17 +166,6 @@ export default function Projects() {
             const data = await fetchMembers();
             const list = Array.isArray(data) ? data : (data?.data || data?.users || []);
             setMembers(list);
-
-            if (currentUserId && list.length > 0) {
-                const currentMember = list.find(m => {
-                    const uId = m.userId?._id || m.userId;
-                    return String(uId) === String(currentUserId);
-                });
-
-                if (currentMember) {
-                    setSelectedMembers([currentMember._id || currentMember.id]);
-                }
-            }
         } catch (error) {
             console.error("Lỗi fetch members:", error);
             showToast('Lỗi', 'Không thể tải danh sách Members.', 'error');
@@ -245,13 +228,18 @@ export default function Projects() {
 
     const handleCreateProject = async (e) => {
         e.preventDefault();
-        if (!isManager) return;
+        if (!canCreateProject) return;
 
         setIsSubmittingProject(true);
         try {
             const validAssignees = selectedMembers.filter(
                 (id) => typeof id === 'string' && id.trim().length > 0
             );
+
+            // 🟢 Tự động đưa bản thân (currentUserId) vào mảng assignees
+            if (currentUserId && !validAssignees.includes(currentUserId)) {
+                validAssignees.push(currentUserId);
+            }
 
             const today = new Date().toISOString().split('T')[0];
 
@@ -324,8 +312,8 @@ export default function Projects() {
                                 </p>
                             </div>
 
-                            {/* Chỉ hiển thị nút Create Project đối với Manager */}
-                            {isManager && (
+                            {/* Hiển thị nút Create Project đối với admin hoặc Manager */}
+                            {canCreateProject && (
                                 <button
                                     className="btn btn-primary"
                                     style={{ cursor: 'pointer' }}
@@ -348,7 +336,7 @@ export default function Projects() {
                         ) : projects.length === 0 ? (
                             <div className="empty-state" style={{ padding: '48px 0', textAlign: 'center' }}>
                                 <p className="empty-state-title" style={{ fontSize: '16px', color: '#6b7280' }}>
-                                    {isManager ? 'Create your first project!' : 'No projects found.'}
+                                    {canCreateProject ? 'Create your first project!' : 'No projects found.'}
                                 </p>
                             </div>
                         ) : (
@@ -550,7 +538,7 @@ export default function Projects() {
             )}
 
             {/* Modal Create Project */}
-            {isManager && activeModal === 'createProjectModal' && (
+            {canCreateProject && activeModal === 'createProjectModal' && (
                 <div className="modal-overlay" onClick={closeModal}>
                     <div
                         className="modal-box"
@@ -637,47 +625,6 @@ export default function Projects() {
                                                 }}
                                             />
                                         ))}
-                                    </div>
-                                </div>
-
-                                <div className="field">
-                                    <span className="field-label">
-                                        Members {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
-                                    </span>
-                                    <div className="card" style={{ maxHeight: '144px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                        {loadingMembers ? (
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', color: '#6b7280', fontSize: '13px' }}>
-                                                <Loader2 className="animate-spin" size={16} style={{ color: '#4f46e5' }} />
-                                                <span>Loading members...</span>
-                                            </div>
-                                        ) : members.length === 0 ? (
-                                            <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>Không có thành viên nào.</p>
-                                        ) : (
-                                            members.map((member) => {
-                                                const memberId = member._id || member.id;
-
-                                                const displayName = member.userId?.username || member.username || member.userId?.email || member.email || 'Member';
-                                                const initials = displayName.slice(0, 2).toUpperCase();
-
-                                                return (
-                                                    <label key={memberId} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', borderRadius: '6px', cursor: 'pointer' }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            className="checkbox"
-                                                            checked={selectedMembers.includes(memberId)}
-                                                            onChange={() => toggleMemberSelection(memberId)}
-                                                        />
-                                                        <span className="avatar avatar-xs" style={{ background: '#4f46e5' }}>
-                                                            {initials}
-                                                        </span>
-                                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                            <span style={{ fontSize: '14px', fontWeight: 500 }}>{displayName}</span>
-                                                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{member.role || 'Member'}</span>
-                                                        </div>
-                                                    </label>
-                                                );
-                                            })
-                                        )}
                                     </div>
                                 </div>
                             </div>
