@@ -565,7 +565,7 @@ export default function ProjectSetting() {
                                                 className="member-table-header"
                                                 style={{
                                                     display: 'grid',
-                                                    gridTemplateColumns: "1fr 120px 120px 48px",
+                                                    gridTemplateColumns: "1fr 100px 120px 120px 48px",
                                                     alignItems: 'center',
                                                     padding: '16px 20px',
                                                     fontWeight: 600,
@@ -576,6 +576,7 @@ export default function ProjectSetting() {
                                                 }}
                                             >
                                                 <span>Member</span>
+                                                <span>Point</span>
                                                 <span>Position</span>
                                                 <span>Status</span>
                                                 <span></span>
@@ -585,6 +586,7 @@ export default function ProjectSetting() {
                                                 filteredMembers.map((m, idx) => {
                                                     const username = m.userId?.username || m.username || m.name || "Chưa cập nhật";
                                                     const email = m.userId?.email || m.email || "Không có email";
+                                                    const points = m.userId?.points ?? m.userId?.point ?? m.points ?? m.point ?? 0;
                                                     const role = m.role || "Member";
                                                     const status = m.status || "Active";
 
@@ -594,7 +596,7 @@ export default function ProjectSetting() {
                                                             className="member-row"
                                                             style={{
                                                                 display: 'grid',
-                                                                gridTemplateColumns: "1fr 120px 120px 48px",
+                                                                gridTemplateColumns: "1fr 100px 120px 120px 48px",
                                                                 alignItems: 'center',
                                                                 padding: '16px 20px',
                                                                 borderBottom: '1px solid var(--color-border)'
@@ -609,6 +611,13 @@ export default function ProjectSetting() {
                                                                     <p className="member-name" style={{ fontSize: '15px', fontWeight: 600, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{username}</p>
                                                                     <p className="member-email" style={{ fontSize: '13px', color: 'var(--text-muted, #64748b)', margin: '2px 0 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</p>
                                                                 </div>
+                                                            </div>
+
+                                                            {/* Điểm số (Point) */}
+                                                            <div>
+                            <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>
+                                {points} pts
+                            </span>
                                                             </div>
 
                                                             {/* Vai trò */}
