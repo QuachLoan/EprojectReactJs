@@ -163,7 +163,10 @@ export default function LoginPage() {
 
                 <p className="auth-footer-text"  style={{ textAlign: "center", fontSize: "14px", color: "#6b7280" }}>Don't have an account?{" "}
                     <Link  to='/register'  className="auth-inline-link" style={{ color: "var(--color-primary-600)", fontWeight: 500, textDecoration: "none" }}> Sign up</Link>
-                </p>              
+                    <Link  to='/forgot'  className="auth-inline-link" style={{ color: "var(--color-primary-600)", fontWeight: 500, textDecoration: "none" }}> Forgot</Link>
+
+                </p>  
+               
                 <div style={{ marginTop: '24px' }}>
              
 
