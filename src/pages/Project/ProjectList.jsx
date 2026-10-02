@@ -12,7 +12,10 @@ import {
     Loader2,
     ArrowRightCircle,
     UserPlus,
-    Check, UsersRound, ListChecks, CalendarClock,
+    Check,
+    UsersRound,
+    ListChecks,
+    CalendarClock,
     Trash2
 } from 'lucide-react';
 
@@ -20,51 +23,66 @@ import {
     fetchProjectById,
     fetchTasksByProject,
     fetchColumnsByProject,
+    fetchMembersByProject,
     createTask,
     updateTask,
     moveTask,
     deleteTask
 } from '../../../api.jsx';
 
+// Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa
 const getInitials = (name) => {
     if (!name) return '??';
     const words = String(name).trim().split(/\s+/);
-    return words.length === 1
-        ? words[0].substring(0, 2).toUpperCase()
-        : (words[0][0] + words[words.length - 1][0]).toUpperCase();
-};
-
-const getMemberUserId = (member) => {
-    if (!member) return null;
-    if (typeof member === 'object') {
-        if (member.userId) {
-            return typeof member.userId === 'object' ? String(member.userId._id || member.userId.id) : String(member.userId);
-        }
-        return String(member._id || member.id || '');
+    if (words.length === 1) {
+        return words[0].substring(0, 2).toUpperCase();
     }
-    return String(member);
+    return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 };
 
+// Helper trích xuất User ID từ record Member
+const extractUserId = (member) => {
+    if (!member) return '';
+    if (typeof member.userId === 'object') {
+        return String(member.userId?._id || member.userId?.id || '');
+    }
+    if (member.userId) return String(member.userId);
+    return String(member._id || member.id || '');
+};
+
+// Hàm trích xuất User ID chính xác từ Member object hoặc ID
+const getMemberUserId = (member) => {
+    return extractUserId(member);
+};
+
+// Hàm lấy tên hiển thị của Member
 const getMemberDisplayName = (member) => {
     if (!member) return 'User';
     if (typeof member === 'object') {
-        const u = member.userId && typeof member.userId === 'object' ? member.userId : member;
-        return u.username || u.name || u.email || 'User';
+        if (member.userId && typeof member.userId === 'object') {
+            return member.userId.username || member.userId.name || member.userId.email || 'User';
+        }
+        return member.username || member.name || member.email || 'User';
     }
     return 'User';
 };
 
+// Hàm tìm kiếm thông tin user theo ID
 const getUserInfo = (userOrId, projectMembers = []) => {
     if (!userOrId) return null;
-    if (typeof userOrId === 'object' && (userOrId.username || userOrId.name)) {
+
+    if (typeof userOrId === 'object' && (userOrId.username || userOrId.name || userOrId.userId)) {
         return userOrId;
     }
-    const targetId = typeof userOrId === 'object' ? (userOrId._id || userOrId.id) : userOrId;
+
+    const targetId = typeof userOrId === 'object' ? String(userOrId._id || userOrId.id) : String(userOrId);
+
     const found = projectMembers.find(m => {
         const mUserId = getMemberUserId(m);
         const mId = String(m._id || m.id);
-        return mUserId === String(targetId) || mId === String(targetId);
+        return mUserId === targetId || mId === targetId;
     });
+
     return found || userOrId;
 };
 
@@ -76,6 +94,8 @@ export default function ProjectList() {
     const [activeModal, setActiveModal] = useState(null);
 
     const [project, setProject] = useState({});
+    const [projectMembers, setProjectMembers] = useState([]);
+    const [memberCurrentRole, setMemberRole] = useState("");
     const [columns, setColumns] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -88,48 +108,73 @@ export default function ProjectList() {
     const [newTaskPoints, setNewTaskPoints] = useState(0);
     const [newTaskDesc, setNewTaskDesc] = useState('');
     const [newTaskDate, setNewTaskDate] = useState('');
-    const [selectedMembers, setSelectedMembers] = useState([]);
 
     const getCurrentUser = () => {
-        return JSON.parse(localStorage.getItem('user') || localStorage.getItem('member') || '{}');
+        try {
+            return JSON.parse(localStorage.getItem('user') || '{}');
+        } catch {
+            return {};
+        }
     };
 
     const currentUser = getCurrentUser();
     const currentUserId = currentUser._id || currentUser.id || null;
 
-    // Lấy danh sách thành viên từ project
-    const currentMemberList = useMemo(() => {
-        return Array.isArray(project?.assignees) ? project.assignees : (project?.members || []);
-    }, [project]);
+    // Lấy thông tin Member Role trực tiếp từ server API
+    const fetchCurrentMemberRole = async () => {
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) return;
 
-    // Tìm record member tương ứng với user đang đăng nhập
+            const res = await fetch("http://localhost:3000/api/user/currentUser", {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+            setMemberRole(data.memberRole || "");
+        } catch (err) {
+            console.error("Không thể lấy thông tin role hiện tại:", err);
+        }
+    };
+
+    useEffect(() => {
+        fetchCurrentMemberRole();
+    }, []);
+
+    // Tìm record member của user hiện tại trong project
     const currentProjectMember = useMemo(() => {
-        if (!currentUserId || !currentMemberList.length) return null;
-        return currentMemberList.find(m => {
-            const mUserId = getMemberUserId(m);
-            return String(mUserId) === String(currentUserId);
-        });
-    }, [currentUserId, currentMemberList]);
+        if (!currentUserId || !projectMembers.length) return null;
 
-    // Lấy role từ dự án (hoặc fallback về role chung)
-    const currentUserRole = currentProjectMember?.role || currentUser?.role || 'Member';
+        return projectMembers.find(m => {
+            const uId = extractUserId(m);
+            return uId === String(currentUserId);
+        }) || null;
+    }, [currentUserId, projectMembers]);
 
-    const isManager = currentUserRole === 'Manager';
+    // Tính toán chính xác Role dựa trên logic từ ProjectBoard/ProjectSetting
+    const currentUserRole = currentProjectMember?.role || currentUser?.role || memberCurrentRole;
+
+    const isAdmin = String(currentUser?.role).toLowerCase() === 'admin';
     const isLeader = currentUserRole === 'Leader';
-    const isMember = currentUserRole === 'Member';
+    const isManager = currentUserRole === 'Manager' || isAdmin;
 
     const loadData = async () => {
+        if (!projectId) return;
+
         try {
             setLoading(true);
-            const [pData, colsData, tskList] = await Promise.all([
+            const [pData, colsData, tskList, membersData] = await Promise.all([
                 fetchProjectById(projectId).catch(() => ({})),
                 fetchColumnsByProject(projectId).catch(() => []),
-                fetchTasksByProject(projectId).catch(() => [])
+                fetchTasksByProject(projectId).catch(() => []),
+                fetchMembersByProject(projectId).catch(() => [])
             ]);
 
             const realProject = pData?.data || pData || {};
             const realColumns = Array.isArray(colsData) ? colsData : (colsData?.data || []);
             const realTasks = Array.isArray(tskList) ? tskList : (tskList?.data || []);
+            const realMembers = Array.isArray(membersData)
+                ? membersData
+                : (membersData?.data || membersData?.members || []);
 
             realColumns.sort((a, b) => (a.position || 0) - (b.position || 0));
 
@@ -137,6 +182,7 @@ export default function ProjectList() {
                 realColumns.map(c => String(c._id || c.id)).filter(Boolean)
             );
 
+            // Các task thuộc Backlog (chưa được gán cột hoặc cột không hợp lệ)
             const backlogTasks = realTasks.filter(t => {
                 const rawCol = t.columnId;
                 const cId = typeof rawCol === 'object' && rawCol !== null
@@ -148,6 +194,7 @@ export default function ProjectList() {
             setProject(realProject);
             setColumns(realColumns);
             setTasks(backlogTasks);
+            setProjectMembers(realMembers);
         } catch (err) {
             console.error('Error loading backlog tasks:', err);
         } finally {
@@ -166,8 +213,6 @@ export default function ProjectList() {
         setNewTaskPriority('Medium');
         setNewTaskPoints(0);
         setNewTaskDate('');
-        const cUserId = currentUser._id || currentUser.id;
-        setSelectedMembers(cUserId ? [cUserId] : []);
         setActiveModal('quickCreateTaskModal');
     };
 
@@ -224,7 +269,7 @@ export default function ProjectList() {
     };
 
     const handleOpenAssigneeMenu = (e, taskId) => {
-        if (!isLeader) return;
+        if (!isLeader && !isManager) return;
         e.stopPropagation();
         const rect = e.currentTarget.getBoundingClientRect();
 
@@ -266,7 +311,7 @@ export default function ProjectList() {
     };
 
     const handleToggleTaskAssignee = async (task, memberUserId) => {
-        if (!isLeader || !task) return;
+        if ((!isLeader) || !task) return;
 
         const taskId = task._id || task.id;
         const currentAssignees = Array.isArray(task.assignees)
@@ -285,15 +330,15 @@ export default function ProjectList() {
         }));
 
         try {
-            await updateTask(taskId, { assignees: updatedAssignees });
+            await updateTask(taskId, { assignees: updatedAssignees, members: updatedAssignees });
         } catch (err) {
             console.error('Error updating assignee:', err);
         }
     };
 
-    const formattedDueDate = (project?.date)
-        ? new Date(project.date).toLocaleDateString('vi-VN')
-        : 'N/A';
+    const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
+        ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
+        : 'Chưa đặt';
 
     return (
         <div className="app-shell" onClick={() => setAssigneeMenu({ open: false, taskId: null, pos: {} })}>
@@ -327,9 +372,9 @@ export default function ProjectList() {
                                     <p className="page-subtitle">{project.description || 'no description'}</p>
 
                                     <div className="project-meta-row" style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '13px', color: '#64748b' }}>
-                                        <span className="project-meta-item"><UsersRound className="icon icon-sm" />{currentMemberList.length} members</span>
+                                        <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} members</span>
                                         <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
-                                        <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate || 'Chưa đặt'}</span>
+                                        <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate}</span>
                                     </div>
                                 </div>
                                 <div className="project-header-actions">
@@ -344,7 +389,7 @@ export default function ProjectList() {
                                     <LayoutGrid className="icon icon-sm" /> Board
                                 </Link>
                                 <Link to={`/projectlist/${projectId}`} className="project-tab active">
-                                    <List className="icon icon-sm" /> List
+                                    <List className="icon icon-sm" /> Backlog
                                 </Link>
                                 <Link to={`/projectcalendar/${projectId}`} className="project-tab">
                                     <Calendar className="icon icon-sm" /> Calendar
@@ -420,7 +465,7 @@ export default function ProjectList() {
                                                     <td style={{ padding: '12px 16px' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                             {taskAssignees.map((assignee, aIdx) => {
-                                                                const userInfo = getUserInfo(assignee, currentMemberList);
+                                                                const userInfo = getUserInfo(assignee, projectMembers);
                                                                 const name = getMemberDisplayName(userInfo);
                                                                 const memberId = typeof assignee === 'object'
                                                                     ? (assignee._id || assignee.id || aIdx)
@@ -447,7 +492,7 @@ export default function ProjectList() {
                                                                 );
                                                             })}
 
-                                                            {isLeader && (
+                                                            {(isLeader) && (
                                                                 <button
                                                                     onClick={(e) => handleOpenAssigneeMenu(e, taskId)}
                                                                     style={{
@@ -475,7 +520,7 @@ export default function ProjectList() {
 
                                                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                                                            {isLeader && (
+                                                            {(isLeader) && (
                                                                 <button
                                                                     onClick={() => handlePushToBoard(task)}
                                                                     className="btn btn-primary btn-sm"
@@ -529,7 +574,7 @@ export default function ProjectList() {
             </div>
 
             {/* ASSIGNEE POPUP */}
-            {isLeader && assigneeMenu.open && (
+            {(isLeader || isManager) && assigneeMenu.open && (
                 <div
                     onClick={(e) => e.stopPropagation()}
                     style={{
@@ -546,7 +591,7 @@ export default function ProjectList() {
                     }}
                 >
                     <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', padding: '4px 6px' }}>Assign Member:</div>
-                    {currentMemberList.map((m) => {
+                    {projectMembers.map((m) => {
                         const mUserId = getMemberUserId(m);
                         const displayName = getMemberDisplayName(m);
                         const currentTask = tasks.find(t => String(t._id || t.id) === String(assigneeMenu.taskId));

@@ -2,11 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import Header from './../../components/layout/Header/Header.jsx';
-import Sidebar from './../../components/layout/Sidebar/Sidebar.jsx';
+import Sidebar from './../../components/layout/Sidebar/SideBar.jsx';
 import {
     fetchProjectById,
     fetchTasksByProject,
     fetchColumnsByProject,
+    fetchMembersByProject,
     createTask,
     updateTask,
     fetchTaskById,
@@ -32,16 +33,19 @@ const getInitials = (name) => {
     return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 };
 
+// Helper trích xuất User ID từ record Member
+const extractUserId = (member) => {
+    if (!member) return '';
+    if (typeof member.userId === 'object') {
+        return String(member.userId?._id || member.userId?.id || '');
+    }
+    if (member.userId) return String(member.userId);
+    return String(member._id || member.id || '');
+};
+
 // Hàm trích xuất User ID chính xác từ Member object hoặc ID
 const getMemberUserId = (member) => {
-    if (!member) return null;
-    if (typeof member === 'object') {
-        if (member.userId) {
-            return typeof member.userId === 'object' ? String(member.userId._id || member.userId.id) : String(member.userId);
-        }
-        return String(member._id || member.id || '');
-    }
-    return String(member);
+    return extractUserId(member);
 };
 
 // Hàm lấy tên hiển thị của Member
@@ -205,16 +209,18 @@ function TaskDrawer({
         });
     };
 
+    // CHỌN NHIỀU ASSIGNEES TRONG TASK DRAWER
     const handleToggleAssignee = (memberUserId) => {
         if (!canEditManagement) return;
 
         const currentAssignees = task.assignees || [];
+        const memberUserIdStr = String(memberUserId);
         let newAssignees;
 
-        if (currentAssignees.some(id => String(id) === String(memberUserId))) {
-            newAssignees = [];
+        if (currentAssignees.some(id => String(id) === memberUserIdStr)) {
+            newAssignees = currentAssignees.filter(id => String(id) !== memberUserIdStr);
         } else {
-            newAssignees = [memberUserId];
+            newAssignees = [...currentAssignees, memberUserIdStr];
         }
 
         handleUpdateTaskField({ assignees: newAssignees, members: newAssignees });
@@ -455,8 +461,10 @@ function TaskDrawer({
                             </div>
 
                             <div style={{ gridColumn: 'span 2' }}>
-                                <span className="drawer-field-label">Assignee</span>
-                                <div className="card" style={{ maxHeight: '120px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <span className="drawer-field-label">
+                                    Assignees {task.assignees?.length > 0 && `(${task.assignees.length} selected)`}
+                                </span>
+                                <div className="card" style={{ maxHeight: '140px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                     {projectMembers.length === 0 ? (
                                         <span style={{ fontSize: '13px', color: '#6b7280' }}>Chưa có thành viên dự án</span>
                                     ) : (
@@ -468,9 +476,8 @@ function TaskDrawer({
                                             return (
                                                 <label key={memberUserId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: canEditManagement ? 'pointer' : 'not-allowed', fontSize: '13px' }}>
                                                     <input
-                                                        type="radio"
-                                                        name="drawer-assignee-radio"
-                                                        className="radio"
+                                                        type="checkbox"
+                                                        className="checkbox"
                                                         checked={isChecked}
                                                         disabled={!canEditManagement}
                                                         style={{ cursor: canEditManagement ? 'pointer' : 'not-allowed' }}
@@ -637,10 +644,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const { id: urlProjectId } = useParams();
     const activeProjectId = urlProjectId || propProjectId;
 
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-    const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
-
     const [project, setProject] = useState(null);
+    const [projectMembers, setProjectMembers] = useState([]);
+    const [memberCurrentRole, setMemberRole] = useState("");
     const [columns, setColumns] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -664,38 +670,51 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [newTaskDate, setNewTaskDate] = useState('');
 
     const getCurrentUser = () => {
-        return JSON.parse(localStorage.getItem('user') || '{}');
+        try {
+            return JSON.parse(localStorage.getItem('user') || '{}');
+        } catch {
+            return {};
+        }
     };
 
     const currentUser = getCurrentUser();
     const currentUserId = currentUser._id || currentUser.id || null;
 
-    // Lấy mảng danh sách thành viên dự án
-    const memberList = useMemo(() => {
-        return Array.isArray(project?.assignees) ? project.assignees : (project?.members || []);
-    }, [project]);
+    const fetchCurrentMemberRole = async () => {
+        try {
+            const token = localStorage.getItem("token");
+            if (!token) return;
 
-    // Tìm thông tin member tương ứng với currentUserId trong dự án
+            const res = await fetch("http://localhost:3000/api/user/currentUser", {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+            setMemberRole(data.memberRole || "");
+        } catch (err) {
+            console.error("Không thể lấy thông tin role hiện tại:", err);
+        }
+    };
+
+    useEffect(() => {
+        fetchCurrentMemberRole();
+    }, []);
+
     const currentProjectMember = useMemo(() => {
-        if (!currentUserId || !memberList.length) return null;
-        return memberList.find(m => {
-            const mUserId = getMemberUserId(m);
-            return String(mUserId) === String(currentUserId);
-        });
-    }, [currentUserId, memberList]);
+        if (!currentUserId || !projectMembers.length) return null;
 
-    // Lấy role từ member tìm được trong project (nếu có), nếu không lấy role của currentUser
-    const currentUserRole = currentProjectMember?.role || currentUser?.role;
+        return projectMembers.find(m => {
+            const uId = extractUserId(m);
+            return uId === String(currentUserId);
+        }) || null;
+    }, [currentUserId, projectMembers]);
 
-    // CHỈ LEADER MỚI ĐƯỢC XẤY VÀ THAO TÁC NÚT NOT ACCEPT
+    const currentUserRole = currentProjectMember?.role || currentUser?.role || memberCurrentRole;
+
+    const isAdmin = String(currentUser?.role).toLowerCase() === 'admin';
     const isLeader = currentUserRole === 'Leader';
-    const isManager = currentUserRole === 'Manager';
-    const canCreateTask = isManager || isLeader;
+    const isManager = currentUserRole === 'Manager' || isAdmin;
 
-    // KIỂM TRA QUYỀN MEMBER TRONG PROJECT DÙNG ĐỂ CHẶN KÉO THẢ:
-    const isProjectMember = useMemo(() => {
-        return Boolean(currentProjectMember);
-    }, [currentProjectMember]);
+    const canCreateTask = isManager || isLeader;
 
     const fetchBoardData = async () => {
         if (!activeProjectId) return;
@@ -703,21 +722,26 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         try {
             setLoading(true);
 
-            const [projectData, columnsData, tasksData] = await Promise.all([
-                fetchProjectById(activeProjectId),
-                fetchColumnsByProject(activeProjectId),
-                fetchTasksByProject(activeProjectId)
+            const [projectData, columnsData, tasksData, membersData] = await Promise.all([
+                fetchProjectById(activeProjectId).catch(() => null),
+                fetchColumnsByProject(activeProjectId).catch(() => []),
+                fetchTasksByProject(activeProjectId).catch(() => []),
+                fetchMembersByProject(activeProjectId).catch(() => [])
             ]);
 
-            const realProject = projectData?.data || projectData;
+            const realProject = projectData?.data || projectData || {};
             const realColumns = Array.isArray(columnsData) ? columnsData : (columnsData?.data || []);
             const realTasks = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
+            const realMembers = Array.isArray(membersData)
+                ? membersData
+                : (membersData?.data || membersData?.members || []);
 
             realColumns.sort((a, b) => (a.position || 0) - (b.position || 0));
 
             setProject(realProject);
             setColumns(realColumns);
             setTasks(realTasks);
+            setProjectMembers(realMembers);
         } catch (error) {
             console.error("Lỗi khi tải dữ liệu từ API:", error);
         } finally {
@@ -777,8 +801,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setNewTaskPoints(0);
         setNewTaskDate('');
 
-        const currentUserId = getCurrentUserId();
-        setSelectedMembers(currentUserId ? [currentUserId] : []);
+        const cUserId = getCurrentUserId();
+        setSelectedMembers(cUserId ? [String(cUserId)] : []);
     };
 
     const closeModal = () => {
@@ -786,9 +810,13 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         resetTaskForm();
     };
 
+    // TÍNH NĂNG CHỌN NHIỀU LEADER / MEMBER KHI TẠO TASK
     const toggleMemberSelection = (id) => {
+        const idStr = String(id);
         setSelectedMembers((prev) =>
-            prev.includes(id) ? [] : [id]
+            prev.includes(idStr)
+                ? prev.filter((item) => item !== idStr)
+                : [...prev, idStr]
         );
     };
 
@@ -815,10 +843,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setTasks(prevTasks => prevTasks.filter(t => String(t._id) !== String(deletedTaskId)));
     };
 
-    // HÀM XỬ LÝ KÉO THẢ TASK TRỰC TIẾP
+    // HÀM KÉO THẢ MƯỢT MÀ
     const handleOnDragEnd = async (result) => {
-        if (!isProjectMember) return;
-
         const { destination, source, draggableId } = result;
         if (!destination) return;
         if (
@@ -857,9 +883,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         }
     };
 
-    // HÀM XỬ LÝ QUYẾT ĐỊNH CỦA LEADER TẠI CHỖ (NOT ACCEPT)
     const handleLeaderDecisionOnTask = async (e, task, currentColumnId, isAccepted) => {
-        e.stopPropagation(); // Ngăn sự kiện click mở drawer
+        e.stopPropagation();
 
         const inReviewColumn = columns.find(c =>
             (c.name || c.title || '').toLowerCase().includes('review')
@@ -874,7 +899,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
         const previousTasks = [...tasks];
 
-        // Cập nhật UI lập tức
         setTasks((prevTasks) =>
             prevTasks.map(t =>
                 String(t._id) === String(task._id)
@@ -883,7 +907,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             )
         );
 
-        // Gọi API backend
         try {
             await moveTask(task._id, {
                 sourceColumnId: currentColumnId,
@@ -962,27 +985,17 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         );
     }
 
-    const formattedDueDate = (project?.date)
-        ? new Date(project.date).toLocaleDateString('vi-VN')
-        : 'N/A';
+    const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
+        ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
+        : 'Chưa đặt';
 
     return (
         <div className="app-shell">
-            <Sidebar
-                collapsed={sidebarCollapsed}
-                setCollapsed={setSidebarCollapsed}
-                mobileOpen={sidebarMobileOpen}
-                setMobileOpen={setSidebarMobileOpen}
-            />
-            {sidebarMobileOpen && (
-                <div className="sidebar-overlay" onClick={() => setSidebarMobileOpen(false)} />
-            )}
+            {/* Sử dụng Sidebar chung không truyền local states */}
+            <Sidebar />
 
             <div className="app-main">
-                <Header
-                    onOpenSidebar={() => setSidebarMobileOpen(true)}
-                    onOpenModal={(modal) => setActiveModal(modal)}
-                />
+                <Header onOpenModal={(modal) => setActiveModal(modal)} />
 
                 <div className="project-header">
                     <div className="project-header-top">
@@ -994,9 +1007,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             <p className="page-subtitle">{project?.description || 'No description'}</p>
 
                             <div className="project-meta-row">
-                                <span className="project-meta-item"><UsersRound className="icon icon-sm" />{memberList.length} members</span>
+                                <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} members</span>
                                 <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
-                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate || 'Chưa đặt'}</span>
+                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate}</span>
                             </div>
                         </div>
                         <Link to={`/projectsetting/${activeProjectId}`} className="icon-btn icon-btn-outline" style={{ cursor: 'pointer' }}>
@@ -1008,7 +1021,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                             <LayoutGrid className="icon icon-sm" /> Board
                         </Link>
                         <Link to={`/projectlist/${activeProjectId}`} className="project-tab">
-                            <List className="icon icon-sm" /> List
+                            <List className="icon icon-sm" /> Backlog
                         </Link>
                         <Link to={`/projectcalendar/${activeProjectId}`} className="project-tab">
                             <Calendar className="icon icon-sm" /> Calendar
@@ -1071,9 +1084,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                     {...provided.droppableProps}
                                                     style={{
                                                         minHeight: '150px',
-                                                        backgroundColor: snapshot.isDraggingOver ? '#f1f5f9' : 'transparent',
-                                                        transition: 'background-color 0.2s ease',
-                                                        borderRadius: '8px'
+                                                        backgroundColor: snapshot.isDraggingOver ? 'rgba(79, 70, 229, 0.05)' : 'transparent',
+                                                        transition: 'background-color 0.2s cubic-bezier(0.2, 0, 0, 1)',
+                                                        borderRadius: '8px',
+                                                        padding: '4px'
                                                     }}
                                                 >
                                                     {columnTasks.length === 0 ? (
@@ -1089,14 +1103,20 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                 : 'N/A';
                                                             const assignees = Array.isArray(task.assignees) ? task.assignees : [];
                                                             const taskPoints = task.points ?? task.point ?? 0;
-                                                            const showNotAcceptBtn = isDoneColumn && isLeader;
+                                                            const showNotAcceptBtn = (isDoneColumn && isLeader) || (isDoneColumn && isManager);
+
+                                                            const isTaskAssignee = assignees.some(a => {
+                                                                const assigneeId = typeof a === 'object' ? String(a._id || a.id) : String(a);
+                                                                return currentUserId && assigneeId === String(currentUserId);
+                                                            });
+                                                            const canDragThisTask = isManager || isLeader || isTaskAssignee;
 
                                                             return (
                                                                 <Draggable
                                                                     key={String(task._id)}
                                                                     draggableId={String(task._id)}
                                                                     index={index}
-                                                                    isDragDisabled={!isProjectMember}
+                                                                    isDragDisabled={!canDragThisTask}
                                                                 >
                                                                     {(provided, snapshot) => (
                                                                         <div
@@ -1107,16 +1127,25 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                             onClick={() => handleOpenTaskDrawer(task._id)}
                                                                             style={{
                                                                                 ...provided.draggableProps.style,
-                                                                                opacity: snapshot.isDragging ? 0.8 : 1,
+                                                                                opacity: snapshot.isDragging ? 0.9 : 1,
+                                                                                transform: snapshot.isDragging
+                                                                                    ? `${provided.draggableProps.style?.transform} scale(1.02) translateY(-2px)`
+                                                                                    : provided.draggableProps.style?.transform,
                                                                                 boxShadow: snapshot.isDragging
-                                                                                    ? '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
-                                                                                    : 'none',
-                                                                                cursor: isProjectMember ? 'grab' : 'pointer',
+                                                                                    ? '0 12px 20px -5px rgba(79, 70, 229, 0.25), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+                                                                                    : '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+                                                                                transition: snapshot.isDragging
+                                                                                    ? 'box-shadow 0.2s ease, transform 0.1s ease'
+                                                                                    : 'transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s ease',
+                                                                                cursor: canDragThisTask
+                                                                                    ? (snapshot.isDragging ? 'grabbing' : 'grab')
+                                                                                    : 'pointer',
                                                                                 marginBottom: '8px',
-                                                                                position: 'relative'
+                                                                                position: 'relative',
+                                                                                backgroundColor: '#ffffff',
+                                                                                borderRadius: '8px'
                                                                             }}
                                                                         >
-                                                                            {/* Hàng trên: Tiêu đề + Point Badge */}
                                                                             <div
                                                                                 className="task-card-top"
                                                                                 style={{
@@ -1128,7 +1157,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                     paddingRight: showNotAcceptBtn ? '32px' : '0'
                                                                                 }}
                                                                             >
-                                                                                <div className="task-card-title" style={{ flex: 1, margin: 0 }}>
+                                                                                <div className="task-card-title" style={{ flex: 1, margin: 0, fontWeight: 500 }}>
                                                                                     {task.title || task.name}
                                                                                 </div>
 
@@ -1151,7 +1180,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 </span>
                                                                             </div>
 
-                                                                            {/* Hàng dưới: Meta info bên trái + Assignees/Logo bên phải */}
                                                                             <div
                                                                                 className="task-card-bottom"
                                                                                 style={{
@@ -1163,7 +1191,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 }}
                                                                             >
                                                                                 <div className="task-card-meta" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                                    <span className="task-card-meta-item">
+                                                                                    <span className="task-card-meta-item" style={{ fontSize: '12px', color: '#6b7280' }}>
                                                                                         📅 {taskDueDateFormatted}
                                                                                     </span>
                                                                                     <span className={`priority-tag priority-${task.priority?.toLowerCase()}`}>
@@ -1172,9 +1200,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 </div>
 
                                                                                 {assignees.length > 0 && (
-                                                                                    <div className="task-assignees-group" style={{ marginLeft: 'auto' }}>
+                                                                                    <div className="task-assignees-group" style={{ marginLeft: 'auto', display: 'flex', gap: '-4px' }}>
                                                                                         {assignees.map((assignee, aIdx) => {
-                                                                                            const userInfo = getUserInfo(assignee, memberList);
+                                                                                            const userInfo = getUserInfo(assignee, projectMembers);
                                                                                             const name = getMemberDisplayName(userInfo);
                                                                                             const assigneeId = typeof assignee === 'object'
                                                                                                 ? (assignee._id || assignee.id || aIdx)
@@ -1185,6 +1213,11 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                                     key={assigneeId}
                                                                                                     className="task-assignee-avatar"
                                                                                                     title={name}
+                                                                                                    style={{
+                                                                                                        marginLeft: aIdx > 0 ? '-6px' : '0',
+                                                                                                        border: '2px solid #ffffff',
+                                                                                                        borderRadius: '50%'
+                                                                                                    }}
                                                                                                 >
                                                                                                     {getInitials(name)}
                                                                                                 </div>
@@ -1194,7 +1227,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 )}
                                                                             </div>
 
-                                                                            {/* NÚT X CĂN GIỮA NẰM TRỰC TIẾP BÊN TRONG THẺ TASK CARD */}
                                                                             {showNotAcceptBtn && (
                                                                                 <button
                                                                                     type="button"
@@ -1236,7 +1268,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                         {canCreateTask && (
                                             <button
                                                 className="add-task-btn"
-                                                style={{ width: '260px', cursor: 'pointer' }}
+                                                style={{ width: '100%', cursor: 'pointer', marginTop: '4px' }}
                                                 onClick={() => handleOpenCreateModal(column._id, true)}
                                             >
                                                 + Add Task
@@ -1255,7 +1287,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 isDrawerOpen={isDrawerOpen}
                 handleCloseDrawer={handleCloseTaskDrawer}
                 columns={columns}
-                projectMembers={memberList}
+                projectMembers={projectMembers}
                 onTaskUpdated={handleTaskUpdatedFromDrawer}
                 onTaskDeleted={handleTaskDeletedFromDrawer}
                 isManager={isManager}
@@ -1369,15 +1401,15 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
                                 <div className="form-group">
                                     <label className="form-label">
-                                        Assignee {selectedMembers.length > 0 && `(1 selected)`}
+                                        Assignees {selectedMembers.length > 0 && `(${selectedMembers.length} selected)`}
                                     </label>
                                     <div className="card" style={{ maxHeight: '144px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                        {memberList.length === 0 ? (
+                                        {projectMembers.length === 0 ? (
                                             <p style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '4px' }}>
                                                 Dự án chưa có thành viên nào.
                                             </p>
                                         ) : (
-                                            memberList.map((member, idx) => {
+                                            projectMembers.map((member, idx) => {
                                                 const memberUserId = getMemberUserId(member);
                                                 const displayName = getMemberDisplayName(member);
                                                 const initials = getInitials(displayName);
@@ -1385,11 +1417,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                 return (
                                                     <label key={memberUserId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px', borderRadius: '6px', cursor: 'pointer' }}>
                                                         <input
-                                                            type="radio"
-                                                            name="modal-assignee-radio"
-                                                            className="radio"
+                                                            type="checkbox"
+                                                            className="checkbox"
                                                             style={{ cursor: 'pointer' }}
-                                                            checked={selectedMembers.includes(memberUserId)}
+                                                            checked={selectedMembers.includes(String(memberUserId))}
                                                             onChange={() => toggleMemberSelection(memberUserId)}
                                                         />
                                                         <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '11px', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

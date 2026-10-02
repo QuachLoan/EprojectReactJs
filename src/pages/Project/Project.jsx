@@ -11,7 +11,14 @@ import {
 } from 'lucide-react';
 import SideBar from './../../components/layout/SideBar/SideBar';
 import Header from './../../components/layout/Header/Header';
-import { fetchProjects, createProject, fetchMembers, createTask, fetchTasksByProject } from './../../../api.jsx';
+import {
+    fetchProjects,
+    createProject,
+    fetchMembers,
+    createTask,
+    fetchTasksByProject,
+    fetchMembersByProject // 🟢 Import thêm API lấy member theo project
+} from './../../../api.jsx';
 import { Link } from "react-router-dom";
 
 const COLOR_OPTIONS = [
@@ -25,6 +32,28 @@ const COLOR_OPTIONS = [
     '#dc2626'
 ];
 
+// 🟢 Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa cho Avatar
+const getInitials = (name) => {
+    if (!name) return '??';
+    const words = String(name).trim().split(/\s+/);
+    if (words.length === 1) {
+        return words[0].substring(0, 2).toUpperCase();
+    }
+    return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+};
+
+// 🟢 Hàm lấy tên hiển thị chuẩn từ object Member
+const getMemberDisplayName = (member) => {
+    if (!member) return 'User';
+    if (typeof member === 'object') {
+        if (member.userId && typeof member.userId === 'object') {
+            return member.userId.username || member.userId.name || member.userId.email || 'User';
+        }
+        return member.username || member.name || member.email || 'User';
+    }
+    return 'User';
+};
+
 export default function Projects() {
     const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
     const [activeModal, setActiveModal] = useState(null);
@@ -34,6 +63,9 @@ export default function Projects() {
 
     // Lưu số liệu task: { [projectId]: { total: number, done: number } }
     const [projectTaskStats, setProjectTaskStats] = useState({});
+
+    // 🟢 Lưu danh sách members riêng cho từng project: { [projectId]: Member[] }
+    const [projectMembersMap, setProjectMembersMap] = useState({});
 
     const [loadingProjects, setLoadingProjects] = useState(true);
     const [loadingMembers, setLoadingMembers] = useState(false);
@@ -73,31 +105,14 @@ export default function Projects() {
         return String(uId) === String(currentUserId);
     });
 
-    // Lấy role trực tiếp từ user object (ví dụ: 'admin') hoặc từ record Member
     const userRoleInUserTable = currentUser?.role;
     const userRoleInMemberTable = currentMemberRecord?.role;
     const currentUserRole = userRoleInMemberTable || userRoleInUserTable || 'Member';
 
-    // 🟢 Quyền tạo project: Cho phép nếu role ở bảng user là 'admin' hoặc 'Manager'
     const isAdmin = String(userRoleInUserTable).toLowerCase() === 'admin';
     const isManager = currentUserRole === 'Manager';
     const canCreateProject = isAdmin || isManager;
 
-    // Hàm lấy role của user trong 1 project cụ thể
-    const getUserRoleInProject = (project) => {
-        const assignees = Array.isArray(project.assignees)
-            ? project.assignees
-            : (Array.isArray(project.members) ? project.members : []);
-
-        const member = assignees.find(m => {
-            const uId = m.userId?._id || m.userId || m._id || m.id;
-            return String(uId) === String(currentUserId);
-        });
-
-        return member?.role || currentUser?.role || 'Member';
-    };
-
-    // Reset form tạo project
     const resetProjectForm = () => {
         setProjectName('');
         setProjectDesc('');
@@ -111,7 +126,7 @@ export default function Projects() {
         resetProjectForm();
     };
 
-    // Fetch danh sách project & đếm task Done theo column.position === 3
+    // Fetch danh sách project, đếm task & lấy chính xác members của từng project
     const loadProjects = async () => {
         setLoadingProjects(true);
         try {
@@ -124,9 +139,13 @@ export default function Projects() {
             }
 
             const statsMap = {};
+            const membersMap = {};
+
             await Promise.all(
                 list.map(async (project) => {
                     const pId = project._id || project.id;
+
+                    // 1. Fetch Tasks & tính tiến độ
                     try {
                         const tasksData = await fetchTasksByProject(pId);
                         const tasksList = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
@@ -148,9 +167,25 @@ export default function Projects() {
                     } catch (err) {
                         statsMap[pId] = { total: 0, done: 0 };
                     }
+
+                    // 2. 🟢 Fetch danh sách Members chính xác của từng project
+                    try {
+                        const projectMembersData = await fetchMembersByProject(pId);
+                        const realMembers = Array.isArray(projectMembersData)
+                            ? projectMembersData
+                            : (projectMembersData?.data || projectMembersData?.members || []);
+                        membersMap[pId] = realMembers;
+                    } catch (err) {
+                        // Nếu lỗi hoặc API fallback, ưu tiên dùng assignees/members có sẵn trong project object
+                        membersMap[pId] = Array.isArray(project.assignees)
+                            ? project.assignees
+                            : (Array.isArray(project.members) ? project.members : []);
+                    }
                 })
             );
+
             setProjectTaskStats(statsMap);
+            setProjectMembersMap(membersMap);
 
         } catch (error) {
             console.error("Lỗi fetch projects:", error);
@@ -201,12 +236,6 @@ export default function Projects() {
         }, 4000);
     };
 
-    const toggleMemberSelection = (id) => {
-        setSelectedMembers((prev) =>
-            prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
-        );
-    };
-
     const calculateProgress = (project) => {
         const pId = project._id || project.id;
         const stats = projectTaskStats[pId];
@@ -236,7 +265,6 @@ export default function Projects() {
                 (id) => typeof id === 'string' && id.trim().length > 0
             );
 
-            // 🟢 Tự động đưa bản thân (currentUserId) vào mảng assignees
             if (currentUserId && !validAssignees.includes(currentUserId)) {
                 validAssignees.push(currentUserId);
             }
@@ -312,7 +340,6 @@ export default function Projects() {
                                 </p>
                             </div>
 
-                            {/* Hiển thị nút Create Project đối với admin hoặc Manager */}
                             {canCreateProject && (
                                 <button
                                     className="btn btn-primary"
@@ -342,21 +369,18 @@ export default function Projects() {
                         ) : (
                             <div className="grid-cards">
                                 {projects.map((project) => {
-                                    const memberList = Array.isArray(project.assignees)
-                                        ? project.assignees
-                                        : Array.isArray(project.members)
-                                            ? project.members
-                                            : Array.isArray(project.membersList)
-                                                ? project.membersList
-                                                : [];
+                                    const pId = project._id || project.id;
+
+                                    // 🟢 Lấy danh sách member đã qua xử lý chuẩn
+                                    const memberList = projectMembersMap[pId] || [];
 
                                     const totalTask = getTaskCount(project);
                                     const progressPercent = calculateProgress(project);
 
                                     return (
                                         <Link
-                                            key={project._id || project.id}
-                                            to={`/projectboard/${project._id || project.id}`}
+                                            key={pId}
+                                            to={`/projectboard/${pId}`}
                                             className="card project-card"
                                         >
                                             <div className="project-card-top">
@@ -409,34 +433,63 @@ export default function Projects() {
                                                     />
                                                 </div>
                                             </div>
-                                            <div className="project-card-footer">
-                                                <span className="avatar-group">
-                                                    {memberList.map((member, index) => {
-                                                        if (typeof member === 'string' || !member) {
-                                                            return (
-                                                                <span key={member || index} className="avatar avatar-xs" style={{ background: '#4f46e5' }}>
-                                                                    U
-                                                                </span>
-                                                            );
-                                                        }
 
-                                                        const displayName = member.userId?.username || member.username || member.userId?.email || member.email || 'Member';
-                                                        const initials = displayName.slice(0, 2).toUpperCase();
+                                            {/* 🟢 FOOTER PROJECT CARD: render logo & số lượng member */}
+                                            <div className="project-card-footer">
+                                                <span className="avatar-group" style={{ display: 'flex', alignItems: 'center' }}>
+                                                    {memberList.slice(0, 4).map((member, index) => {
+                                                        const displayName = getMemberDisplayName(member);
+                                                        const initials = getInitials(displayName);
 
                                                         return (
                                                             <span
-                                                                key={member._id || index}
+                                                                key={member._id || member.id || index}
                                                                 className="avatar avatar-xs"
-                                                                style={{ background: '#4f46e5' }}
+                                                                style={{
+                                                                    background: '#4f46e5',
+                                                                    color: '#ffffff',
+                                                                    fontWeight: 600,
+                                                                    fontSize: '11px',
+                                                                    marginLeft: index > 0 ? '-6px' : '0',
+                                                                    border: '2px solid #ffffff',
+                                                                    borderRadius: '50%',
+                                                                    width: '24px',
+                                                                    height: '24px',
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center'
+                                                                }}
                                                                 title={displayName}
                                                             >
                                                                 {initials}
                                                             </span>
                                                         );
                                                     })}
+                                                    {memberList.length > 4 && (
+                                                        <span
+                                                            className="avatar avatar-xs"
+                                                            style={{
+                                                                background: '#9ca3af',
+                                                                color: '#ffffff',
+                                                                fontSize: '10px',
+                                                                fontWeight: 600,
+                                                                marginLeft: '-6px',
+                                                                border: '2px solid #ffffff',
+                                                                borderRadius: '50%',
+                                                                width: '24px',
+                                                                height: '24px',
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center'
+                                                            }}
+                                                        >
+                                                            +{memberList.length - 4}
+                                                        </span>
+                                                    )}
                                                 </span>
+
                                                 <span className="project-card-footer-meta">
-                                                    <span className="icon-inline">
+                                                    <span className="icon-inline" title="Total Members">
                                                         <UsersRound className="icon icon-sm" />
                                                         {memberList.length}
                                                     </span>
