@@ -32,6 +32,15 @@ import {
     deleteMemberByProject
 } from '../../../api';
 
+// Hàm lấy ngày hiện tại dạng YYYY-MM-DD theo giờ địa phương
+const getTodayString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 // Helper tính các tuần của dự án dựa trên startDate và dueDate
 const calculateProjectWeeks = (startDateStr, endDateStr) => {
     if (!startDateStr || !endDateStr) return [{ index: 1, label: 'Tuần 1' }];
@@ -106,7 +115,7 @@ export default function ProjectSetting() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
-    const todayString = new Date().toISOString().split('T')[0];
+    const todayString = getTodayString();
 
     const getCurrentUser = () => {
         try {
@@ -360,12 +369,21 @@ export default function ProjectSetting() {
         e.preventDefault();
         if (!canManage) return;
 
-        if (formData.startDate && formData.dueDate) {
-            const startDate = new Date(formData.startDate);
-            const dueDate = new Date(formData.dueDate);
+        const currentToday = getTodayString();
 
-            if (startDate > dueDate) {
-                alert('Ngày bắt đầu không thể sau ngày kết thúc!');
+        if (formData.startDate && formData.startDate < currentToday) {
+            alert('Start date không được là ngày trong quá khứ!');
+            return;
+        }
+
+        if (formData.dueDate && formData.dueDate < currentToday) {
+            alert('End date không được là ngày trong quá khứ!');
+            return;
+        }
+
+        if (formData.startDate && formData.dueDate) {
+            if (formData.startDate > formData.dueDate) {
+                alert('Start date không thể sau End date!');
                 return;
             }
         }
@@ -579,8 +597,18 @@ export default function ProjectSetting() {
                                                     <input
                                                         type="date"
                                                         className="input"
+                                                        min={getTodayString()}
                                                         value={formData.startDate}
-                                                        onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            const currentToday = getTodayString();
+                                                            if (val && val < currentToday) {
+                                                                alert('Start date không được là ngày trong quá khứ!');
+                                                                setFormData({ ...formData, startDate: currentToday });
+                                                            } else {
+                                                                setFormData({ ...formData, startDate: val });
+                                                            }
+                                                        }}
                                                         disabled={!canManage}
                                                         style={disabledInputStyle}
                                                     />
@@ -590,9 +618,18 @@ export default function ProjectSetting() {
                                                     <input
                                                         type="date"
                                                         className="input"
-                                                        min={todayString}
+                                                        min={formData.startDate || getTodayString()}
                                                         value={formData.dueDate}
-                                                        onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            const minAllowed = formData.startDate || getTodayString();
+                                                            if (val && val < minAllowed) {
+                                                                alert('End date không được nhỏ hơn Start date hoặc ngày hiện tại!');
+                                                                setFormData({ ...formData, dueDate: minAllowed });
+                                                            } else {
+                                                                setFormData({ ...formData, dueDate: val });
+                                                            }
+                                                        }}
                                                         disabled={!canManage}
                                                         style={disabledInputStyle}
                                                     />
@@ -684,7 +721,7 @@ export default function ProjectSetting() {
                                                 }}
                                             >
                                                 <span>Member</span>
-                                                <span>Point ({selectedWeek})</span>
+                                                <span>Point</span>
                                                 <span>Position</span>
                                                 <span>Status</span>
                                                 <span></span>

@@ -32,8 +32,14 @@ const COLOR_OPTIONS = [
     '#dc2626'
 ];
 
-// Lấy ngày hiện tại dạng YYYY-MM-DD để đặt thuộc tính min cho input date
-const todayStr = new Date().toISOString().split('T')[0];
+// Hàm lấy ngày hiện tại dạng YYYY-MM-DD theo giờ địa phương
+const getTodayString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
 
 const getInitials = (name) => {
     if (!name) return '??';
@@ -79,6 +85,8 @@ const getProjectStatus = (dueDateStr) => {
 };
 
 export default function Projects() {
+    const todayStr = getTodayString();
+
     const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
     const [activeModal, setActiveModal] = useState(null);
 
@@ -134,9 +142,10 @@ export default function Projects() {
     const canCreateProject = isAdmin || isManager;
 
     const resetProjectForm = () => {
+        const currentToday = getTodayString();
         setProjectName('');
         setProjectDesc('');
-        setProjectStartDate(todayStr);
+        setProjectStartDate(currentToday);
         setProjectDueDate('');
         setSelectedColor('#4f46e5');
         setSelectedMembers([]);
@@ -276,7 +285,14 @@ export default function Projects() {
         e.preventDefault();
         if (!canCreateProject) return;
 
-        if (projectDueDate && projectDueDate < todayStr) {
+        const currentToday = getTodayString();
+
+        if (projectStartDate && projectStartDate < currentToday) {
+            showToast('Lỗi', 'Start date không được là ngày trong quá khứ.', 'error');
+            return;
+        }
+
+        if (projectDueDate && projectDueDate < currentToday) {
             showToast('Lỗi', 'End date không được là ngày trong quá khứ.', 'error');
             return;
         }
@@ -301,8 +317,8 @@ export default function Projects() {
                 description: projectDesc.trim(),
                 color: selectedColor,
                 userId: currentUserId,
-                startDate: projectStartDate || todayStr,
-                date: projectDueDate || todayStr,
+                startDate: projectStartDate || currentToday,
+                date: projectDueDate || currentToday,
                 assignees: validAssignees
             };
 
@@ -321,8 +337,9 @@ export default function Projects() {
 
     const handleCreateTask = async (e) => {
         e.preventDefault();
+        const currentToday = getTodayString();
 
-        if (taskDueDate && taskDueDate < todayStr) {
+        if (taskDueDate && taskDueDate < currentToday) {
             showToast('Lỗi', 'End date không được là ngày trong quá khứ.', 'error');
             return;
         }
@@ -598,9 +615,18 @@ export default function Projects() {
                                         <input
                                             className="input"
                                             type="date"
-                                            min={todayStr}
+                                            min={getTodayString()}
                                             value={taskDueDate}
-                                            onChange={(e) => setTaskDueDate(e.target.value)}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                const currentToday = getTodayString();
+                                                if (val && val < currentToday) {
+                                                    showToast('Lỗi', 'End date không được là ngày trong quá khứ.', 'error');
+                                                    setTaskDueDate(currentToday);
+                                                } else {
+                                                    setTaskDueDate(val);
+                                                }
+                                            }}
                                         />
                                     </div>
                                 </div>
@@ -698,8 +724,18 @@ export default function Projects() {
                                         <input
                                             className="input"
                                             type="date"
+                                            min={getTodayString()}
                                             value={projectStartDate}
-                                            onChange={(e) => setProjectStartDate(e.target.value)}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                const currentToday = getTodayString();
+                                                if (val && val < currentToday) {
+                                                    showToast('Lỗi', 'Start date không được là ngày trong quá khứ.', 'error');
+                                                    setProjectStartDate(currentToday);
+                                                } else {
+                                                    setProjectStartDate(val);
+                                                }
+                                            }}
                                         />
                                     </div>
                                     <div className="field">
@@ -707,9 +743,18 @@ export default function Projects() {
                                         <input
                                             className="input"
                                             type="date"
-                                            min={projectStartDate || todayStr}
+                                            min={projectStartDate || getTodayString()}
                                             value={projectDueDate}
-                                            onChange={(e) => setProjectDueDate(e.target.value)}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                const minAllowed = projectStartDate || getTodayString();
+                                                if (val && val < minAllowed) {
+                                                    showToast('Lỗi', 'End date không được nhỏ hơn Start date hoặc ngày hiện tại.', 'error');
+                                                    setProjectDueDate(minAllowed);
+                                                } else {
+                                                    setProjectDueDate(val);
+                                                }
+                                            }}
                                         />
                                     </div>
                                 </div>
