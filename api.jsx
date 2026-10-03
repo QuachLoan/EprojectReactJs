@@ -2,15 +2,30 @@ const API_BASE_URL = 'http://localhost:3000/api'; // Thay bằng URL API của b
 
 // Hàm xử lý Response chung
 const handleResponse = async (res) => {
+    // 1. Kiểm tra nếu bị cấm (403 - Tài khoản bị khóa/Suspend)
+    if (res.status === 403) {
+        const data = await res.clone().json().catch(() => ({}));
+        if (data.message === 'ACCOUNT_SUSPENDED' || data.logout) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            alert('Tài khoản của bạn đã bị khóa bởi Quản trị viên!');
+            window.location.href = '/login';
+            throw new Error('Account banned');
+        }
+    }
+
+    // 2. Kiểm tra nếu các lỗi khác (!res.ok)
     if (!res.ok) {
         if (res.status === 401) {
             // Token hết hạn hoặc không hợp lệ -> Xóa token và về login
             localStorage.removeItem('token');
+            localStorage.removeItem('user');
             window.location.href = '/login';
         }
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.message || `Lỗi ${res.status}: Không thể thực hiện yêu cầu`);
     }
+
     return res.json();
 };
 
@@ -283,6 +298,15 @@ export const deleteNote = async (noteId) => {
     const res = await fetch(`${API_BASE_URL}/note/${noteId}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
+
+export const updateUserStatus = async (userId, status) => {
+    const res = await fetch(`${API_BASE_URL}/user/${userId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ status })
     });
     return handleResponse(res);
 };
