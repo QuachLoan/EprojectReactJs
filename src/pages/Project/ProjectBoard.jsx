@@ -293,17 +293,29 @@ function TaskDrawer({
         });
     };
 
-    const handleToggleAssignee = (memberUserId) => {
+    const handleToggleAssignee = (member) => {
         if (!canEditManagement) return;
 
-        const currentAssignees = task.assignees || [];
-        const memberUserIdStr = String(memberUserId);
-        let newAssignees;
+        // Lấy chính xác ID của User
+        const targetUserId = extractUserId(member);
+        if (!targetUserId) return;
 
-        if (currentAssignees.some(id => String(id) === memberUserIdStr)) {
-            newAssignees = currentAssignees.filter(id => String(id) !== memberUserIdStr);
+        const currentAssignees = task.assignees || [];
+
+        // Kiểm tra xem ID này (hoặc object chứa ID này) đã có trong assignees chưa
+        const exists = currentAssignees.some(a => {
+            const aId = typeof a === 'object' ? (a._id || a.id) : String(a);
+            return String(aId) === String(targetUserId);
+        });
+
+        let newAssignees;
+        if (exists) {
+            newAssignees = currentAssignees.filter(a => {
+                const aId = typeof a === 'object' ? (a._id || a.id) : String(a);
+                return String(aId) !== String(targetUserId);
+            });
         } else {
-            newAssignees = [...currentAssignees, memberUserIdStr];
+            newAssignees = [...currentAssignees, targetUserId];
         }
 
         handleUpdateTaskField({ assignees: newAssignees, members: newAssignees });
@@ -561,38 +573,38 @@ function TaskDrawer({
                                 />
 
                                 <div className="card" style={{ maxHeight: '140px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    {filteredProjectMembers.length === 0 ? (
-                                        <span style={{ fontSize: '13px', color: '#6b7280' }}>
-                                            {assigneeSearchQuery ? 'Not found' : 'No members'}
-                                        </span>
-                                    ) : (
-                                        filteredProjectMembers.map((member, idx) => {
-                                            const memberUserId = getMemberUserId(member);
-                                            const name = getMemberDisplayName(member);
-                                            const email = getMemberEmail(member);
-                                            const isChecked = task.assignees?.some(id => String(id) === String(memberUserId));
+                                    {filteredProjectMembers.map((member, idx) => {
+                                        const memberUserId = extractUserId(member);
+                                        const memberRecordId = String(member._id || member.id || '');
+                                        const name = getMemberDisplayName(member);
+                                        const email = getMemberEmail(member);
 
-                                            return (
-                                                <label key={memberUserId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: canEditManagement ? 'pointer' : 'not-allowed', fontSize: '13px' }}>
-                                                    <input
-                                                        type="checkbox"
-                                                        className="checkbox"
-                                                        checked={isChecked}
-                                                        disabled={!canEditManagement}
-                                                        style={{ cursor: canEditManagement ? 'pointer' : 'not-allowed' }}
-                                                        onChange={() => handleToggleAssignee(memberUserId)}
-                                                    />
-                                                    <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '10px', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                        {getInitials(name)}
-                                                    </span>
-                                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                        <span>{name}</span>
-                                                        {email && <span style={{ fontSize: '11px', color: '#6b7280' }}>{email}</span>}
-                                                    </div>
-                                                </label>
-                                            );
-                                        })
-                                    )}
+                                        // Check khớp với cả User ID hoặc Member ID trả về từ API
+                                        const isChecked = task.assignees?.some(a => {
+                                            const id = typeof a === 'object' ? String(a._id || a.id) : String(a);
+                                            return id === String(memberUserId) || id === memberRecordId;
+                                        });
+
+                                        return (
+                                            <label key={memberRecordId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: canEditManagement ? 'pointer' : 'not-allowed', fontSize: '13px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    className="checkbox"
+                                                    checked={!!isChecked}
+                                                    disabled={!canEditManagement}
+                                                    style={{ cursor: canEditManagement ? 'pointer' : 'not-allowed' }}
+                                                    onChange={() => handleToggleAssignee(member)} // Truyền nguyên object member vào
+                                                />
+                                                <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '10px', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {getInitials(name)}
+            </span>
+                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                    <span>{name}</span>
+                                                    {email && <span style={{ fontSize: '11px', color: '#6b7280' }}>{email}</span>}
+                                                </div>
+                                            </label>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>

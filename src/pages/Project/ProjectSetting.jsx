@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Header from './../../components/layout/Header/Header.jsx';
-
 import Sidebar from './../../components/layout/Sidebar/Sidebar.jsx';
 
 import {
@@ -25,12 +24,51 @@ import {
 import {
     fetchProjectById,
     fetchTasksByProject,
+    fetchColumnsByProject, // Hàm API lấy danh sách cột theo dự án
     updateProject,
     deleteProject,
     fetchMembersByProject,
     inviteMember,
     deleteMemberByProject
 } from '../../../api';
+
+// Helper tính các tuần của dự án dựa trên startDate và dueDate
+const calculateProjectWeeks = (startDateStr, endDateStr) => {
+    if (!startDateStr || !endDateStr) return [{ index: 1, label: 'Tuần 1' }];
+
+    const start = new Date(startDateStr);
+    const end = new Date(endDateStr);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+        return [{ index: 1, label: 'Tuần 1' }];
+    }
+
+    const weeks = [];
+    let currentStart = new Date(start);
+    let index = 1;
+
+    while (currentStart <= end) {
+        let currentEnd = new Date(currentStart);
+        currentEnd.setDate(currentEnd.getDate() + 6);
+
+        if (currentEnd > end) {
+            currentEnd = new Date(end);
+        }
+
+        const formatDay = (d) => `${d.getDate()}/${d.getMonth() + 1}`;
+
+        weeks.push({
+            index: index,
+            label: `Week ${index} (${formatDay(currentStart)} - ${formatDay(currentEnd)})`
+        });
+
+        currentStart = new Date(currentEnd);
+        currentStart.setDate(currentStart.getDate() + 1);
+        index++;
+    }
+
+    return weeks.length > 0 ? weeks : [{ index: 1, label: 'Tuần 1' }];
+};
 
 export default function ProjectSetting() {
     const { id: projectId } = useParams();
@@ -52,22 +90,22 @@ export default function ProjectSetting() {
         dueDate: ''
     });
 
-    // States cho quản lý Members
     const [projectMembers, setProjectMembers] = useState([]);
     const [searchMember, setSearchMember] = useState("");
     const [openDropdown, setDropDown] = useState(null);
     const [memberCurrentRole, setMemberRole] = useState("");
 
-    // States cho Modal Invite
+    const [selectedWeek, setSelectedWeek] = useState(1);
+
     const [openInviteModal, setOpenInviteModal] = useState(false);
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteRole, setInviteRole] = useState("Member");
 
     const [tasks, setTasks] = useState([]);
+    const [columns, setColumns] = useState([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
-    // Ngày hôm nay theo chuẩn ISO YYYY-MM-DD dùng cho thuộc tính min của input date
     const todayString = new Date().toISOString().split('T')[0];
 
     const getCurrentUser = () => {
@@ -81,7 +119,12 @@ export default function ProjectSetting() {
     const currentUser = getCurrentUser();
     const currentUserId = currentUser._id || currentUser.id || null;
 
-    // Lấy thông tin Member Role từ server
+    const projectWeeks = useMemo(() => {
+        const sDate = project?.startDate || project?.start_date || project?.createdAt || formData.startDate;
+        const eDate = project?.date || project?.dueDate || project?.endDate || formData.dueDate;
+        return calculateProjectWeeks(sDate, eDate);
+    }, [project, formData.startDate, formData.dueDate]);
+
     const fetchCurrentMemberRole = async () => {
         try {
             const token = localStorage.getItem("token");
@@ -97,7 +140,6 @@ export default function ProjectSetting() {
         }
     };
 
-    // Helper kiểm tra/rút trích User ID từ record Member
     const extractUserId = (member) => {
         if (!member) return '';
         if (typeof member.userId === 'object') {
@@ -107,7 +149,6 @@ export default function ProjectSetting() {
         return String(member._id || member.id || '');
     };
 
-    // Tìm thông tin role của current user trong dự án này
     const currentProjectMember = useMemo(() => {
         if (!currentUserId || !projectMembers.length) return null;
 
@@ -120,13 +161,11 @@ export default function ProjectSetting() {
     const currentUserRole = currentProjectMember?.role || currentUser?.role || memberCurrentRole;
 
     const isAdmin = String(currentUser?.role).toLowerCase() === 'admin';
-    const isLeader = currentUserRole === 'Leader';
     const isManager = currentUserRole === 'Manager';
 
     const canManage = isAdmin || isManager;
-    const canDelete = isAdmin; // Chỉ Admin mới có quyền xóa dự án
+    const canDelete = isAdmin;
 
-    // Đảm bảo Manager hoặc Role khác không lỡ ở tab 'danger'
     useEffect(() => {
         if (!canDelete && activeTab === 'danger') {
             setActiveTab('general');
@@ -153,17 +192,17 @@ export default function ProjectSetting() {
         try {
             setLoading(true);
 
-            const [projectData, tskList, membersData] = await Promise.all([
+            const [projectData, memList, tskList, colList] = await Promise.all([
                 fetchProjectById(projectId).catch(() => null),
+                fetchMembersByProject(projectId).catch(() => []),
                 fetchTasksByProject(projectId).catch(() => []),
-                fetchMembersByProject(projectId).catch(() => [])
+                fetchColumnsByProject ? fetchColumnsByProject(projectId).catch(() => []) : []
             ]);
 
             const realProject = projectData?.data || projectData || {};
+            const realMembers = Array.isArray(memList) ? memList : (memList?.data || []);
             const realTasks = Array.isArray(tskList) ? tskList : (tskList?.data || []);
-            const realMembers = Array.isArray(membersData)
-                ? membersData
-                : (membersData?.data || membersData?.members || []);
+            const realColumns = Array.isArray(colList) ? colList : (colList?.data || []);
 
             const rawStartDate = realProject.startDate || realProject.start_date || realProject.createdAt;
             const formattedStartDate = formatDateForInput(rawStartDate);
@@ -172,7 +211,6 @@ export default function ProjectSetting() {
             const formattedDueDate = formatDateForInput(rawDueDate);
 
             setProject(realProject);
-            setProjectMembers(realMembers);
 
             setFormData({
                 name: realProject.name || '',
@@ -182,7 +220,11 @@ export default function ProjectSetting() {
                 dueDate: formattedDueDate
             });
 
+            setProjectMembers(realMembers);
             setTasks(realTasks);
+            setColumns(realColumns);
+
+            await fetchCurrentMemberRole();
         } catch (err) {
             console.error('Lỗi khi tải cài đặt dự án:', err);
         } finally {
@@ -194,7 +236,6 @@ export default function ProjectSetting() {
         setDropDown(prev => prev === userId ? null : userId);
     };
 
-    // Hàm cập nhật vai trò member
     const handleUpdateRole = async (memberId, currentRole, newRole) => {
         if (currentRole === newRole) {
             setDropDown(null);
@@ -225,7 +266,6 @@ export default function ProjectSetting() {
         }
     };
 
-    // Hàm xóa thành viên khỏi dự án
     const handleDeleteMember = async (member) => {
         if (!window.confirm("Bạn có chắc chắn muốn xóa thành viên này khỏi dự án?")) {
             return;
@@ -244,23 +284,21 @@ export default function ProjectSetting() {
         }
     };
 
-    // Mời thành viên mới vào dự án
     const handleInvite = async () => {
         if (!inviteEmail.trim()) {
             return;
         }
 
         try {
-            const resData = await inviteMember({
+            await inviteMember({
                 email: inviteEmail,
                 role: inviteRole,
                 projectId: projectId
             });
 
-            const newMember = resData?.member || resData;
-            if (newMember) {
-                setProjectMembers((prevMembers) => [newMember, ...prevMembers]);
-            }
+            const refreshedMembers = await fetchMembersByProject(projectId).catch(() => []);
+            const realMembers = Array.isArray(refreshedMembers) ? refreshedMembers : (refreshedMembers?.data || []);
+            setProjectMembers(realMembers);
 
             setOpenInviteModal(false);
             setInviteEmail("");
@@ -278,7 +316,6 @@ export default function ProjectSetting() {
             : (words[0][0] + words[words.length - 1][0]).toUpperCase();
     };
 
-    // Lọc danh sách projectMembers theo từ khóa ô tìm kiếm
     const filteredMembers = projectMembers.filter((m) => {
         const username = m.userId?.username || m.username || m.name || "";
         const email = m.userId?.email || m.email || "";
@@ -286,29 +323,49 @@ export default function ProjectSetting() {
         return username.toLowerCase().includes(search) || email.toLowerCase().includes(search);
     });
 
+    // LẤY DANH SÁCH ID CỦA CÁC CỘT CÓ POSITION === 3 (CỘT DONE)
+    const doneColumnIds = useMemo(() => {
+        return columns
+            .filter(col => Number(col.position) === 3)
+            .map(col => String(col._id || col.id));
+    }, [columns]);
+
+    // CHỈ TÍNH ĐIỂM CHO TASK NẰM Ở CỘT CÓ POSITION === 3
+    const calculateMemberPointsByWeek = (member, weekNum) => {
+        const uId = extractUserId(member);
+        if (!uId || !tasks.length) return 0;
+
+        const weeklyDoneTasks = tasks.filter(t => {
+            const isWeekMatch = Number(t.week) === Number(weekNum);
+
+            // Lấy ID cột của Task
+            const taskColumnId = String(t.columnId?._id || t.columnId || t.column || '');
+
+            // Kiểm tra task thuộc cột position 3 hoặc task.column?.position === 3
+            const isDone = doneColumnIds.includes(taskColumnId) || Number(t.column?.position) === 3;
+
+            const assignees = t.assignees || [];
+            const isAssigned = assignees.some(assignee => {
+                const id = typeof assignee === 'object' ? (assignee._id || assignee.id) : assignee;
+                return String(id) === String(uId);
+            });
+
+            return isWeekMatch && isDone && isAssigned;
+        });
+
+        return weeklyDoneTasks.reduce((sum, task) => sum + (Number(task.point) || 0), 0);
+    };
+
     const handleSaveGeneralSettings = async (e) => {
         e.preventDefault();
         if (!canManage) return;
 
-        // Kiểm tra hợp lệ giữa Start date và End date
         if (formData.startDate && formData.dueDate) {
             const startDate = new Date(formData.startDate);
             const dueDate = new Date(formData.dueDate);
 
             if (startDate > dueDate) {
-                alert('Ngày bắt đầu (Start date) không thể sau ngày kết thúc (End date)!');
-                return;
-            }
-        }
-
-        // Chặn chọn ngày trong quá khứ đối với End date
-        if (formData.dueDate) {
-            const selectedDate = new Date(formData.dueDate);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-
-            if (selectedDate < today) {
-                alert('Ngày kết thúc dự án (End date) không được nằm trong quá khứ!');
+                alert('Ngày bắt đầu không thể sau ngày kết thúc!');
                 return;
             }
         }
@@ -321,26 +378,23 @@ export default function ProjectSetting() {
                 description: formData.description.trim(),
                 color: formData.color,
                 startDate: formData.startDate ? new Date(formData.startDate).toISOString() : null,
-                start_date: formData.startDate ? new Date(formData.startDate).toISOString() : null,
-                date: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
                 dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
-                endDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
             };
 
-            await updateProject(projectId, payload);
+            const res = await updateProject(projectId, payload);
+            const updatedData = res?.data || res || {};
 
-            // Cập nhật state trực tiếp không gọi lại loadData()
+            // Cập nhật lại project state với dữ liệu mới từ API hoặc đồng bộ các field date
             setProject(prev => ({
                 ...prev,
-                name: payload.name,
-                description: payload.description,
-                color: payload.color,
-                startDate: payload.startDate,
-                start_date: payload.start_date,
-                date: payload.date,
-                dueDate: payload.dueDate,
-                endDate: payload.endDate
+                ...payload,
+                // Đồng bộ các trường tên khác để header rendering nhận ngay giá trị mới
+                date: payload.dueDate,
+                endDate: payload.dueDate,
+                start_date: payload.startDate,
+                ...updatedData
             }));
+
         } catch (err) {
             console.error('Lỗi khi lưu thông tin chung:', err);
         } finally {
@@ -395,7 +449,6 @@ export default function ProjectSetting() {
                     </div>
                 ) : (
                     <>
-                        {/* Project Header Info */}
                         <div className="project-header">
                             <div className="project-header-top">
                                 <div style={{ minWidth: 0 }}>
@@ -443,7 +496,6 @@ export default function ProjectSetting() {
                             </nav>
                         </div>
 
-                        {/* Main Settings Layout */}
                         <main className="page-content" style={{ padding: 'var(--space-6)' }}>
                             <div className="settings-layout">
                                 <nav className="settings-nav">
@@ -462,7 +514,6 @@ export default function ProjectSetting() {
                                         Members ({filteredMembers.length})
                                     </button>
 
-                                    {/* Chỉ hiển thị Danger Zone đối với Admin (canDelete) */}
                                     {canDelete && (
                                         <button
                                             type="button"
@@ -569,21 +620,39 @@ export default function ProjectSetting() {
                                         <div style={{ marginBottom: 'var(--space-4)' }}>
                                             <h2 style={{ fontSize: '18px', fontWeight: 700 }}>Project Members</h2>
                                             <p style={{ fontSize: '13px', color: 'var(--text-muted, #64748b)', marginTop: '4px' }}>
-                                                Manage access and view members of this project.
+                                                Manage access and view member points for completed tasks per week.
                                             </p>
                                         </div>
 
-                                        {/* Thanh công cụ: Search & Nút Invite */}
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', gap: '16px' }}>
-                                            <div className="input-icon-wrap" style={{ width: '320px', position: 'relative' }}>
-                                                <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-                                                <input
-                                                    className="input"
-                                                    placeholder="Search members…"
-                                                    value={searchMember}
-                                                    onChange={(e) => setSearchMember(e.target.value)}
-                                                    style={{ paddingLeft: '38px', height: '38px' }}
-                                                />
+                                        {/* Tool bar */}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', gap: '16px', flexWrap: 'wrap' }}>
+                                            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                                <div className="input-icon-wrap" style={{ width: '220px', position: 'relative' }}>
+                                                    <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+                                                    <input
+                                                        className="input"
+                                                        placeholder="Search members…"
+                                                        value={searchMember}
+                                                        onChange={(e) => setSearchMember(e.target.value)}
+                                                        style={{ paddingLeft: '38px', height: '38px' }}
+                                                    />
+                                                </div>
+
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#475569' }}>Point:</span>
+                                                    <select
+                                                        className="select"
+                                                        style={{ height: '38px', minWidth: '180px', fontWeight: 500 }}
+                                                        value={selectedWeek}
+                                                        onChange={(e) => setSelectedWeek(Number(e.target.value))}
+                                                    >
+                                                        {projectWeeks.map(w => (
+                                                            <option key={w.index} value={w.index}>
+                                                                {w.label}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
                                             </div>
 
                                             {canManage && (
@@ -604,7 +673,7 @@ export default function ProjectSetting() {
                                                 className="member-table-header"
                                                 style={{
                                                     display: 'grid',
-                                                    gridTemplateColumns: "1fr 100px 120px 120px 48px",
+                                                    gridTemplateColumns: "1fr 140px 120px 120px 48px",
                                                     alignItems: 'center',
                                                     padding: '16px 20px',
                                                     fontWeight: 600,
@@ -615,7 +684,7 @@ export default function ProjectSetting() {
                                                 }}
                                             >
                                                 <span>Member</span>
-                                                <span>Point</span>
+                                                <span>Point ({selectedWeek})</span>
                                                 <span>Position</span>
                                                 <span>Status</span>
                                                 <span></span>
@@ -625,9 +694,11 @@ export default function ProjectSetting() {
                                                 filteredMembers.map((m, idx) => {
                                                     const username = m.userId?.username || m.username || m.name || "Chưa cập nhật";
                                                     const email = m.userId?.email || m.email || "Không có email";
-                                                    const points = m.userId?.points ?? m.userId?.point ?? m.points ?? m.point ?? 0;
                                                     const role = m.role || "Member";
                                                     const status = m.status || "Active";
+
+                                                    // Tính tổng điểm tuần dựa trên Task ở Cột có Position = 3
+                                                    const weekPoints = calculateMemberPointsByWeek(m, selectedWeek);
 
                                                     return (
                                                         <div
@@ -635,13 +706,12 @@ export default function ProjectSetting() {
                                                             className="member-row"
                                                             style={{
                                                                 display: 'grid',
-                                                                gridTemplateColumns: "1fr 100px 120px 120px 48px",
+                                                                gridTemplateColumns: "1fr 140px 120px 120px 48px",
                                                                 alignItems: 'center',
                                                                 padding: '16px 20px',
                                                                 borderBottom: '1px solid var(--color-border)'
                                                             }}
                                                         >
-                                                            {/* Thông tin cá nhân */}
                                                             <div className="member-identity" style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
                                                                 <span className="avatar avatar-sm" style={{ background: '#4f46e5', color: '#fff', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', width: '40px', height: '40px', fontWeight: 600, flexShrink: 0 }}>
                                                                     {getInitials(username)}
@@ -652,14 +722,12 @@ export default function ProjectSetting() {
                                                                 </div>
                                                             </div>
 
-                                                            {/* Điểm số (Point) */}
                                                             <div>
-                                                                <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>
-                                                                    {points} pts
+                                                                <span style={{ fontSize: '14px', fontWeight: 600, color: '#4f46e5' }}>
+                                                                    {weekPoints} pts
                                                                 </span>
                                                             </div>
 
-                                                            {/* Vai trò */}
                                                             <div>
                                                                 <span
                                                                     className="badge"
@@ -677,14 +745,12 @@ export default function ProjectSetting() {
                                                                 </span>
                                                             </div>
 
-                                                            {/* Trạng thái */}
                                                             <div>
                                                                 <span className={`badge ${status === 'Active' ? 'badge-success' : 'badge-warning'}`} style={{ padding: '4px 12px', fontSize: '13px' }}>
                                                                     {status}
                                                                 </span>
                                                             </div>
 
-                                                            {/* Menu thao tác */}
                                                             <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
                                                                 {(canManage || memberCurrentRole === "Manager") && (
                                                                     <>
@@ -713,71 +779,15 @@ export default function ProjectSetting() {
                                                                                     minWidth: '170px'
                                                                                 }}
                                                                             >
-                                                                                {/* Logic theo từng vai trò */}
-                                                                                {role === 'Manager' && (
-                                                                                    <>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => handleUpdateRole(m._id, role, "Leader")}
-                                                                                            className="dropdown-item"
-                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                                                                                        >
-                                                                                            <UserCog size={16} /> Set as Leader
-                                                                                        </button>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => handleUpdateRole(m._id, role, "Member")}
-                                                                                            className="dropdown-item"
-                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                                                                                        >
-                                                                                            <UserCog size={16} /> Set as Member
-                                                                                        </button>
-                                                                                    </>
-                                                                                )}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleUpdateRole(m._id, role, role === "Leader" ? "Member" : "Leader")}
+                                                                                    className="dropdown-item"
+                                                                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                >
+                                                                                    <UserCog size={16} /> Change Role
+                                                                                </button>
 
-                                                                                {role === 'Leader' && (
-                                                                                    <>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => handleUpdateRole(m._id, role, "Manager")}
-                                                                                            className="dropdown-item"
-                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                                                                                        >
-                                                                                            <UserCog size={16} /> Set as Manager
-                                                                                        </button>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => handleUpdateRole(m._id, role, "Member")}
-                                                                                            className="dropdown-item"
-                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                                                                                        >
-                                                                                            <UserCog size={16} /> Set as Member
-                                                                                        </button>
-                                                                                    </>
-                                                                                )}
-
-                                                                                {role === 'Member' && (
-                                                                                    <>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => handleUpdateRole(m._id, role, "Leader")}
-                                                                                            className="dropdown-item"
-                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                                                                                        >
-                                                                                            <UserCog size={16} /> Set as Leader
-                                                                                        </button>
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => handleUpdateRole(m._id, role, "Manager")}
-                                                                                            className="dropdown-item"
-                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                                                                                        >
-                                                                                            <UserCog size={16} /> Set as Manager
-                                                                                        </button>
-                                                                                    </>
-                                                                                )}
-
-                                                                                {/* NÚT XÓA THÀNH VIÊN */}
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={() => handleDeleteMember(m)}
@@ -800,7 +810,7 @@ export default function ProjectSetting() {
                                         </div>
                                     </div>
 
-                                    {/* Tab Danger Zone (Chỉ hiển thị cho Admin) */}
+                                    {/* Tab Danger Zone */}
                                     {canDelete && (
                                         <div className={`settings-section ${activeTab === 'danger' ? 'active' : ''}`}>
                                             <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--color-danger, #dc2626)', marginBottom: 'var(--space-2)' }}>Danger Zone</h2>
@@ -824,7 +834,7 @@ export default function ProjectSetting() {
                 )}
             </div>
 
-            {/* MODAL INVITE MEMBER */}
+            {/* Modal Invite Member */}
             {openInviteModal && (
                 <div className="modal-overlay" id="inviteMemberModal" onClick={() => setOpenInviteModal(false)}>
                     <div className="modal-box" onClick={(e) => e.stopPropagation()}>
