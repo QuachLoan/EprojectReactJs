@@ -19,7 +19,7 @@ import {
     X,
     MoreHorizontal,
     UserCog,
-    Info,
+    Info, BarChart2,
 } from 'lucide-react';
 
 import {
@@ -508,6 +508,9 @@ export default function ProjectSetting() {
                             <nav className="project-tabs">
                                 <Link to={`/projectoverview/${projectId}`} className="project-tab">
                                     <Info className="icon icon-sm" /> Overview
+                                </Link>
+                                <Link to={`/projectchart/${projectId}`} className="project-tab">
+                                    <BarChart2 className="icon icon-sm" /> Chart
                                 </Link>
                                 <Link to={`/projectboard/${projectId}`} className="project-tab">
                                     <LayoutGrid className="icon icon-sm" /> Board

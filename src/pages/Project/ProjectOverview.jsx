@@ -25,7 +25,7 @@ import {
     Trash2,
     Edit3,
     Check,
-    Info
+    Info, BarChart2
 } from "lucide-react";
 
 // Helper function format ngày dạng DD/MM/YYYY
@@ -244,6 +244,9 @@ export default function ProjectOverview() {
                         <Link to={`/projectoverview/${projectId}`} className="project-tab active">
                             <Info className="icon icon-sm" /> Overview
                         </Link>
+                        <Link to={`/projectchart/${projectId}`} className="project-tab">
+                            <BarChart2 className="icon icon-sm" /> Chart
+                        </Link>
                         <Link to={`/projectboard/${projectId}`} className="project-tab">
                             <LayoutGrid className="icon icon-sm" /> Board
                         </Link>
@@ -328,7 +331,6 @@ export default function ProjectOverview() {
                             </form>
                         ) : (
                             <div style={{ padding: '10px 12px', background: '#f3f4f6', borderRadius: '6px', color: '#6b7280', fontSize: '13px', marginBottom: '16px' }}>
-                                * Bạn cần quyền Manager hoặc Admin để tải lên tài liệu mới.
                             </div>
                         )}
 

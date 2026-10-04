@@ -21,7 +21,20 @@ import {
     moveTask,
 } from './../../../api.jsx';
 import "./project.css";
-import {Calendar, CalendarClock, LayoutGrid, List, ListChecks, Settings, UsersRound, Loader2, Check, X, Info} from "lucide-react";
+import {
+    Calendar,
+    CalendarClock,
+    LayoutGrid,
+    List,
+    ListChecks,
+    Settings,
+    UsersRound,
+    Loader2,
+    Check,
+    X,
+    Info,
+    BarChart2
+} from "lucide-react";
 
 // Helper function định dạng ngày theo chuẩn DD/MM/YYYY
 const formatDateDMY = (dateValue) => {
@@ -1142,6 +1155,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                     <nav className="project-tabs">
                         <Link to={`/projectoverview/${activeProjectId}`} className="project-tab">
                             <Info className="icon icon-sm" /> Overview
+                        </Link>
+                        <Link to={`/projectchart/${activeProjectId}`} className="project-tab">
+                            <BarChart2 className="icon icon-sm" /> Chart
                         </Link>
                         <Link to={`/projectboard/${activeProjectId}`} className="project-tab active">
                             <LayoutGrid className="icon icon-sm" /> Board

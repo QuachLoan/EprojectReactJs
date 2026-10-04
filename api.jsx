@@ -352,3 +352,9 @@ export const uploadProjectDocument = async (projectId, files) => {
 
     return handleResponse(res);
 };
+
+export const fetchTasksByWeek = async (projectId) => {
+    const response = await fetch(`${API_BASE_URL}/project/${projectId}/tasks-by-week`);
+    if (!response.ok) throw new Error('Failed to fetch tasks by week');
+    return response.json();
+};
