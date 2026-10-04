@@ -107,6 +107,28 @@ export default function ProjectList() {
     const isLeader = currentUserRole === 'Leader';
     const isManager = currentUserRole === 'Manager' || isAdmin;
 
+    // Kiểm tra xem week của task đã đến hạn so với startDate dự án hay chưa
+    const isTaskDueForBoard = (taskWeek, projectStartDate) => {
+        if (!projectStartDate) return false;
+
+        const start = new Date(projectStartDate);
+        if (isNaN(start.getTime())) return false;
+
+        // Reset giờ về 00:00:00 để so sánh chính xác theo ngày
+        start.setHours(0, 0, 0, 0);
+
+        const weekNum = Number(taskWeek) || 1;
+        // Tính ngày bắt đầu của Week N: startDate + (weekNum - 1) * 7 ngày
+        const weekStartDate = new Date(start);
+        weekStartDate.setDate(start.getDate() + (weekNum - 1) * 7);
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Trả về true nếu ngày hiện tại >= ngày bắt đầu của Week đó
+        return today >= weekStartDate;
+    };
+
     const loadData = async () => {
         if (!projectId) return;
 
@@ -132,13 +154,35 @@ export default function ProjectList() {
                 realColumns.map(c => String(c._id || c.id)).filter(Boolean)
             );
 
-            const backlogTasks = realTasks.filter(t => {
+            const projectStart = realProject.startDate || realProject.start_date || realProject.createdAt;
+            const todoColumn = realColumns[0];
+            const todoColumnId = todoColumn ? (todoColumn._id || todoColumn.id) : null;
+
+            const backlogTasks = [];
+
+            // Duyệt qua tất cả task trong Backlog
+            for (const t of realTasks) {
                 const rawCol = t.columnId;
                 const cId = typeof rawCol === 'object' && rawCol !== null
                     ? (rawCol._id || rawCol.id)
                     : rawCol;
-                return !cId || !validColumnIds.has(String(cId));
-            });
+
+                const isBacklog = !cId || !validColumnIds.has(String(cId));
+
+                if (isBacklog) {
+                    // Kiểm tra xem task đã đến hạn theo Week chưa
+                    if (todoColumnId && isTaskDueForBoard(t.week, projectStart)) {
+                        // Tự động push sang board (Cột đầu tiên)
+                        moveTask(t._id || t.id, {
+                            sourceColumnId: null,
+                            destColumnId: todoColumnId,
+                            destinationIndex: 0
+                        }).catch(err => console.error('Lỗi auto push task:', err));
+                    } else {
+                        backlogTasks.push(t);
+                    }
+                }
+            }
 
             setProject(realProject);
             setColumns(realColumns);
@@ -214,26 +258,28 @@ export default function ProjectList() {
             const createdTask = response?.data || response;
 
             if (createdTask && (createdTask._id || createdTask.id)) {
-                setTasks(prevTasks => [createdTask, ...prevTasks]);
+                const projectStart = project?.startDate || project?.start_date || project?.createdAt;
+                const todoColumn = columns[0];
+                const todoColumnId = todoColumn ? (todoColumn._id || todoColumn.id) : null;
+
+                // Nếu đến hạn luôn thì auto push sang Board
+                if (todoColumnId && isTaskDueForBoard(weekValue, projectStart)) {
+                    await moveTask(createdTask._id || createdTask.id, {
+                        sourceColumnId: null,
+                        destColumnId: todoColumnId,
+                        destinationIndex: 0
+                    });
+                } else {
+                    // Chưa đến hạn -> Giữ ở Backlog
+                    setTasks(prevTasks => [createdTask, ...prevTasks]);
+                }
+
                 closeModal();
             }
         } catch (error) {
             console.error("Lỗi tạo task:", error);
         } finally {
             setIsSubmitting(false);
-        }
-    };
-
-    const handleDeleteTask = async (taskId) => {
-        if (!isManager) return;
-        if (!window.confirm('Bạn có chắc chắn muốn xóa task này không?')) return;
-
-        try {
-            setTasks(prev => prev.filter(t => String(t._id || t.id) !== String(taskId)));
-            await deleteTask(taskId);
-        } catch (err) {
-            console.error('Lỗi khi xóa task:', err);
-            loadData();
         }
     };
 

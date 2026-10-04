@@ -269,7 +269,7 @@ export default function ProjectChartPage() {
                         {loadingPage ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#6b7280', padding: '12px 0' }}>
                                 <Loader2 className="animate-spin" size={20} style={{ color: '#4f46e5' }} />
-                                <span>Loading project details...</span>
+                                <span>Loading...</span>
                             </div>
                         ) : (
                             <div>
@@ -329,7 +329,7 @@ export default function ProjectChartPage() {
                         }}>
                             <Loader2 className="animate-spin" size={36} />
                             <span style={{ fontWeight: 500, color: '#4b5563', fontSize: '15px' }}>
-                                Loading chart data...
+                                Loading...
                             </span>
                         </div>
                     ) : errorMsg ? (
