@@ -28,27 +28,40 @@ import {
     Info
 } from "lucide-react";
 
+// Helper function format ngày dạng DD/MM/YYYY
+const formatDate = (dateString, fallback = 'Chưa đặt') => {
+    if (!dateString) return fallback;
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return fallback;
+
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+
+    return `${day}/${month}/${year}`;
+};
+
 export default function ProjectOverview() {
     const { id: projectId } = useParams();
 
-    // State dự án & danh sách
+    // Project & Data States
     const [project, setProject] = useState(null);
     const [projectMembers, setProjectMembers] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [memberCurrentRole, setMemberRole] = useState("");
 
-    // State cho Project Detail (Mô tả chi tiết)
+    // State for Project Details
     const [projectDetail, setProjectDetail] = useState("");
     const [isEditingDetail, setIsEditingDetail] = useState(false);
     const [isSavingDetail, setIsSavingDetail] = useState(false);
 
-    // State cho Document (Tài liệu)
+    // State for Document Attachments (Multiple Files)
     const [documents, setDocuments] = useState([]);
-    const [selectedFile, setSelectedFile] = useState(null);
+    const [selectedFiles, setSelectedFiles] = useState([]);
     const [isUploading, setIsUploading] = useState(false);
 
-    // Lấy thông tin user đăng nhập từ LocalStorage
+    // Get current user from LocalStorage
     const getCurrentUser = () => {
         try {
             return JSON.parse(localStorage.getItem('user') || '{}');
@@ -60,7 +73,7 @@ export default function ProjectOverview() {
     const currentUser = getCurrentUser();
     const currentUserId = currentUser._id || currentUser.id || null;
 
-    // Fetch vai trò user hiện tại trong hệ thống
+    // Fetch current logged-in user's system role
     useEffect(() => {
         const fetchCurrentMemberRole = async () => {
             try {
@@ -72,13 +85,13 @@ export default function ProjectOverview() {
                 const data = await res.json();
                 setMemberRole(data.memberRole || "");
             } catch (err) {
-                console.error("Không thể lấy vai trò người dùng:", err);
+                console.error("Failed to fetch user role:", err);
             }
         };
         fetchCurrentMemberRole();
     }, []);
 
-    // Tìm thông tin thành viên dự án hiện tại
+    // Find current user's membership role in this project
     const currentProjectMember = useMemo(() => {
         if (!currentUserId || !projectMembers.length) return null;
         return projectMembers.find(m => {
@@ -87,12 +100,12 @@ export default function ProjectOverview() {
         }) || null;
     }, [currentUserId, projectMembers]);
 
-    // Kiểm tra quyền Manager / Admin
+    // Check Manager or Admin permissions
     const currentUserRole = currentProjectMember?.role || currentUser?.role || memberCurrentRole;
     const isAdmin = String(currentUser?.role).toLowerCase() === 'admin';
     const isManager = currentUserRole === 'Manager' || isAdmin;
 
-    // Load dữ liệu Project, Tasks, Members khi vào trang
+    // Load Project details, Tasks, and Members
     useEffect(() => {
         if (!projectId) return;
 
@@ -111,7 +124,7 @@ export default function ProjectOverview() {
         }).finally(() => setLoading(false));
     }, [projectId]);
 
-    // Lưu chỉnh sửa Chi tiết dự án (projectDetail)
+    // Save project overview description
     const handleSaveDetail = async () => {
         if (!isManager) return;
         try {
@@ -122,45 +135,48 @@ export default function ProjectOverview() {
             }
             setIsEditingDetail(false);
         } catch (error) {
-            console.error("Lỗi khi lưu thông tin chi tiết dự án:", error);
+            console.error("Failed to update project details:", error);
+            alert(error.message || "Failed to update project details.");
         } finally {
             setIsSavingDetail(false);
         }
     };
 
-    // Tải file trực tiếp từ máy lên Server
+    // Upload multiple files to server
     const handleFileUpload = async (e) => {
         e.preventDefault();
-        if (!selectedFile) {
-            alert("Vui lòng chọn một file từ máy tính!");
+        if (!selectedFiles || selectedFiles.length === 0) {
+            alert("Please select at least one file to upload!");
             return;
         }
 
         try {
             setIsUploading(true);
 
-            // Chuẩn hóa ký tự Tiếng Việt (Unicode Form C - NFC)
-            const normalizedFileName = selectedFile.name.normalize('NFC');
-            const renamedFile = new File([selectedFile], normalizedFileName, { type: selectedFile.type });
+            // Normalize UTF-8 characters for filenames
+            const normalizedFiles = Array.from(selectedFiles).map(file => {
+                const normalizedName = file.name.normalize('NFC');
+                return new File([file], normalizedName, { type: file.type });
+            });
 
-            const res = await uploadProjectDocument(projectId, renamedFile);
+            const res = await uploadProjectDocument(projectId, normalizedFiles);
 
             if (res?.documents) {
                 setDocuments(res.documents);
-                setSelectedFile(null);
-                e.target.reset();
+                setSelectedFiles([]);
+                e.target.reset(); // Reset file input form
             }
         } catch (error) {
-            console.error("Lỗi khi tải file:", error);
-            alert(error.message || "Đã xảy ra lỗi khi tải file lên server!");
+            console.error("File upload error:", error);
+            alert(error.message || "An error occurred while uploading files!");
         } finally {
             setIsUploading(false);
         }
     };
 
-    // Xóa file tài liệu
+    // Delete project document
     const handleDeleteDocument = async (docId) => {
-        if (!window.confirm("Bạn có chắc chắn muốn xóa tài liệu này không?")) return;
+        if (!window.confirm("Are you sure you want to delete this document?")) return;
         try {
             const res = await deleteProjectDocument(projectId, docId);
             if (res?.documents) {
@@ -169,7 +185,8 @@ export default function ProjectOverview() {
                 setDocuments(prev => prev.filter(d => String(d._id) !== String(docId)));
             }
         } catch (error) {
-            console.error("Lỗi khi xóa tài liệu:", error);
+            console.error("Failed to delete document:", error);
+            alert(error.message || "An error occurred while deleting the document.");
         }
     };
 
@@ -177,18 +194,14 @@ export default function ProjectOverview() {
         return (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: '12px', color: '#6b7280' }}>
                 <Loader2 className="animate-spin" size={40} style={{ color: '#4f46e5' }} />
-                <span>Đang tải thông tin dự án...</span>
+                <span>Loading project details...</span>
             </div>
         );
     }
 
-    const formattedStartDate = (project?.startDate || project?.createdAt)
-        ? new Date(project.startDate || project.createdAt).toLocaleDateString('vi-VN')
-        : 'Chưa đặt';
-
-    const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
-        ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
-        : 'Chưa đặt';
+    // Format ngày bắt đầu và ngày kết thúc
+    const formattedStartDate = formatDate(project?.startDate || project?.createdAt);
+    const formattedDueDate = formatDate(project?.date || project?.dueDate || project?.endDate);
 
     return (
         <div className="app-shell">
@@ -197,21 +210,21 @@ export default function ProjectOverview() {
             <div className="app-main">
                 <Header />
 
-                {/* Header Dự Án Đồng Nhất */}
+                {/* Project Header */}
                 <div className="project-header">
                     <div className="project-header-top">
                         <div>
                             <div className="project-title-row">
                                 <span className="project-color-dot" style={{ background: project?.color || '#4f46e5' }}></span>
-                                <h1>{project?.name || 'Dự án'}</h1>
+                                <h1>{project?.name || 'Project'}</h1>
                             </div>
-                            <p className="page-subtitle">{project?.description || 'Chưa có mô tả ngắn'}</p>
+                            <p className="page-subtitle">{project?.description || 'No short description provided'}</p>
 
                             <div className="project-meta-row">
-                                <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} members</span>
-                                <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
-                                <span className="project-meta-item"><Calendar className="icon icon-sm" />start date: {formattedStartDate}</span>
-                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate}</span>
+                                <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} Members</span>
+                                <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} Tasks</span>
+                                <span className="project-meta-item"><Calendar className="icon icon-sm" />Start Date: {formattedStartDate}</span>
+                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />End Date: {formattedDueDate}</span>
                             </div>
                         </div>
                         <Link to={`/projectsetting/${projectId}`} className="icon-btn icon-btn-outline" style={{ cursor: 'pointer' }}>
@@ -236,18 +249,18 @@ export default function ProjectOverview() {
                     </nav>
                 </div>
 
-                {/* Nội dung chính Tab Overview */}
+                {/* Main Content */}
                 <main className="page-content" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-                    {/* Phần 1: Project Detail (Mô tả chi tiết dự án - Chỉ Manager được sửa) */}
+                    {/* Section 1: Project Details Description */}
                     <div className="card" style={{ padding: '20px', background: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                             <h3 style={{ fontSize: '18px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-                                <FileText size={20} color="#4f46e5" /> Chi tiết dự án
+                                <FileText size={20} color="#4f46e5" /> Project Overview & Details
                             </h3>
                             {isManager && !isEditingDetail && (
                                 <button className="btn btn-outline btn-sm" onClick={() => setIsEditingDetail(true)} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                                    <Edit3 size={14} /> Chỉnh sửa
+                                    <Edit3 size={14} /> Edit
                                 </button>
                             )}
                         </div>
@@ -259,56 +272,57 @@ export default function ProjectOverview() {
                                     rows="6"
                                     value={projectDetail}
                                     onChange={(e) => setProjectDetail(e.target.value)}
-                                    placeholder="Nhập mô tả chi tiết, mục tiêu, yêu cầu của dự án..."
+                                    placeholder="Enter detailed description, project goals, scope, and requirements..."
                                     style={{ width: '100%', marginBottom: '12px', padding: '10px' }}
                                 />
                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                     <button className="btn btn-secondary btn-sm" onClick={() => setIsEditingDetail(false)} style={{ cursor: 'pointer' }}>
-                                        Hủy
+                                        Cancel
                                     </button>
                                     <button className="btn btn-primary btn-sm" onClick={handleSaveDetail} disabled={isSavingDetail} style={{ cursor: isSavingDetail ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                         {isSavingDetail ? <Loader2 className="animate-spin" size={14} /> : <Check size={14} />}
-                                        <span>Lưu lại</span>
+                                        <span>Save Changes</span>
                                     </button>
                                 </div>
                             </div>
                         ) : (
                             <div style={{ color: '#374151', lineHeight: '1.6', whiteSpace: 'pre-line', fontSize: '14px' }}>
-                                {projectDetail ? projectDetail : <i style={{ color: '#9ca3af' }}>Chưa có thông tin chi tiết cho dự án này.</i>}
+                                {projectDetail ? projectDetail : <i style={{ color: '#9ca3af' }}>No detailed description provided for this project yet.</i>}
                             </div>
                         )}
                     </div>
 
-                    {/* Phần 2: Tải lên & Quản lý File Tài Liệu (Documents) */}
+                    {/* Section 2: Upload & Manage Attachments */}
                     <div className="card" style={{ padding: '20px', background: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
                         <h3 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-                            <Upload size={20} color="#4f46e5" /> Tài liệu & File đính kèm
+                            <Upload size={20} color="#4f46e5" /> Documents & Attachments
                         </h3>
 
-                        {/* Form chọn file từ máy để upload */}
+                        {/* File Upload Form */}
                         <form onSubmit={handleFileUpload} style={{ display: 'flex', gap: '12px', marginBottom: '20px', alignItems: 'center' }}>
                             <input
                                 type="file"
+                                multiple
                                 className="input"
                                 style={{ flex: '1', padding: '8px' }}
-                                onChange={(e) => setSelectedFile(e.target.files[0])}
+                                onChange={(e) => setSelectedFiles(e.target.files)}
                                 required
                             />
                             <button
                                 type="submit"
                                 className="btn btn-primary"
-                                disabled={isUploading || !selectedFile}
-                                style={{ cursor: (isUploading || !selectedFile) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
+                                disabled={isUploading || selectedFiles.length === 0}
+                                style={{ cursor: (isUploading || selectedFiles.length === 0) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
                             >
                                 {isUploading ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
-                                <span>Tải lên từ máy</span>
+                                <span>Upload ({selectedFiles.length || 0} files)</span>
                             </button>
                         </form>
 
-                        {/* Danh sách File đã đăng */}
+                        {/* List of Uploaded Documents */}
                         <div className="document-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {documents.length === 0 ? (
-                                <p style={{ color: '#9ca3af', fontStyle: 'italic', textAlign: 'center', padding: '16px 0' }}>Chưa có tài liệu nào được tải lên.</p>
+                                <p style={{ color: '#9ca3af', fontStyle: 'italic', textAlign: 'center', padding: '16px 0' }}>No documents have been uploaded yet.</p>
                             ) : (
                                 documents.map((doc) => {
                                     const uploaderName = typeof doc.uploadedBy === 'object'
@@ -325,9 +339,6 @@ export default function ProjectOverview() {
                                                     <a href={doc.url} target="_blank" rel="noopener noreferrer" download style={{ fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}>
                                                         {doc.name}
                                                     </a>
-                                                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
-                                                        Tải lên bởi: <strong>{uploaderName}</strong> • {new Date(doc.createdAt || Date.now()).toLocaleDateString('vi-VN')}
-                                                    </div>
                                                 </div>
                                             </div>
 
@@ -335,7 +346,7 @@ export default function ProjectOverview() {
                                                 <button
                                                     onClick={() => handleDeleteDocument(doc._id)}
                                                     style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '6px' }}
-                                                    title="Xóa file"
+                                                    title="Delete File"
                                                 >
                                                     <Trash2 size={18} />
                                                 </button>

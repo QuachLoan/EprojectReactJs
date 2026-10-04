@@ -66,6 +66,17 @@ const formatDateToLocalString = (dateInput) => {
     return `${year}-${month}-${day}`;
 };
 
+// Helper function định dạng ngày dạng DD/MM/YYYY
+const formatDateDMY = (dateValue) => {
+    if (!dateValue) return 'Not set';
+    const d = new Date(dateValue);
+    if (isNaN(d.getTime())) return 'Not set';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+};
+
 // Helper function to extract User ID from Member record
 const extractUserId = (member) => {
     if (!member) return '';
@@ -407,13 +418,9 @@ export default function ProjectCalendar() {
         return map;
     }, [notes]);
 
-    const formattedStartDate = (project?.startDate || project?.start_date || project?.createdAt)
-        ? new Date(project.startDate || project.start_date || project.createdAt).toLocaleDateString('en-US')
-        : 'Not set';
-
-    const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
-        ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('en-US')
-        : 'Not set';
+    // Định dạng hiển thị Start Date và End Date chuẩn DD/MM/YYYY
+    const formattedStartDate = formatDateDMY(project?.startDate || project?.start_date || project?.createdAt);
+    const formattedDueDate = formatDateDMY(project?.date || project?.dueDate || project?.endDate);
 
     return (
         <div className="app-shell">
@@ -551,7 +558,7 @@ export default function ProjectCalendar() {
                                                         <button
                                                             type="button"
                                                             onClick={(e) => handleOpenNoteModal(dateStr, e)}
-                                                            title="Tạo ghi chú"
+                                                            title="Add note"
                                                             style={{
                                                                 border: 'none',
                                                                 background: '#e0e7ff',
@@ -677,7 +684,7 @@ export default function ProjectCalendar() {
                             }}>
                                 <div style={{ background: '#fff', borderRadius: '8px', padding: '20px', width: '380px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                                        <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a' }}>Tạo ghi chú ({selectedNoteDate})</h3>
+                                        <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a' }}>Add note ({selectedNoteDate})</h3>
                                         <button onClick={() => setActiveModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
                                             <X size={18} />
                                         </button>

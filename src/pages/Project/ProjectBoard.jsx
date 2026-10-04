@@ -23,6 +23,17 @@ import {
 import "./project.css";
 import {Calendar, CalendarClock, LayoutGrid, List, ListChecks, Settings, UsersRound, Loader2, Check, X, Info} from "lucide-react";
 
+// Helper function định dạng ngày theo chuẩn DD/MM/YYYY
+const formatDateDMY = (dateValue) => {
+    if (!dateValue) return 'Chưa đặt';
+    const d = new Date(dateValue);
+    if (isNaN(d.getTime())) return 'Chưa đặt';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+};
+
 // Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa
 const getInitials = (name) => {
     if (!name) return '??';
@@ -106,7 +117,6 @@ const calculateTaskWeekAndStatus = (task, project) => {
         return { displayWeek: currentWeek, status: 'On Track' };
     }
 
-    // Format về 00:00:00 (bỏ qua giây phút)
     const startDate = new Date(projStart);
     startDate.setHours(0, 0, 0, 0);
 
@@ -116,38 +126,30 @@ const calculateTaskWeekAndStatus = (task, project) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // 1. Quá hạn dự án -> Overdue
     if (endDate && today > endDate) {
         return { displayWeek: currentWeek, status: 'Overdue' };
     }
 
-    // 2. Tính số ngày đã trôi qua kể từ startDate
     const diffTime = today.getTime() - startDate.getTime();
     const diffDays = Math.floor(diffTime / (1000 * 3600 * 24));
 
     if (diffDays >= 0) {
-        // Cứ đủ 7 ngày tự động tăng 1 Week
         const calculatedWeek = Math.floor(diffDays / 7) + 1;
         currentWeek = Math.max(currentWeek, calculatedWeek);
     }
 
-    // 3. Tính ngày bắt đầu và kết thúc lý thuyết của currentWeek
     const weekStart = new Date(startDate);
     weekStart.setDate(weekStart.getDate() + (currentWeek - 1) * 7);
 
     let weekEnd = new Date(weekStart);
     weekEnd.setDate(weekEnd.getDate() + 6);
 
-    // 4. Nếu là Week cuối (kết thúc bị giới hạn bởi endDate)
     if (endDate && weekEnd > endDate) {
         weekEnd = new Date(endDate);
     }
 
-    // 5. Tính mốc Expiring:
-    // - Tuần thường: Rơi vào đúng ngày thứ 7 (weekEnd)
-    // - Tuần cuối (ví dụ 16/10 - 21/10): Sát endDate (tức là từ 20/10 và 21/10)
     const expiringThreshold = new Date(weekEnd);
-    expiringThreshold.setDate(expiringThreshold.getDate() - 1); // 1 ngày trước ngày kết thúc
+    expiringThreshold.setDate(expiringThreshold.getDate() - 1);
 
     if (today >= expiringThreshold && today <= weekEnd) {
         return { displayWeek: currentWeek, status: 'Expiring' };
@@ -296,13 +298,11 @@ function TaskDrawer({
     const handleToggleAssignee = (member) => {
         if (!canEditManagement) return;
 
-        // Lấy chính xác ID của User
         const targetUserId = extractUserId(member);
         if (!targetUserId) return;
 
         const currentAssignees = task.assignees || [];
 
-        // Kiểm tra xem ID này (hoặc object chứa ID này) đã có trong assignees chưa
         const exists = currentAssignees.some(a => {
             const aId = typeof a === 'object' ? (a._id || a.id) : String(a);
             return String(aId) === String(targetUserId);
@@ -443,7 +443,7 @@ function TaskDrawer({
                                     <span>Updating...</span>
                                 </>
                             ) : (
-                                task?.updatedAt ? `Updated ${new Date(task.updatedAt).toLocaleDateString('vi-VN')}` : 'Recently'
+                                task?.updatedAt ? `Updated ${formatDateDMY(task.updatedAt)}` : 'Recently'
                             )}
                         </span>
                     </div>
@@ -579,7 +579,6 @@ function TaskDrawer({
                                         const name = getMemberDisplayName(member);
                                         const email = getMemberEmail(member);
 
-                                        // Check khớp với cả User ID hoặc Member ID trả về từ API
                                         const isChecked = task.assignees?.some(a => {
                                             const id = typeof a === 'object' ? String(a._id || a.id) : String(a);
                                             return id === String(memberUserId) || id === memberRecordId;
@@ -593,11 +592,11 @@ function TaskDrawer({
                                                     checked={!!isChecked}
                                                     disabled={!canEditManagement}
                                                     style={{ cursor: canEditManagement ? 'pointer' : 'not-allowed' }}
-                                                    onChange={() => handleToggleAssignee(member)} // Truyền nguyên object member vào
+                                                    onChange={() => handleToggleAssignee(member)}
                                                 />
                                                 <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '10px', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {getInitials(name)}
-            </span>
+                                                    {getInitials(name)}
+                                                </span>
                                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                                                     <span>{name}</span>
                                                     {email && <span style={{ fontSize: '11px', color: '#6b7280' }}>{email}</span>}
@@ -886,7 +885,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         return Math.ceil(diffDays / 7);
     }, [project]);
 
-    // Lọc task kết hợp theo tên (searchQuery) và theo week động
     const filteredTasks = useMemo(() => {
         return tasks.filter((task) => {
             const query = searchQuery.toLowerCase().trim();
@@ -1110,13 +1108,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         );
     }
 
-    const formattedStartDate = (project?.startDate || project?.createdDate || project?.createdAt)
-        ? new Date(project.startDate || project.createdDate || project.createdAt).toLocaleDateString('vi-VN')
-        : 'Chưa đặt';
-
-    const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
-        ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
-        : 'Chưa đặt';
+    // Đã thay đổi định dạng hiển thị ngày ở Header
+    const formattedStartDate = formatDateDMY(project?.startDate || project?.createdDate || project?.createdAt);
+    const formattedDueDate = formatDateDMY(project?.date || project?.dueDate || project?.endDate);
 
     return (
         <div className="app-shell">
@@ -1254,7 +1248,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                             });
                                                             const canDragThisTask = isManager || isLeader || isTaskAssignee;
 
-                                                            // TÍNH TOÁN WEEK VÀ LẤY TRẠNG THÁI ON TRACK / EXPIRING / OVERDUE
                                                             const { displayWeek, status } = calculateTaskWeekAndStatus(task, project);
 
                                                             return (
@@ -1308,7 +1301,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                                 </div>
 
                                                                                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                                                                    {/* TAG TRẠNG THÁI TASK */}
                                                                                     {status === 'Overdue' && (
                                                                                         <span
                                                                                             title="Task đã quá hạn dự án"

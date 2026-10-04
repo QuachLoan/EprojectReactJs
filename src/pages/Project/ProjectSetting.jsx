@@ -25,7 +25,7 @@ import {
 import {
     fetchProjectById,
     fetchTasksByProject,
-    fetchColumnsByProject, // Hàm API lấy danh sách cột theo dự án
+    fetchColumnsByProject,
     updateProject,
     deleteProject,
     fetchMembersByProject,
@@ -33,13 +33,24 @@ import {
     deleteMemberByProject
 } from '../../../api';
 
-// Hàm lấy ngày hiện tại dạng YYYY-MM-DD theo giờ địa phương
+// Hàm lấy ngày hiện tại dạng YYYY-MM-DD (dành cho HTML input[type="date"])
 const getTodayString = () => {
     const d = new Date();
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+};
+
+// Hàm bổ trợ định dạng ngày dạng DD/MM/YYYY
+const formatDateDMY = (dateValue) => {
+    if (!dateValue) return 'Chưa đặt';
+    const d = new Date(dateValue);
+    if (isNaN(d.getTime())) return 'Chưa đặt';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
 };
 
 // Helper tính các tuần của dự án dựa trên startDate và dueDate
@@ -65,7 +76,11 @@ const calculateProjectWeeks = (startDateStr, endDateStr) => {
             currentEnd = new Date(end);
         }
 
-        const formatDay = (d) => `${d.getDate()}/${d.getMonth() + 1}`;
+        const formatDay = (d) => {
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            return `${day}/${month}`;
+        };
 
         weeks.push({
             index: index,
@@ -333,25 +348,19 @@ export default function ProjectSetting() {
         return username.toLowerCase().includes(search) || email.toLowerCase().includes(search);
     });
 
-    // LẤY DANH SÁCH ID CỦA CÁC CỘT CÓ POSITION === 3 (CỘT DONE)
     const doneColumnIds = useMemo(() => {
         return columns
             .filter(col => Number(col.position) === 3)
             .map(col => String(col._id || col.id));
     }, [columns]);
 
-    // CHỈ TÍNH ĐIỂM CHO TASK NẰM Ở CỘT CÓ POSITION === 3
     const calculateMemberPointsByWeek = (member, weekNum) => {
         const uId = extractUserId(member);
         if (!uId || !tasks.length) return 0;
 
         const weeklyDoneTasks = tasks.filter(t => {
             const isWeekMatch = Number(t.week) === Number(weekNum);
-
-            // Lấy ID cột của Task
             const taskColumnId = String(t.columnId?._id || t.columnId || t.column || '');
-
-            // Kiểm tra task thuộc cột position 3 hoặc task.column?.position === 3
             const isDone = doneColumnIds.includes(taskColumnId) || Number(t.column?.position) === 3;
 
             const assignees = t.assignees || [];
@@ -403,11 +412,9 @@ export default function ProjectSetting() {
             const res = await updateProject(projectId, payload);
             const updatedData = res?.data || res || {};
 
-            // Cập nhật lại project state với dữ liệu mới từ API hoặc đồng bộ các field date
             setProject(prev => ({
                 ...prev,
                 ...payload,
-                // Đồng bộ các trường tên khác để header rendering nhận ngay giá trị mới
                 date: payload.dueDate,
                 endDate: payload.dueDate,
                 start_date: payload.startDate,
@@ -434,13 +441,9 @@ export default function ProjectSetting() {
         }
     };
 
-    const headerStartDate = (project?.startDate || project?.start_date || project?.createdAt)
-        ? new Date(project.startDate || project.start_date || project.createdAt).toLocaleDateString('vi-VN')
-        : 'Chưa đặt';
-
-    const headerDueDate = (project?.date || project?.dueDate || project?.endDate)
-        ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
-        : 'Chưa đặt';
+    // Định dạng hiển thị ngày trên Header theo chuẩn DD/MM/YYYY
+    const headerStartDate = formatDateDMY(project?.startDate || project?.start_date || project?.createdAt);
+    const headerDueDate = formatDateDMY(project?.date || project?.dueDate || project?.endDate);
 
     const disabledInputStyle = !canManage
         ? { cursor: 'not-allowed', backgroundColor: 'var(--color-bg-muted, #f1f5f9)', opacity: 0.8 }
@@ -509,7 +512,7 @@ export default function ProjectSetting() {
                                 <Link to={`/projectboard/${projectId}`} className="project-tab">
                                     <LayoutGrid className="icon icon-sm" /> Board
                                 </Link>
-                                <Link to={`/projectlist/${projectId}`} className="project-tab active">
+                                <Link to={`/projectlist/${projectId}`} className="project-tab">
                                     <List className="icon icon-sm" /> Backlog
                                 </Link>
                                 <Link to={`/projectcalendar/${projectId}`} className="project-tab">
@@ -596,7 +599,7 @@ export default function ProjectSetting() {
                                                     />
                                                 </div>
                                                 <div className="field">
-                                                    <label className="field-label">Start date</label>
+                                                    <label className="field-label">Start date (DD/MM/YYYY)</label>
                                                     <input
                                                         type="date"
                                                         className="input"
@@ -617,7 +620,7 @@ export default function ProjectSetting() {
                                                     />
                                                 </div>
                                                 <div className="field">
-                                                    <label className="field-label">End date</label>
+                                                    <label className="field-label">End date (DD/MM/YYYY)</label>
                                                     <input
                                                         type="date"
                                                         className="input"
@@ -737,7 +740,6 @@ export default function ProjectSetting() {
                                                     const role = m.role || "Member";
                                                     const status = m.status || "Active";
 
-                                                    // Tính tổng điểm tuần dựa trên Task ở Cột có Position = 3
                                                     const weekPoints = calculateMemberPointsByWeek(m, selectedWeek);
 
                                                     return (

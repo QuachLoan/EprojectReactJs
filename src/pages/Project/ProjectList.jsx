@@ -28,6 +28,19 @@ import {
     deleteTask
 } from '../../../api.jsx';
 
+// Helper function format ngày dạng DD/MM/YYYY
+const formatDate = (dateString, fallback = 'Chưa đặt') => {
+    if (!dateString) return fallback;
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return fallback;
+
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+
+    return `${day}/${month}/${year}`;
+};
+
 export default function ProjectList() {
     const { id: projectId } = useParams();
 
@@ -47,7 +60,6 @@ export default function ProjectList() {
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
     const [newTaskPoints, setNewTaskPoints] = useState(0);
     const [newTaskDesc, setNewTaskDesc] = useState('');
-    // Chuyển newTaskWeek mặc định thành 1 (dạng số) giống ProjectBoard
     const [newTaskWeek, setNewTaskWeek] = useState(1);
 
     const getCurrentUser = () => {
@@ -143,9 +155,6 @@ export default function ProjectList() {
         loadData();
     }, [projectId]);
 
-    // ==========================================
-    // TÍNH TỔNG SỐ TUẦN DỰ ÁN GIỐNG PROJECTBOARD
-    // ==========================================
     const totalProjectWeeks = useMemo(() => {
         if (!project) return 1;
 
@@ -250,13 +259,9 @@ export default function ProjectList() {
         }
     };
 
-    const formattedStartDate = (project?.startDate || project?.start_date || project?.createdAt)
-        ? new Date(project.startDate || project.start_date || project.createdAt).toLocaleDateString('vi-VN')
-        : 'Chưa đặt';
-
-    const formattedDueDate = (project?.date || project?.dueDate || project?.endDate)
-        ? new Date(project.date || project.dueDate || project.endDate).toLocaleDateString('vi-VN')
-        : 'Chưa đặt';
+    // Định dạng ngày bắt đầu và ngày kết thúc theo chuẩn DD/MM/YYYY
+    const formattedStartDate = formatDate(project?.startDate || project?.start_date || project?.createdAt);
+    const formattedDueDate = formatDate(project?.date || project?.dueDate || project?.endDate);
 
     return (
         <div className="app-shell">
@@ -373,7 +378,6 @@ export default function ProjectList() {
                                                         </span>
                                                     </td>
 
-                                                    {/* ĐỊNH DẠNG BẢNG HIỂN THỊ WEEK GIỐNG BOARD */}
                                                     <td style={{ padding: '12px 16px' }}>
                                                         <span style={{
                                                             background: '#e0e7ff',
@@ -477,7 +481,6 @@ export default function ProjectList() {
                                     />
                                 </div>
 
-                                {/* THAY THẾ DROPDOWN SELECT WEEK GIỐNG PROJECTBOARD */}
                                 <div className="form-group">
                                     <label className="form-label">Week</label>
                                     <select

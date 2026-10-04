@@ -323,16 +323,6 @@ export const updateProjectDetail = async (projectId, projectDetail) => {
     return response.json();
 };
 
-export const addProjectDocument = async (projectId, docData) => {
-    const token = localStorage.getItem('token');
-    const response = await fetch(`${API_BASE_URL}/project/${projectId}/documents`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(docData)
-    });
-    return response.json();
-};
-
 export const deleteProjectDocument = async (projectId, documentId) => {
     const token = localStorage.getItem('token');
     const response = await fetch(`${API_BASE_URL}/project/${projectId}/documents/${documentId}`, {
@@ -343,10 +333,14 @@ export const deleteProjectDocument = async (projectId, documentId) => {
 };
 
 // api.jsx
-export const uploadProjectDocument = async (projectId, file) => {
+export const uploadProjectDocument = async (projectId, files) => {
     const token = localStorage.getItem('token');
     const formData = new FormData();
-    formData.append('file', file); // Đúng chữ 'file'[cite: 7]
+
+    // Lặp qua mảng files và đính kèm vào 'files' key (khớp với upload.array('files'))
+    Array.from(files).forEach((file) => {
+        formData.append('files', file);
+    });
 
     const res = await fetch(`${API_BASE_URL}/project/${projectId}/documents/upload`, {
         method: 'POST',
