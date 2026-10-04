@@ -145,6 +145,13 @@ export default function ProjectOverview() {
     // Upload multiple files to server
     const handleFileUpload = async (e) => {
         e.preventDefault();
+
+        // Chặn người dùng nếu không phải Manager hoặc Admin
+        if (!isManager) {
+            alert("Bạn cần có quyền Manager hoặc Admin để thực hiện thao tác này!");
+            return;
+        }
+
         if (!selectedFiles || selectedFiles.length === 0) {
             alert("Please select at least one file to upload!");
             return;
@@ -298,26 +305,32 @@ export default function ProjectOverview() {
                             <Upload size={20} color="#4f46e5" /> Documents & Attachments
                         </h3>
 
-                        {/* File Upload Form */}
-                        <form onSubmit={handleFileUpload} style={{ display: 'flex', gap: '12px', marginBottom: '20px', alignItems: 'center' }}>
-                            <input
-                                type="file"
-                                multiple
-                                className="input"
-                                style={{ flex: '1', padding: '8px' }}
-                                onChange={(e) => setSelectedFiles(e.target.files)}
-                                required
-                            />
-                            <button
-                                type="submit"
-                                className="btn btn-primary"
-                                disabled={isUploading || selectedFiles.length === 0}
-                                style={{ cursor: (isUploading || selectedFiles.length === 0) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
-                            >
-                                {isUploading ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
-                                <span>Upload ({selectedFiles.length || 0} files)</span>
-                            </button>
-                        </form>
+                        {/* File Upload Form - Chỉ hiển thị cho Manager và Admin */}
+                        {isManager ? (
+                            <form onSubmit={handleFileUpload} style={{ display: 'flex', gap: '12px', marginBottom: '20px', alignItems: 'center' }}>
+                                <input
+                                    type="file"
+                                    multiple
+                                    className="input"
+                                    style={{ flex: '1', padding: '8px' }}
+                                    onChange={(e) => setSelectedFiles(e.target.files)}
+                                    required
+                                />
+                                <button
+                                    type="submit"
+                                    className="btn btn-primary"
+                                    disabled={isUploading || selectedFiles.length === 0}
+                                    style={{ cursor: (isUploading || selectedFiles.length === 0) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
+                                >
+                                    {isUploading ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
+                                    <span>Upload ({selectedFiles.length || 0} files)</span>
+                                </button>
+                            </form>
+                        ) : (
+                            <div style={{ padding: '10px 12px', background: '#f3f4f6', borderRadius: '6px', color: '#6b7280', fontSize: '13px', marginBottom: '16px' }}>
+                                * Bạn cần quyền Manager hoặc Admin để tải lên tài liệu mới.
+                            </div>
+                        )}
 
                         {/* List of Uploaded Documents */}
                         <div className="document-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
