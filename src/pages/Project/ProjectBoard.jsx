@@ -21,7 +21,7 @@ import {
     moveTask,
 } from './../../../api.jsx';
 import "./project.css";
-import {Calendar, CalendarClock, LayoutGrid, List, ListChecks, Settings, UsersRound, Loader2, Check, X} from "lucide-react";
+import {Calendar, CalendarClock, LayoutGrid, List, ListChecks, Settings, UsersRound, Loader2, Check, X, Info} from "lucide-react";
 
 // Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa
 const getInitials = (name) => {
@@ -1146,6 +1146,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                         </Link>
                     </div>
                     <nav className="project-tabs">
+                        <Link to={`/projectoverview/${activeProjectId}`} className="project-tab">
+                            <Info className="icon icon-sm" /> Overview
+                        </Link>
                         <Link to={`/projectboard/${activeProjectId}`} className="project-tab active">
                             <LayoutGrid className="icon icon-sm" /> Board
                         </Link>

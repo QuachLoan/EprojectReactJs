@@ -310,3 +310,51 @@ export const updateUserStatus = async (userId, status) => {
     });
     return handleResponse(res);
 };
+
+// Thêm vào api.jsx của bạn
+export const updateProjectDetail = async (projectId, projectDetail) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_BASE_URL}/project/${projectId}/project-detail`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+
+        body: JSON.stringify({ projectDetail })
+    });
+    return response.json();
+};
+
+export const addProjectDocument = async (projectId, docData) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_BASE_URL}/project/${projectId}/documents`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(docData)
+    });
+    return response.json();
+};
+
+export const deleteProjectDocument = async (projectId, documentId) => {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_BASE_URL}/project/${projectId}/documents/${documentId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+    });
+    return response.json();
+};
+
+// api.jsx
+export const uploadProjectDocument = async (projectId, file) => {
+    const token = localStorage.getItem('token');
+    const formData = new FormData();
+    formData.append('file', file); // Đúng chữ 'file'[cite: 7]
+
+    const res = await fetch(`${API_BASE_URL}/project/${projectId}/documents/upload`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        },
+        body: formData
+    });
+
+    return handleResponse(res);
+};

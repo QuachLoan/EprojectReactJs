@@ -14,6 +14,7 @@ import ProjectSetting from "./pages/Project/ProjectSetting.jsx";
 import Register from './pages/Register/Register.jsx'
 import ForgetPassword from './pages/ForgetPassword/ForgetPassword.jsx'
 import ResetPassword from './pages/ForgetPassword/ResetPassword/ResetPassword.jsx'
+import ProjectOverview from "./pages/Project/ProjectOverview.jsx";
 function App() {
 
   return (
@@ -34,6 +35,7 @@ function App() {
           <Route path = "/projectlist/:id" element = {<ProjectList/>}/>
           <Route path = "/projectcalendar/:id" element = {<ProjectCalendar/>}/>
           <Route path = "/projectsetting/:id" element = {<ProjectSetting/>}/>
+          <Route path = "/projectoverview/:id" element = {<ProjectOverview/>}/>
       </Routes>
       </> 
   )

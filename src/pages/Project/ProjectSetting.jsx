@@ -18,7 +18,8 @@ import {
     UserPlus,
     X,
     MoreHorizontal,
-    UserCog
+    UserCog,
+    Info,
 } from 'lucide-react';
 
 import {
@@ -502,10 +503,13 @@ export default function ProjectSetting() {
                             </div>
 
                             <nav className="project-tabs">
+                                <Link to={`/projectoverview/${projectId}`} className="project-tab">
+                                    <Info className="icon icon-sm" /> Overview
+                                </Link>
                                 <Link to={`/projectboard/${projectId}`} className="project-tab">
                                     <LayoutGrid className="icon icon-sm" /> Board
                                 </Link>
-                                <Link to={`/projectlist/${projectId}`} className="project-tab">
+                                <Link to={`/projectlist/${projectId}`} className="project-tab active">
                                     <List className="icon icon-sm" /> Backlog
                                 </Link>
                                 <Link to={`/projectcalendar/${projectId}`} className="project-tab">
@@ -563,9 +567,8 @@ export default function ProjectSetting() {
 
                                             <div className="field">
                                                 <label className="field-label">Description</label>
-                                                <textarea
+                                                <input
                                                     className="textarea"
-                                                    rows="3"
                                                     value={formData.description}
                                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                                     disabled={!canManage}

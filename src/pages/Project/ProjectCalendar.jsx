@@ -18,7 +18,7 @@ import {
     Trash2,
     Calendar,
     StickyNote,
-    X
+    X, Info,
 } from 'lucide-react';
 
 import {
@@ -462,10 +462,13 @@ export default function ProjectCalendar() {
                             </div>
 
                             <nav className="project-tabs">
+                                <Link to={`/projectoverview/${projectId}`} className="project-tab">
+                                    <Info className="icon icon-sm" /> Overview
+                                </Link>
                                 <Link to={`/projectboard/${projectId}`} className="project-tab">
                                     <LayoutGrid className="icon icon-sm" /> Board
                                 </Link>
-                                <Link to={`/projectlist/${projectId}`} className="project-tab">
+                                <Link to={`/projectlist/${projectId}`} className="project-tab ">
                                     <List className="icon icon-sm" /> Backlog
                                 </Link>
                                 <Link to={`/projectcalendar/${projectId}`} className="project-tab active">

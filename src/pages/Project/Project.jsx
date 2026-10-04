@@ -139,7 +139,7 @@ export default function Projects() {
 
     const isAdmin = String(userRoleInUserTable).toLowerCase() === 'admin';
     const isManager = currentUserRole === 'Manager';
-    const canCreateProject = isAdmin || isManager;
+    const canCreateProject = isAdmin ;
 
     const resetProjectForm = () => {
         const currentToday = getTodayString();
@@ -709,13 +709,12 @@ export default function Projects() {
                                 </div>
                                 <div className="field">
                                     <label className="field-label">Description</label>
-                                    <textarea
+                                    <input
                                         className="textarea"
                                         placeholder="What is this project about?"
-                                        rows={2}
                                         value={projectDesc}
                                         onChange={(e) => setProjectDesc(e.target.value)}
-                                    ></textarea>
+                                    ></input>
                                 </div>
 
                                 <div className="grid-2">

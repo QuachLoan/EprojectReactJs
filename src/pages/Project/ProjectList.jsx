@@ -14,7 +14,8 @@ import {
     UsersRound,
     ListChecks,
     CalendarClock,
-    Trash2
+    Trash2,
+    Info,
 } from 'lucide-react';
 
 import {
@@ -303,6 +304,9 @@ export default function ProjectList() {
                             </div>
 
                             <nav className="project-tabs">
+                                <Link to={`/projectoverview/${projectId}`} className="project-tab">
+                                    <Info className="icon icon-sm" /> Overview
+                                </Link>
                                 <Link to={`/projectboard/${projectId}`} className="project-tab">
                                     <LayoutGrid className="icon icon-sm" /> Board
                                 </Link>
