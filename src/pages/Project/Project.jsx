@@ -427,7 +427,7 @@ export default function Projects() {
                                     return (
                                         <Link
                                             key={pId}
-                                            to={`/projectboard/${pId}`}
+                                            to={`/projectoverview/${pId}`}
                                             className="card project-card"
                                         >
                                             <div className="project-card-top">
