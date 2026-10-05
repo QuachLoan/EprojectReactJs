@@ -218,7 +218,7 @@ function Header({ onOpenSidebar, onOpenModal }) {
                                                 {task.title || task.name}
                                             </div>
                                             <div style={{ fontSize: '11px', color: '#d97706', fontWeight: 500 }}>
-                                                ⚠️ Expiring soon (≤ 2 days left)
+                                                 Expiring soon
                                             </div>
                                         </Link>
                                     ))
