@@ -28,6 +28,9 @@ import {
     Info, BarChart2
 } from "lucide-react";
 
+// Domain Backend chứa thư mục uploads
+const API_BASE_URL = "http://localhost:3000";
+
 // Helper function format ngày dạng DD/MM/YYYY
 const formatDate = (dateString, fallback = 'Chưa đặt') => {
     if (!dateString) return fallback;
@@ -79,7 +82,7 @@ export default function ProjectOverview() {
             try {
                 const token = localStorage.getItem("token");
                 if (!token) return;
-                const res = await fetch("http://localhost:3000/api/user/currentUser", {
+                const res = await fetch(`${API_BASE_URL}/api/user/currentUser`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 const data = await res.json();
@@ -346,12 +349,23 @@ export default function ProjectOverview() {
 
                                     const isOwnerOrManager = isManager || String(doc.uploadedBy?._id || doc.uploadedBy) === String(currentUserId);
 
+                                    // FIX LỖI: Nối Domain Backend nếu doc.url là đường dẫn tương đối (/uploads/...)
+                                    const fileUrl = doc.url?.startsWith('http')
+                                        ? doc.url
+                                        : `${API_BASE_URL}${doc.url}`;
+
                                     return (
                                         <div key={doc._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: '#f9fafb', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                                 <FileText size={24} color="#4f46e5" />
                                                 <div>
-                                                    <a href={doc.url} target="_blank" rel="noopener noreferrer" download style={{ fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}>
+                                                    <a
+                                                        href={fileUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        download
+                                                        style={{ fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}
+                                                    >
                                                         {doc.name}
                                                     </a>
                                                 </div>
