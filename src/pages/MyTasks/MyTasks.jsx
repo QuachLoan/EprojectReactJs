@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import {
     fetchTaskById,
     updateTask,
@@ -726,13 +726,53 @@ function TaskDrawer({
 function MyTasks() {
     const [activeTab, setActiveTab] = useState("all");
     const [tasks, setTasks] = useState([]);
-    const [projectMap, setProjectMap] = useState({}); // Cache thông tin Project { [projectId]: projectObject }
+    const [projectMap, setProjectMap] = useState({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [searchQuery, setSearchQuery] = useState("");
 
     const [selectedTaskId, setSelectedTaskId] = useState(null);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+    // Tính toán số task Expiring và phát event cập nhật cho Nav
+    const notifyNavToUpdate = useCallback((currentTasks = tasks, pMap = projectMap) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const expiringCount = currentTasks.filter((task) => {
+            // 1. Kiểm tra trạng thái xem có thuộc Done / Completed không
+            const statusName = (typeof task.columnId === 'object'
+                ? (task.columnId?.name || task.columnId?.title || "")
+                : "").toLowerCase();
+            const isDone = statusName.includes('done') || statusName.includes('completed');
+            if (isDone) return false;
+
+            // 2. Xác định ngày hết hạn (dueDate hoặc tính theo tuần dự án)
+            const projId = typeof task.projectId === 'object' ? (task.projectId?._id || task.projectId?.id) : task.projectId;
+            const projStartDate = (typeof task.projectId === 'object' && task.projectId?.startDate)
+                ? task.projectId?.startDate
+                : pMap[projId]?.startDate;
+
+            const effectiveDueDate = task.dueDate || calculateDueDateByWeek(projStartDate, task.week || 1);
+            if (!effectiveDueDate) return false;
+
+            const dueDate = new Date(effectiveDueDate);
+            dueDate.setHours(0, 0, 0, 0);
+
+            const diffTime = dueDate.getTime() - today.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            // Task ở mục Expiring: Còn từ 0 đến 2 ngày nữa hết hạn (bao gồm cả "Due today")
+            return diffDays >= 0 && diffDays <= 2;
+        }).length;
+
+        window.dispatchEvent(new CustomEvent("myTasksUpdated", { detail: { count: expiringCount } }));
+    }, [tasks, projectMap]);
+
+    // Bắn event update mỗi khi danh sách tasks hoặc projectMap có thay đổi
+    useEffect(() => {
+        notifyNavToUpdate(tasks, projectMap);
+    }, [tasks, projectMap, notifyNavToUpdate]);
 
     const handleOpenDrawer = (taskId) => {
         setSelectedTaskId(taskId);
@@ -765,7 +805,6 @@ function MyTasks() {
             const realTasks = Array.isArray(data) ? data : (data?.data || []);
             setTasks(realTasks);
 
-            // Tìm danh sách ID dự án chưa có startDate để fetch bổ sung
             const uniqueProjIds = Array.from(new Set(
                 realTasks
                     .map(t => typeof t.projectId === 'object' ? (t.projectId?._id || t.projectId?.id) : t.projectId)
@@ -844,7 +883,23 @@ function MyTasks() {
             today.setHours(0, 0, 0, 0);
             dueDate.setHours(0, 0, 0, 0);
 
+            const diffTime = dueDate.getTime() - today.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
             if (activeTab === "upcoming") return dueDate > today;
+
+            // Tab Expiring: Lọc các task chưa xong và sắp hết hạn trong 0..2 ngày
+            if (activeTab === "expiring") {
+                const statusName = (typeof task.columnId === 'object'
+                    ? (task.columnId?.name || task.columnId?.title || "")
+                    : "").toLowerCase();
+
+                const isDone = statusName.includes('done') || statusName.includes('completed');
+                if (isDone) return false;
+
+                return diffDays >= 0 && diffDays <= 2;
+            }
+
             if (activeTab === "overdue") return dueDate < today;
 
             return true;
@@ -885,6 +940,12 @@ function MyTasks() {
                             Upcoming
                         </button>
                         <button
+                            className={`pill-tab ${activeTab === "expiring" ? "active" : ""}`}
+                            onClick={() => setActiveTab('expiring')}
+                        >
+                            Expiring
+                        </button>
+                        <button
                             className={`pill-tab ${activeTab === "overdue" ? "active" : ""}`}
                             onClick={() => setActiveTab('overdue')}
                         >
@@ -901,7 +962,6 @@ function MyTasks() {
                                     ? (task.columnId?.name || task.columnId?.title || "No status")
                                     : "Review";
 
-                                // Lấy ID và startDate của Project
                                 const projId = typeof task.projectId === 'object' ? (task.projectId?._id || task.projectId?.id) : task.projectId;
                                 const projStartDate = (typeof task.projectId === 'object' && task.projectId?.startDate)
                                     ? task.projectId?.startDate
@@ -939,7 +999,6 @@ function MyTasks() {
                                             </div>
                                         </div>
 
-                                        {/* Cột Status + Badge Tuần (Chỉ hiển thị W1, W2...) */}
                                         <span className="task-list-column-cell" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <span
                                                 className="project-color-dot"
@@ -947,7 +1006,6 @@ function MyTasks() {
                                             ></span>
                                             <span>{statusName}</span>
 
-                                            {/* Badge Tuần đơn lẻ */}
                                             <span style={{
                                                 fontSize: '11px',
                                                 padding: '2px 6px',
@@ -968,7 +1026,6 @@ function MyTasks() {
                                             </span>
                                         </span>
 
-                                        {/* Cột Due hiển thị duy nhất số ngày còn lại */}
                                         <span className="task-list-due-cell">
                                             {remainingText}
                                         </span>
