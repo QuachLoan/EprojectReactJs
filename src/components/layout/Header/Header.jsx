@@ -188,7 +188,7 @@ function Header({ onOpenSidebar, onOpenModal }) {
                             overflow: 'hidden'
                         }}>
                             <div style={{ padding: '12px 16px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <strong style={{ fontSize: '14px', color: '#111827' }}>Task Notifications</strong>
+                                <strong style={{ fontSize: '14px', color: '#111827' }}>Notifications</strong>
                                 <span style={{ fontSize: '12px', color: '#ef4444', fontWeight: 600 }}>{count} expiring soon</span>
                             </div>
 

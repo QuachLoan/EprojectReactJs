@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { io } from 'socket.io-client';
 import Header from './../../components/layout/Header/Header.jsx';
 import Sidebar from './../../components/layout/Sidebar/SideBar.jsx';
 import {
@@ -35,6 +36,13 @@ import {
     Info,
     BarChart2
 } from "lucide-react";
+
+// Khởi tạo Socket Client (Sử dụng URL server Node.js của bạn)
+const SOCKET_URL = "http://localhost:3000";
+const socket = io(SOCKET_URL, {
+    autoConnect: false,
+    transports: ['websocket', 'polling']
+});
 
 // Helper function định dạng ngày theo chuẩn DD/MM/YYYY
 const formatDateDMY = (dateValue) => {
@@ -473,7 +481,7 @@ function TaskDrawer({
                 {loading || !task ? (
                     <div className="drawer-body" style={{ padding: '48px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', color: '#6b7280' }}>
                         <Loader2 className="animate-spin" size={32} style={{ color: '#4f46e5' }} />
-                        <span>Đang tải thông tin task...</span>
+                        <span>Loading...</span>
                     </div>
                 ) : (
                     <div className="drawer-body">
@@ -879,6 +887,108 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         fetchBoardData();
     }, [activeProjectId]);
 
+    // ==========================================
+    // TÍCH HỢP SOCKET.IO AN TOÀN
+    // ==========================================
+    useEffect(() => {
+        if (!activeProjectId) return;
+
+        if (!socket.connected) {
+            socket.connect();
+        }
+
+        // Join room của dự án hiện tại
+        socket.emit('join_project', activeProjectId);
+
+        // Nút thắt 1: Khi có Task mới
+        const handleTaskCreated = (newTask) => {
+            if (!newTask) return;
+            const taskData = newTask.data || newTask;
+            const taskId = String(taskData._id || taskData.id);
+
+            setTasks(prevTasks => {
+                const exists = prevTasks.some(t => String(t._id || t.id) === taskId);
+                if (exists) return prevTasks;
+
+                const formattedTask = {
+                    ...taskData,
+                    _id: taskId,
+                    columnId: extractColumnId(taskData.columnId),
+                    points: taskData.points ?? taskData.point ?? 0,
+                    week: taskData.week ?? 1
+                };
+                return [...prevTasks, formattedTask];
+            });
+        };
+
+        // Nút thắt 2: Khi có Task cập nhật (Tiêu đề, người gán, điểm số...)
+        const handleTaskUpdated = (updatedTask) => {
+            if (!updatedTask) return;
+            const taskData = updatedTask.data || updatedTask;
+            const taskId = String(taskData._id || taskData.id);
+
+            setTasks(prevTasks =>
+                prevTasks.map(t => {
+                    if (String(t._id || t.id) === taskId) {
+                        return {
+                            ...t,
+                            ...taskData,
+                            _id: taskId,
+                            columnId: extractColumnId(taskData.columnId || t.columnId),
+                            points: taskData.points ?? taskData.point ?? t.points,
+                            week: taskData.week ?? t.week
+                        };
+                    }
+                    return t;
+                })
+            );
+        };
+
+        // Nút thắt 3: Khi Kéo Thả / Chuyển cột (Move Task)
+        const handleTaskMoved = (data) => {
+            if (!data) return;
+            const taskId = String(data.taskId || data._id || data.id);
+            const targetColumnId = extractColumnId(data.destColumnId || data.columnId);
+
+            if (!taskId || !targetColumnId) return;
+
+            setTasks(prevTasks =>
+                prevTasks.map(t => {
+                    if (String(t._id || t.id) === taskId) {
+                        return {
+                            ...t,
+                            columnId: targetColumnId
+                        };
+                    }
+                    return t;
+                })
+            );
+        };
+
+        // Nút thắt 4: Khi Task bị xóa
+        const handleTaskDeleted = (deletedData) => {
+            if (!deletedData) return;
+            const deletedId = String(deletedData.taskId || deletedData._id || deletedData.id || deletedData);
+
+            setTasks(prevTasks => prevTasks.filter(t => String(t._id || t.id) !== deletedId));
+        };
+
+        // Đăng ký nhận thông điệp từ server
+        socket.on('task_created', handleTaskCreated);
+        socket.on('task_updated', handleTaskUpdated);
+        socket.on('task_moved', handleTaskMoved);
+        socket.on('task_deleted', handleTaskDeleted);
+
+        // Dọn dẹp listener và leave room khi unmount
+        return () => {
+            socket.emit('leave_project', activeProjectId);
+            socket.off('task_created', handleTaskCreated);
+            socket.off('task_updated', handleTaskUpdated);
+            socket.off('task_moved', handleTaskMoved);
+            socket.off('task_deleted', handleTaskDeleted);
+        };
+    }, [activeProjectId]);
+
     const totalProjectWeeks = useMemo(() => {
         if (!project) return 1;
 
@@ -918,7 +1028,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             if (!task || !task.columnId) return;
             const taskColId = extractColumnId(task.columnId);
             if (String(taskColId) === String(column._id)) {
-                columnTaskMap.set(String(task._id), task);
+                columnTaskMap.set(String(task._id || task.id), task);
             }
         });
 
@@ -967,7 +1077,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
     const handleTaskUpdatedFromDrawer = (updatedTask) => {
         setTasks(prevTasks =>
-            prevTasks.map(t => String(t._id) === String(updatedTask._id)
+            prevTasks.map(t => String(t._id || t.id) === String(updatedTask._id || updatedTask.id)
                 ? { ...t, ...updatedTask, columnId: extractColumnId(updatedTask.columnId) }
                 : t
             )
@@ -975,7 +1085,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     };
 
     const handleTaskDeletedFromDrawer = (deletedTaskId) => {
-        setTasks(prevTasks => prevTasks.filter(t => String(t._id) !== String(deletedTaskId)));
+        setTasks(prevTasks => prevTasks.filter(t => String(t._id || t.id) !== String(deletedTaskId)));
     };
 
     const handleOnDragEnd = async (result) => {
@@ -996,7 +1106,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
         setTasks((prevTasks) => {
             const newTasks = Array.from(prevTasks);
-            const movedTaskIndex = newTasks.findIndex(t => String(t._id) === String(draggableId));
+            const movedTaskIndex = newTasks.findIndex(t => String(t._id || t.id) === String(draggableId));
 
             if (movedTaskIndex !== -1) {
                 newTasks[movedTaskIndex] = {
@@ -1035,14 +1145,14 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
         setTasks((prevTasks) =>
             prevTasks.map(t =>
-                String(t._id) === String(task._id)
+                String(t._id || t.id) === String(task._id || task.id)
                     ? { ...t, columnId: extractColumnId(destColumnId) }
                     : t
             )
         );
 
         try {
-            await moveTask(task._id, {
+            await moveTask(task._id || task.id, {
                 sourceColumnId: currentColumnId,
                 destColumnId: destColumnId,
                 destinationIndex: 0,
@@ -1103,7 +1213,12 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 startDate: createdTask.startDate || new Date().toISOString()
             };
 
-            setTasks(prevTasks => [...prevTasks, formattedNewTask]);
+            setTasks(prevTasks => {
+                const exists = prevTasks.some(t => String(t._id || t.id) === String(formattedNewTask._id));
+                if (exists) return prevTasks;
+                return [...prevTasks, formattedNewTask];
+            });
+
             closeModal();
         } catch (error) {
             console.error("Lỗi khi tạo task mới:", error);
@@ -1121,7 +1236,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         );
     }
 
-    // Đã thay đổi định dạng hiển thị ngày ở Header
     const formattedStartDate = formatDateDMY(project?.startDate || project?.createdDate || project?.createdAt);
     const formattedDueDate = formatDateDMY(project?.date || project?.dueDate || project?.endDate);
 
@@ -1268,8 +1382,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
                                                             return (
                                                                 <Draggable
-                                                                    key={String(task._id)}
-                                                                    draggableId={String(task._id)}
+                                                                    key={String(task._id || task.id)}
+                                                                    draggableId={String(task._id || task.id)}
                                                                     index={index}
                                                                     isDragDisabled={!canDragThisTask}
                                                                 >
@@ -1279,7 +1393,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                             ref={provided.innerRef}
                                                                             {...provided.draggableProps}
                                                                             {...provided.dragHandleProps}
-                                                                            onClick={() => handleOpenTaskDrawer(task._id)}
+                                                                            onClick={() => handleOpenTaskDrawer(task._id || task.id)}
                                                                             style={{
                                                                                 ...provided.draggableProps.style,
                                                                                 opacity: snapshot.isDragging ? 0.9 : 1,
