@@ -12,6 +12,7 @@ import {
     fetchColumnsByProject,
     fetchMembersByProject
 } from "./../../../api.jsx";
+import { socket } from "./../../utils/socket.js";
 import { Loader2 } from "lucide-react";
 
 // --- HELPER FUNCTIONS ---
@@ -137,6 +138,7 @@ function TaskDrawer({
 
     const currentUserId = getCurrentUserId();
 
+    // 1. Fetch chi tiết Task khi Drawer mở
     useEffect(() => {
         if (isDrawerOpen && taskId) {
             setLoading(true);
@@ -217,6 +219,40 @@ function TaskDrawer({
                 .finally(() => setLoading(false));
         }
     }, [taskId, isDrawerOpen, currentUserId]);
+
+    // 2. Tích hợp Socket Real-time cho Drawer (Lắng nghe comment & activity mới)
+    useEffect(() => {
+        if (!isDrawerOpen || !taskId) return;
+
+        if (!socket.connected) {
+            socket.connect();
+        }
+
+        socket.emit("join_task", taskId);
+
+        const handleNewComment = (newComment) => {
+            const commentData = newComment?.data || newComment;
+            if (String(commentData.taskId || commentData.task) === String(taskId)) {
+                setComments((prev) => [...prev, commentData]);
+            }
+        };
+
+        const handleNewActivity = (newActivity) => {
+            const activityData = newActivity?.data || newActivity;
+            if (String(activityData.taskId || activityData.task) === String(taskId)) {
+                setActivities((prev) => [activityData, ...prev]);
+            }
+        };
+
+        socket.on("comment_added", handleNewComment);
+        socket.on("activity_added", handleNewActivity);
+
+        return () => {
+            socket.emit("leave_task", taskId);
+            socket.off("comment_added", handleNewComment);
+            socket.off("activity_added", handleNewActivity);
+        };
+    }, [isDrawerOpen, taskId]);
 
     const isOwnerOrManager = ["Owner", "Manager", "Admin", "Leader"].includes(currentUserRole);
     const isAssignee = task?.assignees?.some(a => {
@@ -403,7 +439,8 @@ function TaskDrawer({
 
         try {
             const newComment = await addComment(taskId, textToSend);
-            setComments(prev => [...prev, newComment?.data || newComment]);
+            const addedComment = newComment?.data || newComment;
+            setComments(prev => [...prev, addedComment]);
         } catch (error) {
             console.error("Lỗi khi gửi bình luận:", error);
         }
@@ -740,14 +777,12 @@ function MyTasks() {
         today.setHours(0, 0, 0, 0);
 
         const expiringCount = currentTasks.filter((task) => {
-            // 1. Kiểm tra trạng thái xem có thuộc Done / Completed không
             const statusName = (typeof task.columnId === 'object'
                 ? (task.columnId?.name || task.columnId?.title || "")
                 : "").toLowerCase();
             const isDone = statusName.includes('done') || statusName.includes('completed');
             if (isDone) return false;
 
-            // 2. Xác định ngày hết hạn (dueDate hoặc tính theo tuần dự án)
             const projId = typeof task.projectId === 'object' ? (task.projectId?._id || task.projectId?.id) : task.projectId;
             const projStartDate = (typeof task.projectId === 'object' && task.projectId?.startDate)
                 ? task.projectId?.startDate
@@ -762,7 +797,6 @@ function MyTasks() {
             const diffTime = dueDate.getTime() - today.getTime();
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-            // Task ở mục Expiring: Còn từ 0 đến 2 ngày nữa hết hạn (bao gồm cả "Due today")
             return diffDays >= 0 && diffDays <= 2;
         }).length;
 
@@ -848,6 +882,52 @@ function MyTasks() {
         loadMyTasks();
     }, []);
 
+    // Tích hợp Socket Real-time cho danh sách Task chính
+    useEffect(() => {
+        if (!socket.connected) {
+            socket.connect();
+        }
+
+        const currentUserId = getCurrentUserId();
+        if (currentUserId) {
+            socket.emit("join_user", currentUserId);
+        }
+
+        const handleTaskUpdated = (updatedTask) => {
+            const realTask = updatedTask?.data || updatedTask;
+            setTasks((prevTasks) =>
+                prevTasks.map((t) =>
+                    String(t._id) === String(realTask._id) ? { ...t, ...realTask } : t
+                )
+            );
+        };
+
+        const handleTaskCreated = (newTask) => {
+            const realTask = newTask?.data || newTask;
+            setTasks((prevTasks) => {
+                if (prevTasks.some((t) => String(t._id) === String(realTask._id))) {
+                    return prevTasks;
+                }
+                return [realTask, ...prevTasks];
+            });
+        };
+
+        const handleTaskDeleted = (data) => {
+            const deletedId = typeof data === 'object' ? (data.taskId || data._id || data.id) : data;
+            setTasks((prevTasks) => prevTasks.filter((t) => String(t._id) !== String(deletedId)));
+        };
+
+        socket.on("task_updated", handleTaskUpdated);
+        socket.on("task_created", handleTaskCreated);
+        socket.on("task_deleted", handleTaskDeleted);
+
+        return () => {
+            socket.off("task_updated", handleTaskUpdated);
+            socket.off("task_created", handleTaskCreated);
+            socket.off("task_deleted", handleTaskDeleted);
+        };
+    }, []);
+
     const handleTaskUpdatedFromDrawer = (updatedTask) => {
         setTasks((prevTasks) =>
             prevTasks.map((t) =>
@@ -874,7 +954,6 @@ function MyTasks() {
                 : "").toLowerCase();
             const isDone = statusName.includes('done') || statusName.includes('completed');
 
-            // Tab Completed: Lọc các task có status dạng Done/Completed
             if (activeTab === "completed") {
                 return isDone;
             }
@@ -898,7 +977,6 @@ function MyTasks() {
 
             if (activeTab === "upcoming") return dueDate > today;
 
-            // Tab Expiring: Lọc các task chưa xong và sắp hết hạn trong 0..2 ngày
             if (activeTab === "expiring") {
                 if (isDone) return false;
                 return diffDays >= 0 && diffDays <= 2;

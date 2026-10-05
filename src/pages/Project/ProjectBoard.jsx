@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { io } from 'socket.io-client';
+// Import socket instance từ file socket.js của bạn
+import {socket} from './../../utils/socket.js';
 import Header from './../../components/layout/Header/Header.jsx';
 import Sidebar from './../../components/layout/Sidebar/SideBar.jsx';
 import {
@@ -36,13 +37,6 @@ import {
     Info,
     BarChart2
 } from "lucide-react";
-
-// Khởi tạo Socket Client (Sử dụng URL server Node.js của bạn)
-const SOCKET_URL = "http://localhost:3000";
-const socket = io(SOCKET_URL, {
-    autoConnect: false,
-    transports: ['websocket', 'polling']
-});
 
 // Helper function định dạng ngày theo chuẩn DD/MM/YYYY
 const formatDateDMY = (dateValue) => {
@@ -888,19 +882,15 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     }, [activeProjectId]);
 
     // ==========================================
-    // TÍCH HỢP SOCKET.IO AN TOÀN
+    // TÍCH HỢP SOCKET.IO (DÙNG SOCKET.JS)
     // ==========================================
     useEffect(() => {
         if (!activeProjectId) return;
 
-        if (!socket.connected) {
-            socket.connect();
-        }
-
-        // Join room của dự án hiện tại
+        // Tham gia room của project
         socket.emit('join_project', activeProjectId);
 
-        // Nút thắt 1: Khi có Task mới
+        // Sự kiện 1: Khi có Task mới
         const handleTaskCreated = (newTask) => {
             if (!newTask) return;
             const taskData = newTask.data || newTask;
@@ -921,7 +911,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             });
         };
 
-        // Nút thắt 2: Khi có Task cập nhật (Tiêu đề, người gán, điểm số...)
+        // Sự kiện 2: Khi có Task được cập nhật
         const handleTaskUpdated = (updatedTask) => {
             if (!updatedTask) return;
             const taskData = updatedTask.data || updatedTask;
@@ -944,7 +934,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             );
         };
 
-        // Nút thắt 3: Khi Kéo Thả / Chuyển cột (Move Task)
+        // Sự kiện 3: Khi Kéo Thả / Di chuyển Task
         const handleTaskMoved = (data) => {
             if (!data) return;
             const taskId = String(data.taskId || data._id || data.id);
@@ -965,7 +955,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             );
         };
 
-        // Nút thắt 4: Khi Task bị xóa
+        // Sự kiện 4: Khi Task bị xóa
         const handleTaskDeleted = (deletedData) => {
             if (!deletedData) return;
             const deletedId = String(deletedData.taskId || deletedData._id || deletedData.id || deletedData);
@@ -973,13 +963,13 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             setTasks(prevTasks => prevTasks.filter(t => String(t._id || t.id) !== deletedId));
         };
 
-        // Đăng ký nhận thông điệp từ server
+        // Đăng ký listener từ socket instance
         socket.on('task_created', handleTaskCreated);
         socket.on('task_updated', handleTaskUpdated);
         socket.on('task_moved', handleTaskMoved);
         socket.on('task_deleted', handleTaskDeleted);
 
-        // Dọn dẹp listener và leave room khi unmount
+        // Hủy đăng ký listener và rời room khi unmount
         return () => {
             socket.emit('leave_project', activeProjectId);
             socket.off('task_created', handleTaskCreated);
