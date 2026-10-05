@@ -447,7 +447,7 @@ function TaskDrawer({
                 {loading || !task ? (
                     <div className="drawer-body" style={{ padding: '48px 24px', textAlign: 'center', color: '#6b7280' }}>
                         <Loader2 className="animate-spin" size={32} style={{ margin: '0 auto 12px' }} />
-                        <span>Đang tải thông tin task...</span>
+                        <span>Loading...</span>
                     </div>
                 ) : (
                     <div className="drawer-body">
@@ -869,6 +869,16 @@ function MyTasks() {
 
             if (activeTab === "all") return true;
 
+            const statusName = (typeof task.columnId === 'object'
+                ? (task.columnId?.name || task.columnId?.title || "")
+                : "").toLowerCase();
+            const isDone = statusName.includes('done') || statusName.includes('completed');
+
+            // Tab Completed: Lọc các task có status dạng Done/Completed
+            if (activeTab === "completed") {
+                return isDone;
+            }
+
             const projId = typeof task.projectId === 'object' ? (task.projectId?._id || task.projectId?.id) : task.projectId;
             const projStartDate = (typeof task.projectId === 'object' && task.projectId?.startDate)
                 ? task.projectId?.startDate
@@ -890,13 +900,7 @@ function MyTasks() {
 
             // Tab Expiring: Lọc các task chưa xong và sắp hết hạn trong 0..2 ngày
             if (activeTab === "expiring") {
-                const statusName = (typeof task.columnId === 'object'
-                    ? (task.columnId?.name || task.columnId?.title || "")
-                    : "").toLowerCase();
-
-                const isDone = statusName.includes('done') || statusName.includes('completed');
                 if (isDone) return false;
-
                 return diffDays >= 0 && diffDays <= 2;
             }
 
@@ -950,6 +954,12 @@ function MyTasks() {
                             onClick={() => setActiveTab('overdue')}
                         >
                             Overdue
+                        </button>
+                        <button
+                            className={`pill-tab ${activeTab === "completed" ? "active" : ""}`}
+                            onClick={() => setActiveTab('completed')}
+                        >
+                            Completed
                         </button>
                     </div>
 

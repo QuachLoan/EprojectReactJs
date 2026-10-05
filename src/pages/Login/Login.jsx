@@ -156,7 +156,7 @@ export default function LoginPage() {
                             opacity: isLoading ? 0.7 : 1
                         }}
                     >
-                        {isLoading ? 'Đang xử lý...' : 'Continue'}
+                        {isLoading ? 'Loading...' : 'Continue'}
                         {!isLoading && <ArrowRight size={16} />}
                     </button>
                 </form>
