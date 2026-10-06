@@ -15,17 +15,17 @@ const formatDateDMY = (dateValue) => {
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 };
 
-// Hàm tính số ngày bị trì trệ từ createdAt đến ngày hiện tại
-const calculateDaysStuck = (createdAt) => {
-    if (!createdAt) return 0;
-    const createdDate = new Date(createdAt);
-    if (isNaN(createdDate.getTime())) return 0;
+// Hàm tính số ngày bị trì trệ từ mốc thời gian cập nhật/chuyển status mới nhất đến ngày hiện tại
+const calculateDaysStuck = (dateValue) => {
+    if (!dateValue) return 0;
+    const lastDate = new Date(dateValue);
+    if (isNaN(lastDate.getTime())) return 0;
 
     const today = new Date();
 
     // Đặt về mốc 0h:00m:00s để tính chính xác chênh lệch theo ngày
     const t1 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const t2 = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate());
+    const t2 = new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate());
 
     const diffTime = Math.abs(t1 - t2);
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
@@ -116,7 +116,11 @@ export default function ProjectChartPage() {
                     }
 
                     const pos = colPositionMap.get(colId);
-                    const days = calculateDaysStuck(task.createdAt);
+
+                    // Sử dụng updatedAt để reset ngày khi chuyển cột/status. Nếu chưa có updatedAt thì fallback về createdAt
+                    const lastUpdatedDate = task.updatedAt || task.createdAt;
+                    const days = calculateDaysStuck(lastUpdatedDate);
+
                     const taskItem = {
                         id: task._id || task.id,
                         title: task.title || 'Untitled Task',
