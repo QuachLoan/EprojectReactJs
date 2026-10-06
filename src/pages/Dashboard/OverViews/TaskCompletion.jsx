@@ -1,23 +1,30 @@
 function TaskCompletion(){
     return(
     <>
-    <div className="card panel">
-              <h2 className="panel-title">Task Completion</h2>
-              <div className="donut-chart-row">
-                <div className="donut-chart">
-                  <svg width="96" height="96" viewBox="0 0 96 96" style={{ transform: 'rotate(-90deg)' }}>
-                    <circle cx="48" cy="48" r="42" fill="none" stroke="var(--color-border)" strokeWidth="12" />
-                    <circle cx="48" cy="48" r="42" fill="none" stroke="var(--color-success)" strokeWidth="12" strokeDasharray="106 264" strokeDashoffset="0" />
-                    <circle cx="48" cy="48" r="42" fill="none" stroke="var(--color-warning)" strokeWidth="12" strokeDasharray="47 264" strokeDashoffset="-106" />
-                    <circle cx="48" cy="48" r="42" fill="none" stroke="var(--color-danger)" strokeWidth="12" strokeDasharray="19 264" strokeDashoffset="-153" />
-                  </svg>
-                  <span className="donut-chart-label">38%</span>
-                </div>
-                <div className="donut-legend">
-                  <span className="donut-legend-item"><span className="donut-legend-dot" style={{ background: 'var(--color-success)' }}></span>Completed <span className="donut-legend-value">14</span></span>
-                  <span className="donut-legend-item"><span className="donut-legend-dot" style={{ background: 'var(--color-warning)' }}></span>In Progress <span className="donut-legend-value">6</span></span>
-                  <span className="donut-legend-item"><span className="donut-legend-dot" style={{ background: 'var(--color-danger)' }}></span>Overdue <span className="donut-legend-value">3</span></span>
-                </div>
+<div class="card panel">
+              <h2 class="panel-title">Today's Tasks</h2>
+              <div class="panel-list">
+                <a href="project-board.html?task=p1-t9" class="panel-row">
+                  <span class="priority-badge" style={{color:'#dc2626', background:'#fef2f2'}}><span class="icon icon-xs" data-icon="chevronsUp">
+                    <svg viewBox="0 0 24 24"><path d="m17 11-5-5-5 5"></path><path d="m17 18-5-5-5 5"></path></svg>
+                    </span>Urgent</span>
+                  <span class="panel-row-title">Kanban drag &amp; drop</span>
+                  <span class="panel-row-meta">TeamFlow Platform</span>
+                </a>
+                <a href="project-board.html?task=p1-t6" class="panel-row">
+                  <span class="priority-badge" style={{color:'#f97316', background:'#fff7ed'}}><span class="icon icon-xs" data-icon="arrowUp">
+                    <svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"></path><path d="M12 19V5"></path></svg>
+                    </span>High</span>
+                  <span class="panel-row-title">Build dashboard UI</span>
+                  <span class="panel-row-meta">TeamFlow Platform</span>
+                </a>
+                <a href="project-board.html?task=p1-t5" class="panel-row">
+                  <span class="priority-badge" style={{color:'#f97316', background:'#fff7ed'}}><span class="icon icon-xs" data-icon="arrowUp">
+                    <svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"></path><path d="M12 19V5"></path></svg>
+                    </span>High</span>
+                  <span class="panel-row-title">Implement login API</span>
+                  <span class="panel-row-meta">TeamFlow Platform</span>
+                </a>
               </div>
         </div>
     </>
