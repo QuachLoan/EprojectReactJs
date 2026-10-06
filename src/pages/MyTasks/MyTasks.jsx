@@ -28,11 +28,11 @@ const calculateDueDateByWeek = (startDateStr, weekNum = 1) => {
     return dueDate;
 };
 
-// Tính số ngày còn lại theo startDate của Project và week của Task
+// Calculate remaining days based on Project's startDate and Task's week
 const getRemainingDaysLabel = (startDateStr, weekNum = 1) => {
-    if (!startDateStr) return "Chưa đặt";
+    if (!startDateStr) return "Not set";
     const startDate = new Date(startDateStr);
-    if (isNaN(startDate.getTime())) return "Chưa đặt";
+    if (isNaN(startDate.getTime())) return "Not set";
 
     const currentWeek = Math.max(1, Number(weekNum) || 1);
     const daysToAdd = (currentWeek * 7) - 1;
@@ -113,7 +113,7 @@ const getCurrentUserId = () => {
     }
 };
 
-// --- COMPONENT TASK DRAWER ---
+// --- TASK DRAWER COMPONENT ---
 function TaskDrawer({
                         taskId,
                         isDrawerOpen,
@@ -167,7 +167,7 @@ function TaskDrawer({
                                 pStartDate = realProj?.startDate;
                             }
                         } catch (e) {
-                            console.error("Không thể lấy startDate của Project:", e);
+                            console.error("Failed to fetch Project startDate:", e);
                         }
                     }
 
@@ -213,7 +213,7 @@ function TaskDrawer({
                     setComments(Array.isArray(commentsData) ? commentsData : (commentsData?.data || []));
                     setActivities(Array.isArray(activitiesData) ? activitiesData : (activitiesData?.data || []));
                 })
-                .catch((err) => console.error("Lỗi khi tải chi tiết task:", err))
+                .catch((err) => console.error("Error loading task details:", err))
                 .finally(() => setLoading(false));
         }
     }, [taskId, isDrawerOpen, currentUserId]);
@@ -284,7 +284,7 @@ function TaskDrawer({
                 if (onTaskUpdated) onTaskUpdated(finalTask);
             }
         } catch (error) {
-            console.error("Lỗi khi cập nhật task:", error);
+            console.error("Error updating task:", error);
             setTask(previousTask);
             if (onTaskUpdated) onTaskUpdated(previousTask);
         } finally {
@@ -327,13 +327,13 @@ function TaskDrawer({
 
     const handleDeleteTask = async () => {
         if (!canDelete) return;
-        if (!window.confirm("Bạn có chắc chắn muốn xóa công việc này?")) return;
+        if (!window.confirm("Are you sure you want to delete this task?")) return;
         try {
             await deleteTask(taskId);
             if (onTaskDeleted) onTaskDeleted(taskId);
             handleCloseDrawer();
         } catch (error) {
-            console.error("Lỗi khi xóa task:", error);
+            console.error("Error deleting task:", error);
         }
     };
 
@@ -350,7 +350,7 @@ function TaskDrawer({
                 if (onTaskUpdated) onTaskUpdated({ ...task, checklist: realTask.checklist });
             }
         } catch (error) {
-            console.error("Lỗi khi thêm checklist:", error);
+            console.error("Error adding checklist item:", error);
         }
     };
 
@@ -371,7 +371,7 @@ function TaskDrawer({
                 if (onTaskUpdated) onTaskUpdated({ ...task, checklist: realTask.checklist });
             }
         } catch (error) {
-            console.error("Lỗi khi cập nhật checklist:", error);
+            console.error("Error updating checklist:", error);
         }
     };
 
@@ -389,7 +389,7 @@ function TaskDrawer({
                 await deleteChecklist(checklistId);
             }
         } catch (error) {
-            console.error("Lỗi khi xóa checklist:", error);
+            console.error("Error deleting checklist:", error);
             setTask(prev => ({ ...prev, checklist: previousChecklist }));
         }
     };
@@ -405,7 +405,7 @@ function TaskDrawer({
             const newComment = await addComment(taskId, textToSend);
             setComments(prev => [...prev, newComment?.data || newComment]);
         } catch (error) {
-            console.error("Lỗi khi gửi bình luận:", error);
+            console.error("Error sending comment:", error);
         }
     };
 
@@ -458,7 +458,7 @@ function TaskDrawer({
                             value={task.title || ''}
                             onChange={(e) => handleInputChange('title', e.target.value)}
                             onBlur={(e) => canEditAll && handleUpdateTaskField({ title: e.target.value })}
-                            placeholder="Nhập tiêu đề task..."
+                            placeholder="Enter task title..."
                         />
 
                         <div className="drawer-field-grid">
@@ -697,7 +697,7 @@ function TaskDrawer({
                             <ol className="timeline" style={{ paddingLeft: '16px', fontSize: '13px', color: '#4b5563' }}>
                                 {activities.map((act, index) => (
                                     <li key={act._id || index} className="timeline-item" style={{ marginBottom: '6px' }}>
-                                        <strong>{act.user?.username || act.user?.name || 'User'}</strong> {act.action || 'đã thao tác'}
+                                        <strong>{act.user?.username || act.user?.name || 'User'}</strong> {act.action || 'performed an action'}
                                     </li>
                                 ))}
                             </ol>
@@ -734,20 +734,18 @@ function MyTasks() {
     const [selectedTaskId, setSelectedTaskId] = useState(null);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-    // Tính toán số task Expiring và phát event cập nhật cho Nav
+    // Calculate Expiring tasks count and emit event to update Nav
     const notifyNavToUpdate = useCallback((currentTasks = tasks, pMap = projectMap) => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
         const expiringCount = currentTasks.filter((task) => {
-            // 1. Kiểm tra trạng thái xem có thuộc Done / Completed không
             const statusName = (typeof task.columnId === 'object'
                 ? (task.columnId?.name || task.columnId?.title || "")
                 : "").toLowerCase();
             const isDone = statusName.includes('done') || statusName.includes('completed');
             if (isDone) return false;
 
-            // 2. Xác định ngày hết hạn (dueDate hoặc tính theo tuần dự án)
             const projId = typeof task.projectId === 'object' ? (task.projectId?._id || task.projectId?.id) : task.projectId;
             const projStartDate = (typeof task.projectId === 'object' && task.projectId?.startDate)
                 ? task.projectId?.startDate
@@ -762,14 +760,12 @@ function MyTasks() {
             const diffTime = dueDate.getTime() - today.getTime();
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-            // Task ở mục Expiring: Còn từ 0 đến 2 ngày nữa hết hạn (bao gồm cả "Due today")
             return diffDays >= 0 && diffDays <= 2;
         }).length;
 
         window.dispatchEvent(new CustomEvent("myTasksUpdated", { detail: { count: expiringCount } }));
     }, [tasks, projectMap]);
 
-    // Bắn event update mỗi khi danh sách tasks hoặc projectMap có thay đổi
     useEffect(() => {
         notifyNavToUpdate(tasks, projectMap);
     }, [tasks, projectMap, notifyNavToUpdate]);
@@ -836,8 +832,8 @@ function MyTasks() {
             setProjectMap(newMap);
 
         } catch (err) {
-            console.error("Lỗi lấy My Tasks:", err);
-            setError("Không thể tải danh sách công việc.");
+            console.error("Error fetching My Tasks:", err);
+            setError("Failed to load task list.");
             setTasks([]);
         } finally {
             setLoading(false);
@@ -860,21 +856,20 @@ function MyTasks() {
         setTasks((prevTasks) => prevTasks.filter((t) => String(t._id) !== String(deletedTaskId)));
     };
 
-    // Filter danh sách theo Tab
+    // Filter tasks list by active tab
     const filteredTasks = useMemo(() => {
         return tasks.filter((task) => {
             const title = (task.title || task.name || "").toLowerCase();
             const matchesSearch = !searchQuery || title.includes(searchQuery.toLowerCase());
             if (!matchesSearch) return false;
 
-            if (activeTab === "all") return true;
+            if (activeTab === "all" || activeTab === "chart") return true;
 
             const statusName = (typeof task.columnId === 'object'
                 ? (task.columnId?.name || task.columnId?.title || "")
                 : "").toLowerCase();
             const isDone = statusName.includes('done') || statusName.includes('completed');
 
-            // Tab Completed: Lọc các task có status dạng Done/Completed
             if (activeTab === "completed") {
                 return isDone;
             }
@@ -898,7 +893,6 @@ function MyTasks() {
 
             if (activeTab === "upcoming") return dueDate > today;
 
-            // Tab Expiring: Lọc các task chưa xong và sắp hết hạn trong 0..2 ngày
             if (activeTab === "expiring") {
                 if (isDone) return false;
                 return diffDays >= 0 && diffDays <= 2;
@@ -909,6 +903,52 @@ function MyTasks() {
             return true;
         });
     }, [tasks, activeTab, searchQuery, projectMap]);
+
+    // Task count statistics by status for Chart Tab
+    const statusChartData = useMemo(() => {
+        const counts = {
+            "To do": 0,
+            "In progress": 0,
+            "Review": 0,
+            "Done": 0
+        };
+
+        const targetTasks = searchQuery
+            ? tasks.filter(t => (t.title || t.name || "").toLowerCase().includes(searchQuery.toLowerCase()))
+            : tasks;
+
+        targetTasks.forEach(task => {
+            let colName = "";
+            let colPos = -1;
+
+            if (typeof task.columnId === 'object' && task.columnId !== null) {
+                colName = (task.columnId?.name || task.columnId?.title || "").toLowerCase();
+                colPos = task.columnId?.position;
+            }
+
+            if (colName.includes("done") || colName.includes("completed") || colPos === 3) {
+                counts["Done"]++;
+            } else if (colName.includes("review") || colPos === 2) {
+                counts["Review"]++;
+            } else if (colName.includes("progress") || colName.includes("doing") || colPos === 1) {
+                counts["In progress"]++;
+            } else {
+                counts["To do"]++;
+            }
+        });
+
+        const total = targetTasks.length;
+        const maxCount = Math.max(...Object.values(counts), 1);
+
+        return [
+            { label: "To do", count: counts["To do"], color: "#3b82f6", max: maxCount, total },
+            { label: "In progress", count: counts["In progress"], color: "#eab308", max: maxCount, total },
+            { label: "Review", count: counts["Review"], color: "#a855f7", max: maxCount, total },
+            { label: "Done", count: counts["Done"], color: "#22c55e", max: maxCount, total }
+        ];
+    }, [tasks, searchQuery]);
+
+    const totalTasksCount = tasks.length;
 
     return (
         <>
@@ -961,9 +1001,135 @@ function MyTasks() {
                         >
                             Completed
                         </button>
+                        <button
+                            className={`pill-tab ${activeTab === "chart" ? "active" : ""}`}
+                            onClick={() => setActiveTab('chart')}
+                        >
+                            Chart
+                        </button>
                     </div>
 
-                    {!loading && !error && filteredTasks.length > 0 && (
+                    {/* --- TAB CHART VIEW --- */}
+                    {!loading && !error && activeTab === "chart" && (
+                        <div className="card" style={{ padding: '24px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>Task Status Statistics</h3>
+                                    <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#6b7280' }}>
+                                        Total of {totalTasksCount} tasks across all projects you are participating in
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Column Chart */}
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'flex-end',
+                                justifyContent: 'space-around',
+                                height: '260px',
+                                padding: '20px 10px 10px',
+                                borderBottom: '2px solid #e5e7eb',
+                                position: 'relative'
+                            }}>
+                                {statusChartData.map((item) => {
+                                    const heightPercent = item.max > 0 ? (item.count / item.max) * 100 : 0;
+                                    const percentage = item.total > 0 ? Math.round((item.count / item.total) * 100) : 0;
+
+                                    return (
+                                        <div
+                                            key={item.label}
+                                            style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'center',
+                                                height: '100%',
+                                                justifyContent: 'flex-end',
+                                                width: '18%',
+                                                position: 'relative'
+                                            }}
+                                        >
+                                            {/* Count display on top of column */}
+                                            <div style={{
+                                                fontSize: '13px',
+                                                fontWeight: 700,
+                                                color: '#374151',
+                                                marginBottom: '8px'
+                                            }}>
+                                                {item.count} ({percentage}%)
+                                            </div>
+
+                                            {/* Column Bar */}
+                                            <div
+                                                style={{
+                                                    width: '100%',
+                                                    maxWidth: '60px',
+                                                    height: `${Math.max(heightPercent, 4)}%`,
+                                                    backgroundColor: item.color,
+                                                    borderRadius: '8px 8px 0 0',
+                                                    transition: 'all 0.3s ease',
+                                                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                                                }}
+                                                title={`${item.label}: ${item.count} tasks`}
+                                            />
+
+                                            {/* Status Label below column */}
+                                            <div style={{
+                                                marginTop: '12px',
+                                                fontSize: '13px',
+                                                fontWeight: 600,
+                                                color: '#4b5563',
+                                                textAlign: 'center'
+                                            }}>
+                                                {item.label}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Legend Summary Cards */}
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                                gap: '16px',
+                                marginTop: '24px'
+                            }}>
+                                {statusChartData.map((item) => (
+                                    <div
+                                        key={item.label}
+                                        style={{
+                                            padding: '12px 16px',
+                                            borderRadius: '8px',
+                                            background: '#f9fafb',
+                                            border: '1px solid #f3f4f6',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '12px'
+                                        }}
+                                    >
+                                        <span style={{
+                                            width: '12px',
+                                            height: '12px',
+                                            borderRadius: '50%',
+                                            backgroundColor: item.color,
+                                            display: 'inline-block'
+                                        }} />
+                                        <div>
+                                            <div style={{ fontSize: '11px', color: '#6b7280', textTransform: 'uppercase', fontWeight: 600 }}>
+                                                {item.label}
+                                            </div>
+                                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#111827' }}>
+                                                {item.count}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* --- TASK LIST VIEW --- */}
+                    {!loading && !error && activeTab !== "chart" && filteredTasks.length > 0 && (
                         <div className="card">
                             {filteredTasks.map((task) => {
                                 const totalChecklist = task.checklist?.length || 0;
@@ -1061,7 +1227,7 @@ function MyTasks() {
                         </div>
                     )}
 
-                    {!loading && !error && filteredTasks.length === 0 && (
+                    {!loading && !error && activeTab !== "chart" && filteredTasks.length === 0 && (
                         <div className="card">
                             <div className="empty-state" style={{ padding: '32px 0', textAlign: 'center' }}>
                                 <p className="empty-state-title">No tasks found</p>
