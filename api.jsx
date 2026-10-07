@@ -358,3 +358,16 @@ export const fetchTasksByWeek = async (projectId) => {
     if (!response.ok) throw new Error('Failed to fetch tasks by week');
     return response.json();
 };
+
+export const fetchWeeklyExpectancy = async (projectId) => {
+    const token = localStorage.getItem("token");
+    const response = await fetch(`${API_BASE_URL}/task/project/${projectId}/weekly-expectancy`, {
+        headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+        throw new Error("Không thể tải dữ liệu điểm tiến độ theo tuần");
+    }
+
+    return await response.json();
+};

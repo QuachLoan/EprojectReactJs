@@ -228,7 +228,7 @@ export default function ProjectOverview() {
                                 <span className="project-color-dot" style={{ background: project?.color || '#4f46e5' }}></span>
                                 <h1>{project?.name || 'Project'}</h1>
                             </div>
-                            <p className="page-subtitle">{project?.description || 'No short description provided'}</p>
+                            <p className="page-subtitle">{project?.description || 'No description'}</p>
 
                             <div className="project-meta-row">
                                 <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} Members</span>
