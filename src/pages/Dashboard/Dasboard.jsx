@@ -1,63 +1,32 @@
-import { useEffect, useState } from "react";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend
-} from "chart.js";
-import { Bar } from "react-chartjs-2";
-import { fetchTasksByWeek } from "../../../api"; // import từ api.jsx
+import KPI from "./KPI/KPI";
+import RecentActivity from "./OverViews/RecentActivity";
+import TaskCompletion from "./OverViews/TaskCompletion";
+import TeamWorkload from "./OverViews/TeamWorkload";
+import ProjectStatus from "./ProjectProgress/ProjectStatus";
+import ProjectProgress from "./ProjectProgress/ProjectStatus";
+import TodayTask from "./ProjectProgress/TodayTask";
+import UCMDeadlines from "./ProjectProgress/UCMDeadlines";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+function Dashboard(){
+    return(
+        <>
+    <main class="page-content">
+        <div class="page-content-inner stack">
+          <div>
+            <h1>Welcome back, Cao</h1>
+            <p class="page-subtitle">Here's what's happening across your workspace today.</p>
+          </div>
 
-function Dashboard({ projectId }) {
-  const [completedByWeek, setCompletedByWeek] = useState([]);
-
-  useEffect(() => {
-    // Gọi API lấy số task theo tuần
-    fetchTasksByWeek(projectId)
-      .then(res => {
-        // API trả về tất cả task theo tuần, ta lọc chỉ task hoàn thành
-        const doneTasks = res.data.filter(t => t.status === "Done" || t.weekNumber);
-        setCompletedByWeek(doneTasks);
-      })
-      .catch(err => console.error("Error:", err));
-  }, [projectId]);
-
-  const chartData = {
-    labels: completedByWeek.map(d => d.week),
-    datasets: [
-      {
-        label: "Task hoàn thành",
-        data: completedByWeek.map(d => d.tasks),
-        backgroundColor: "rgba(54,162,235,0.7)"
-      }
-    ]
-  };
-
-  const options = {
-    responsive: true,
-    plugins: {
-      legend: { position: "top" },
-      title: { display: true, text: "Số Task hoàn thành theo tuần" }
-    }
-  };
-
-  return (
-    <main className="page-content">
-      <div className="page-content-inner stack">
-        <h1>Welcome back, Cao</h1>
-        <p className="page-subtitle">Biểu đồ số task hoàn thành theo tuần</p>
-
-        <div className="grid-3">
-          <Bar data={chartData} options={options} />
+        <KPI/>
+         <div class="grid-3">
+            
+         </div>
+        <div class="grid-3">
+          </div>      
         </div>
-      </div>
-    </main>
-  );
+      </main>
+        </>
+    )
 }
-
 export default Dashboard;
+
