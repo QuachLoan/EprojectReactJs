@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 // Import socket instance từ file socket.js của bạn
-import {socket} from './../../utils/socket.js';
+import { socket } from './../../utils/socket.js';
 import Header from './../../components/layout/Header/Header.jsx';
 import Sidebar from './../../components/layout/Sidebar/SideBar.jsx';
 import {
@@ -844,6 +844,22 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
     const canCreateTask = isManager || isLeader;
 
+    // ==========================================
+    // KIỂM TRA DỰ ÁN ĐÃ BẮT ĐẦU CHƯA (START DATE)
+    // ==========================================
+    const isProjectStarted = useMemo(() => {
+        const projStart = project?.startDate || project?.createdDate || project?.createdAt;
+        if (!projStart) return true;
+
+        const startDate = new Date(projStart);
+        startDate.setHours(0, 0, 0, 0);
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        return today >= startDate;
+    }, [project]);
+
     const fetchBoardData = async () => {
         if (!activeProjectId) return;
 
@@ -1085,6 +1101,12 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             destination.droppableId === source.droppableId &&
             destination.index === source.index
         ) {
+            return;
+        }
+
+        // Chặn thao tác di chuyển ở cấp độ function nếu không có quyền
+        if (!isManager && !isLeader && !isProjectStarted) {
+            alert("Dự án chưa đến ngày bắt đầu. Bạn không thể di chuyển task!");
             return;
         }
 
@@ -1366,7 +1388,11 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                 const assigneeId = typeof a === 'object' ? String(a._id || a.id) : String(a);
                                                                 return currentUserId && assigneeId === String(currentUserId);
                                                             });
-                                                            const canDragThisTask = isManager || isLeader || isTaskAssignee;
+
+                                                            // ĐIỀU KIỆN KÉO THẢ:
+                                                            // - Manager / Leader được phép kéo thả
+                                                            // - Member chỉ kéo thả được NẾU là Assignee CỦA TASK VÀ DỰ ÁN ĐÃ BẮT ĐẦU (isProjectStarted)
+                                                            const canDragThisTask = isManager || isLeader || (isTaskAssignee && isProjectStarted);
 
                                                             const { displayWeek, status } = calculateTaskWeekAndStatus(task, project);
 
