@@ -24,29 +24,43 @@ import KPI from "./KPI/KPI";
 // 1. Tooltip tùy chỉnh cho Burndown Chart
 // ==========================================
 const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-        return (
-            <div className="bg-white p-3 border border-gray-200 rounded shadow-md text-sm">
-                <p className="font-semibold text-gray-700 mb-1">{label}</p>
-                {payload[0] && (
-                    <p className="text-slate-500">
-                        Kế hoạch: <span className="font-bold">{payload[0].value} pts</span>
-                    </p>
-                )}
-                {payload[1] && payload[1].value !== null && payload[1].value !== undefined && (
-                    <p className="text-emerald-600">
-                        Thực tế còn lại: <span className="font-bold">{payload[1].value} pts</span>
-                    </p>
-                )}
-            </div>
-        );
-    }
-    return null;
+    if (!active || !payload || !payload.length) return null;
+
+    const planned = payload.find((p) => p.dataKey === "planned");
+    const actual = payload.find((p) => p.dataKey === "actual");
+
+    return (
+        <div
+            style={{
+                background: "#fff",
+                padding: "10px 12px",
+                border: "1px solid #e2e8f0",
+                borderRadius: "8px",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                fontSize: "13px"
+            }}
+        >
+            <div style={{ fontWeight: 600, color: "#334155", marginBottom: 4 }}>{label}</div>
+            {planned && planned.value != null && (
+                <div style={{ color: "#64748b" }}>
+                    Kế hoạch: <b>{planned.value} pts</b>
+                </div>
+            )}
+            {actual && actual.value != null && (
+                <div style={{ color: "#059669" }}>
+                    Thực tế còn lại: <b>{actual.value} pts</b>
+                </div>
+            )}
+        </div>
+    );
 };
 
 // ==========================================
 // 2. Component WeeklyBurndownChart (Có dropdown bộ lọc)
 // ==========================================
+// Đổi sang URL backend khi deploy
+const API_BASE = "http://localhost:3000";
+
 function WeeklyBurndownChart({ projectId, projects, onSelectProject }) {
     const [chartData, setChartData] = useState([]);
     const [totalPoints, setTotalPoints] = useState(0);
@@ -58,10 +72,10 @@ function WeeklyBurndownChart({ projectId, projects, onSelectProject }) {
             try {
                 setLoading(true);
                 setError(null);
-                
-                const token = localStorage.getItem("token"); 
 
-                const response = await fetch(`http://localhost:3000/api/task/project/${projectId}/epic-burndown`, {
+                const token = localStorage.getItem("token");
+
+                const response = await fetch(`${API_BASE}/api/task/project/${projectId}/epic-burndown`, {
                     headers: {
                         "Content-Type": "application/json",
                         ...(token && { Authorization: `Bearer ${token}` })
@@ -87,25 +101,53 @@ function WeeklyBurndownChart({ projectId, projects, onSelectProject }) {
         }
     }, [projectId]);
 
-
     return (
-        <div className="w-full bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+        <div
+            style={{
+                width: "100%",
+                background: "#fff",
+                padding: "20px",
+                borderRadius: "12px",
+                border: "1px solid #e2e8f0",
+                boxSizing: "border-box"
+            }}
+        >
             {/* Header + Bộ lọc Dropdown */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+            <div
+                style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: "16px",
+                    marginBottom: "16px"
+                }}
+            >
                 <div>
-                    <h3 className="text-lg font-bold text-gray-800">Weekly Burndown Chart</h3>
-                    <p className="text-sm text-gray-500">Theo dõi tiến độ Story Points theo từng tuần</p>
+                    <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#0f172a", margin: 0 }}>
+                        Weekly Burndown Chart
+                    </h3>
+                    <p style={{ fontSize: "13px", color: "#64748b", margin: "4px 0 0" }}>
+                        Theo dõi tiến độ Story Points theo từng tuần
+                    </p>
                 </div>
 
-                <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
-                    {/* Bộ lọc chọn Project */}
+                <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
                     {projects && projects.length > 0 && (
-                        <div className="flex items-center gap-2">
-                            <label className="text-xs font-semibold text-gray-500 whitespace-nowrap">Dự án:</label>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <label style={{ fontSize: "12px", fontWeight: 600, color: "#64748b" }}>Dự án:</label>
                             <select
                                 value={projectId || ""}
                                 onChange={(e) => onSelectProject(e.target.value)}
-                                className="bg-gray-50 border border-gray-300 text-gray-800 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none font-medium"
+                                style={{
+                                    padding: "6px 10px",
+                                    borderRadius: "8px",
+                                    border: "1px solid #cbd5e1",
+                                    background: "#f8fafc",
+                                    fontSize: "14px",
+                                    fontWeight: 500,
+                                    outline: "none"
+                                }}
                             >
                                 {projects.map((proj) => {
                                     const pId = proj._id || proj.id;
@@ -119,64 +161,94 @@ function WeeklyBurndownChart({ projectId, projects, onSelectProject }) {
                         </div>
                     )}
 
-                    <div className="text-right">
-                        <span className="text-xs text-gray-400 block">Tổng Story Points</span>
-                        <span className="text-xl font-extrabold text-indigo-600">{totalPoints} pts</span>
+                    <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: "12px", color: "#94a3b8" }}>Tổng Story Points</div>
+                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#4f46e5" }}>{totalPoints} pts</div>
                     </div>
                 </div>
             </div>
 
             {/* Content Body */}
             {loading ? (
-                <div className="w-full h-80 flex items-center justify-center bg-gray-50/50 rounded-xl">
-                    <Loader2 className="animate-spin text-indigo-600" size={28} />
-                    <span className="text-gray-400 text-sm ml-2">Đang tải dữ liệu biểu đồ...</span>
+                <div
+                    style={{
+                        height: "320px",
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        gap: "8px",
+                        color: "#94a3b8",
+                        fontSize: "14px"
+                    }}
+                >
+                    <Loader2 className="animate-spin" size={28} style={{ color: "#4f46e5" }} />
+                    Đang tải dữ liệu biểu đồ...
                 </div>
             ) : error ? (
-                <div className="w-full h-80 flex items-center justify-center bg-red-50/50 rounded-xl text-red-500 text-sm">
+                <div
+                    style={{
+                        height: "320px",
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        color: "#ef4444",
+                        fontSize: "14px"
+                    }}
+                >
                     {error}
                 </div>
             ) : (
-<div style={{ width: "100%", height: "320px" }}>
-  <ResponsiveContainer width="100%" height="100%">
-    <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-      <XAxis
-        dataKey="week"
-        tick={{ fill: "#6b7280", fontSize: 12 }}
-        axisLine={{ stroke: "#e5e7eb" }}
-      />
-      <YAxis
-        domain={[0, totalPoints > 0 ? totalPoints : "auto"]}
-        tick={{ fill: "#6b7280", fontSize: 12 }}
-        axisLine={{ stroke: "#e5e7eb" }}
-        label={{ value: "Points còn lại", angle: -90, position: "insideLeft", fill: "#9ca3af", fontSize: 12 }}
-      />
-      <Tooltip content={<CustomTooltip />} />
-      <Legend verticalAlign="top" align="right" wrapperStyle={{ paddingBottom: "10px", fontSize: "13px" }} />
+                <div style={{ width: "100%", height: "320px" }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                            <XAxis
+                                dataKey="week"
+                                tick={{ fill: "#6b7280", fontSize: 12 }}
+                                axisLine={{ stroke: "#e5e7eb" }}
+                            />
+                            <YAxis
+                                domain={[0, "dataMax"]}
+                                allowDecimals={false}
+                                tick={{ fill: "#6b7280", fontSize: 12 }}
+                                axisLine={{ stroke: "#e5e7eb" }}
+                                label={{
+                                    value: "Points còn lại",
+                                    angle: -90,
+                                    position: "insideLeft",
+                                    fill: "#9ca3af",
+                                    fontSize: 12
+                                }}
+                            />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend
+                                verticalAlign="top"
+                                align="right"
+                                wrapperStyle={{ paddingBottom: "10px", fontSize: "13px" }}
+                            />
 
-      <Line
-        name="Tiến độ kế hoạch"
-        type="linear"
-        dataKey="planned"
-        stroke="#94a3b8"
-        strokeDasharray="5 5"
-        strokeWidth={2}
-        dot={{ r: 3, fill: "#94a3b8" }}
-      />
-<Line
-  name="Tiến độ thực tế"
-  type="monotone" // Hoặc "linear" để đường nối thẳng
-  dataKey="actual"
-  stroke="#10b981"
-  strokeWidth={3}
-  dot={{ r: 4, fill: "#10b981" }}
-  activeDot={{ r: 7 }}
-  connectNulls={true} // Bỏ qua các giá trị null để nối các điểm hợp lệ với nhau
-/>
-    </LineChart>
-  </ResponsiveContainer>
-</div>
+                            <Line
+                                name="Tiến độ kế hoạch"
+                                type="linear"
+                                dataKey="planned"
+                                stroke="#94a3b8"
+                                strokeDasharray="5 5"
+                                strokeWidth={2}
+                                dot={{ r: 3, fill: "#94a3b8" }}
+                            />
+                            <Line
+                                name="Tiến độ thực tế"
+                                type="linear"
+                                dataKey="actual"
+                                stroke="#10b981"
+                                strokeWidth={3}
+                                dot={{ r: 4, fill: "#10b981" }}
+                                activeDot={{ r: 7 }}
+                                connectNulls={true}
+                            />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
             )}
         </div>
     );
