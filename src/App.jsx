@@ -66,6 +66,8 @@ function App() {
                 <Route path="/projectboard/:id" element={<ProjectBoard />} />
                 <Route path = "/projectlist/:id" element = {<ProjectList/>}/>
                 <Route path = "/projectcalendar/:id" element = {<ProjectCalendar/>}/>
+                  <Route path = "/gantchart/:id" element = {<ProjectCalendar/>}/>
+
                 <Route path = "/projectsetting/:id" element = {<ProjectSetting/>}/>
                 <Route path = "/projectoverview/:id" element = {<ProjectOverview/>}/>
                 <Route path = "/projectchart/:id" element = {<ProjectChart/>}/>

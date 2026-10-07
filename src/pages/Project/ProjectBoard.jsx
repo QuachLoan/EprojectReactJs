@@ -1294,6 +1294,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                         <Link to={`/projectcalendar/${activeProjectId}`} className="project-tab">
                             <Calendar className="icon icon-sm" /> Calendar
                         </Link>
+                         <Link to={`/gantchart/${activeProjectId}`} className="project-tab">
+                            <Calendar className="icon icon-sm" /> gancchart
+                        </Link>
+
                     </nav>
                 </div>
 
