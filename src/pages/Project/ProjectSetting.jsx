@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import Header from './../../components/layout/Header/Header.jsx';
 import Sidebar from './../../components/layout/Sidebar/Sidebar.jsx';
@@ -19,7 +19,8 @@ import {
     X,
     MoreHorizontal,
     UserCog,
-    Info, BarChart2,
+    Info,
+    BarChart2,
 } from 'lucide-react';
 
 import {
@@ -30,10 +31,10 @@ import {
     deleteProject,
     fetchMembersByProject,
     inviteMember,
-    deleteMemberByProject
+    deleteMemberByProject,
+    fetchUsers // Or fetchAllUsers depending on your api/index.js exports
 } from '../../../api';
 
-// Hàm lấy ngày hiện tại dạng YYYY-MM-DD (dành cho HTML input[type="date"])
 const getTodayString = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -42,26 +43,24 @@ const getTodayString = () => {
     return `${year}-${month}-${day}`;
 };
 
-// Hàm bổ trợ định dạng ngày dạng DD/MM/YYYY
 const formatDateDMY = (dateValue) => {
-    if (!dateValue) return 'Chưa đặt';
+    if (!dateValue) return 'Not set';
     const d = new Date(dateValue);
-    if (isNaN(d.getTime())) return 'Chưa đặt';
+    if (isNaN(d.getTime())) return 'Not set';
     const day = String(d.getDate()).padStart(2, '0');
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
     return `${day}/${month}/${year}`;
 };
 
-// Helper tính các tuần của dự án dựa trên startDate và dueDate
 const calculateProjectWeeks = (startDateStr, endDateStr) => {
-    if (!startDateStr || !endDateStr) return [{ index: 1, label: 'Tuần 1' }];
+    if (!startDateStr || !endDateStr) return [{ index: 1, label: 'Week 1' }];
 
     const start = new Date(startDateStr);
     const end = new Date(endDateStr);
 
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
-        return [{ index: 1, label: 'Tuần 1' }];
+        return [{ index: 1, label: 'Week 1' }];
     }
 
     const weeks = [];
@@ -92,7 +91,7 @@ const calculateProjectWeeks = (startDateStr, endDateStr) => {
         index++;
     }
 
-    return weeks.length > 0 ? weeks : [{ index: 1, label: 'Tuần 1' }];
+    return weeks.length > 0 ? weeks : [{ index: 1, label: 'Week 1' }];
 };
 
 export default function ProjectSetting() {
@@ -113,8 +112,8 @@ export default function ProjectSetting() {
         color: '#4f46e5',
         startDate: '',
         dueDate: '',
-          budget: '',
-          costPerPoint: ''
+        budget: '',
+        costPerPoint: ''
     });
 
     const [projectMembers, setProjectMembers] = useState([]);
@@ -127,6 +126,11 @@ export default function ProjectSetting() {
     const [openInviteModal, setOpenInviteModal] = useState(false);
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteRole, setInviteRole] = useState("Member");
+
+    // --- State & Ref for Autocomplete Suggestions ---
+    const [allUsers, setAllUsers] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const suggestionRef = useRef(null);
 
     const [tasks, setTasks] = useState([]);
     const [columns, setColumns] = useState([]);
@@ -152,6 +156,59 @@ export default function ProjectSetting() {
         return calculateProjectWeeks(sDate, eDate);
     }, [project, formData.startDate, formData.dueDate]);
 
+    // Fetch system users list when Invite Modal opens
+    useEffect(() => {
+        if (openInviteModal) {
+            const loadAllUsers = async () => {
+                try {
+                    // Call imported API function
+                    const res = await fetchUsers();
+
+                    // Flexibly handle response payload structure
+                    const userList = Array.isArray(res) ? res : (res?.data || res?.users || []);
+                    setAllUsers(userList);
+                } catch (err) {
+                    console.error("Failed to load user suggestions:", err);
+                }
+            };
+            loadAllUsers();
+        }
+    }, [openInviteModal]);
+
+    // Handle clicking outside to hide suggestions dropdown
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (suggestionRef.current && !suggestionRef.current.contains(event.target)) {
+                setShowSuggestions(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    // Filter user suggestions based on input
+    const suggestedUsers = useMemo(() => {
+        if (!inviteEmail.trim()) return [];
+
+        const search = inviteEmail.toLowerCase();
+
+        // Collect existing project members' emails
+        const existingEmails = projectMembers.map(m => {
+            const email = m.userId?.email || m.email || "";
+            return email.toLowerCase();
+        });
+
+        return allUsers.filter(u => {
+            const userEmail = (u.email || "").toLowerCase();
+            const userName = (u.username || u.name || "").toLowerCase();
+
+            // Exclude users already in current project
+            const isAlreadyMember = existingEmails.includes(userEmail);
+
+            return !isAlreadyMember && (userEmail.includes(search) || userName.includes(search));
+        });
+    }, [inviteEmail, allUsers, projectMembers]);
+
     const fetchCurrentMemberRole = async () => {
         try {
             const token = localStorage.getItem("token");
@@ -163,7 +220,7 @@ export default function ProjectSetting() {
             const data = await res.json();
             setMemberRole(data.memberRole || "");
         } catch (err) {
-            console.error("Không thể lấy thông tin role hiện tại:", err);
+            console.error("Failed to get current role:", err);
         }
     };
 
@@ -245,7 +302,7 @@ export default function ProjectSetting() {
                 color: realProject.color || '#4f46e5',
                 startDate: formattedStartDate,
                 dueDate: formattedDueDate,
-                  budget: realProject.budget ?? 0,
+                budget: realProject.budget ?? 0,
                 costPerPoint: realProject.costPerPoint ?? 0
             });
 
@@ -255,7 +312,7 @@ export default function ProjectSetting() {
 
             await fetchCurrentMemberRole();
         } catch (err) {
-            console.error('Lỗi khi tải cài đặt dự án:', err);
+            console.error('Error loading project settings:', err);
         } finally {
             setLoading(false);
         }
@@ -283,7 +340,7 @@ export default function ProjectSetting() {
 
             const data = await res.json();
             if (!res.ok) {
-                throw new Error(data.message || "Cập nhật thất bại");
+                throw new Error(data.message || "Failed to update role");
             }
 
             setProjectMembers((prevMembers) =>
@@ -291,12 +348,12 @@ export default function ProjectSetting() {
             );
             setDropDown(null);
         } catch (error) {
-            console.error("Lỗi update role:", error);
+            console.error("Error updating role:", error);
         }
     };
 
     const handleDeleteMember = async (member) => {
-        if (!window.confirm("Bạn có chắc chắn muốn xóa thành viên này khỏi dự án?")) {
+        if (!window.confirm("Are you sure you want to remove this member from the project?")) {
             return;
         }
 
@@ -309,7 +366,7 @@ export default function ProjectSetting() {
 
             setDropDown(null);
         } catch (error) {
-            console.error("Lỗi xóa member:", error);
+            console.error("Error deleting member:", error);
         }
     };
 
@@ -332,8 +389,9 @@ export default function ProjectSetting() {
             setOpenInviteModal(false);
             setInviteEmail("");
             setInviteRole("Member");
+            setShowSuggestions(false);
         } catch (error) {
-            console.error("Lỗi gửi lời mời:", error);
+            console.error("Error sending invitation:", error);
         }
     };
 
@@ -385,45 +443,39 @@ export default function ProjectSetting() {
 
         const currentToday = getTodayString();
 
-        if (formData.startDate && formData.startDate < currentToday) {
-            alert('Start date không được là ngày trong quá khứ!');
-            return;
-        }
-
         if (formData.dueDate && formData.dueDate < currentToday) {
-            alert('End date không được là ngày trong quá khứ!');
+            alert('End date cannot be a date in the past!');
             return;
         }
 
         if (formData.startDate && formData.dueDate) {
             if (formData.startDate > formData.dueDate) {
-                alert('Start date không thể sau End date!');
+                alert('Start date cannot be after End date!');
                 return;
             }
         }
-            const budgetNum = Number(formData.budget) || 0;
-            if (budgetNum < 0) {
-                alert('Budget phải >= 0!');
-                return;
-            }
-            const costPerPointNum = Number(formData.costPerPoint) || 0;
-            if (costPerPointNum < 0) {
-                alert('Cost per point phải >= 0!');
-                return;
-            }
+        const budgetNum = Number(formData.budget) || 0;
+        if (budgetNum < 0) {
+            alert('Budget must be >= 0!');
+            return;
+        }
+        const costPerPointNum = Number(formData.costPerPoint) || 0;
+        if (costPerPointNum < 0) {
+            alert('Cost per point must be >= 0!');
+            return;
+        }
         try {
             setSaving(true);
 
-           const payload = {
-            name: formData.name.trim(),
-            description: formData.description.trim(),
-            color: formData.color,
-            startDate: formData.startDate ? new Date(formData.startDate).toISOString() : null,
-            dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
-            budget: budgetNum,
-          
-            costPerPoint: costPerPointNum
-        };
+            const payload = {
+                name: formData.name.trim(),
+                description: formData.description.trim(),
+                color: formData.color,
+                startDate: formData.startDate ? new Date(formData.startDate).toISOString() : null,
+                dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
+                budget: budgetNum,
+                costPerPoint: costPerPointNum
+            };
 
             const res = await updateProject(projectId, payload);
             const updatedData = res?.data || res || {};
@@ -438,7 +490,7 @@ export default function ProjectSetting() {
             }));
 
         } catch (err) {
-            console.error('Lỗi khi lưu thông tin chung:', err);
+            console.error('Error saving general settings:', err);
         } finally {
             setSaving(false);
         }
@@ -447,17 +499,16 @@ export default function ProjectSetting() {
     const handleDeleteProject = async () => {
         if (!canDelete) return;
 
-        if (window.confirm('Bạn có chắc chắn muốn xóa dự án này không? Hành động này không thể hoàn tác.')) {
+        if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
             try {
                 await deleteProject(projectId);
                 navigate('/dashboard');
             } catch (err) {
-                console.error('Lỗi khi xóa dự án:', err);
+                console.error('Error deleting project:', err);
             }
         }
     };
 
-    // Định dạng hiển thị ngày trên Header theo chuẩn DD/MM/YYYY
     const headerStartDate = formatDateDMY(project?.startDate || project?.start_date || project?.createdAt);
     const headerDueDate = formatDateDMY(project?.date || project?.dueDate || project?.endDate);
 
@@ -492,10 +543,10 @@ export default function ProjectSetting() {
                                 <div style={{ minWidth: 0 }}>
                                     <div className="project-title-row">
                                         <span className="project-color-dot" style={{ background: project?.color || '#4f46e5' }}></span>
-                                        <h1>{project?.name || 'Dự án'}</h1>
+                                        <h1>{project?.name || 'Project'}</h1>
                                     </div>
                                     <p className="page-subtitle" style={{ maxWidth: '640px' }}>
-                                        {project?.description || 'no description'}
+                                        {project?.description || 'No description provided'}
                                     </p>
 
                                     <div className="project-meta-row">
@@ -506,10 +557,10 @@ export default function ProjectSetting() {
                                             <ListChecks className="icon icon-sm" />{tasks.length} tasks
                                         </span>
                                         <span className="project-meta-item">
-                                            <CalendarClock className="icon icon-sm" />start date: {headerStartDate}
+                                            <CalendarClock className="icon icon-sm" />Start date: {headerStartDate}
                                         </span>
                                         <span className="project-meta-item">
-                                            <CalendarClock className="icon icon-sm" />end date: {headerDueDate}
+                                            <CalendarClock className="icon icon-sm" />End date: {headerDueDate}
                                         </span>
                                     </div>
                                 </div>
@@ -597,34 +648,34 @@ export default function ProjectSetting() {
                                                     style={disabledInputStyle}
                                                 />
                                             </div>
-                                             <div className="field">
-                                            <label className="field-label">Cost per point ($)</label>
-                                            <input
-                                                type="number"
-                                                className="input"
-                                                min="0"
-                                                step="any"
-                                                placeholder="e.g. 100"
-                                                value={formData.costPerPoint}
-                                                onChange={(e) => setFormData({ ...formData, costPerPoint: e.target.value })}
-                                                disabled={!canManage}
-                                                style={disabledInputStyle}
-                                            />
-                                        </div>
-                                        <div className="field">
-                                            <label className="field-label">Budget ($)</label>
-                                            <input
-                                                type="number"
-                                                className="input"
-                                                min="0"
-                                                step="any"
-                                                placeholder="e.g. 10000"
-                                                value={formData.budget}
-                                                onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
-                                                disabled={!canManage}
-                                                style={disabledInputStyle}
-                                            />
-                                        </div>
+                                            <div className="field">
+                                                <label className="field-label">Cost per point ($)</label>
+                                                <input
+                                                    type="number"
+                                                    className="input"
+                                                    min="0"
+                                                    step="any"
+                                                    placeholder="e.g. 100"
+                                                    value={formData.costPerPoint}
+                                                    onChange={(e) => setFormData({ ...formData, costPerPoint: e.target.value })}
+                                                    disabled={!canManage}
+                                                    style={disabledInputStyle}
+                                                />
+                                            </div>
+                                            <div className="field">
+                                                <label className="field-label">Budget ($)</label>
+                                                <input
+                                                    type="number"
+                                                    className="input"
+                                                    min="0"
+                                                    step="any"
+                                                    placeholder="e.g. 10000"
+                                                    value={formData.budget}
+                                                    onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
+                                                    disabled={!canManage}
+                                                    style={disabledInputStyle}
+                                                />
+                                            </div>
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)' }}>
                                                 <div className="field">
                                                     <label className="field-label">Color</label>
@@ -645,43 +696,26 @@ export default function ProjectSetting() {
                                                     />
                                                 </div>
                                                 <div className="field">
-                                                    <label className="field-label">Start date (DD/MM/YYYY)</label>
+                                                    <label className="field-label">Start date</label>
                                                     <input
                                                         type="date"
                                                         className="input"
-                                                        min={getTodayString()}
+                                                        min={formData.startDate && formData.startDate < getTodayString() ? formData.startDate : getTodayString()}
                                                         value={formData.startDate}
-                                                        onChange={(e) => {
-                                                            const val = e.target.value;
-                                                            const currentToday = getTodayString();
-                                                            if (val && val < currentToday) {
-                                                                alert('Start date không được là ngày trong quá khứ!');
-                                                                setFormData({ ...formData, startDate: currentToday });
-                                                            } else {
-                                                                setFormData({ ...formData, startDate: val });
-                                                            }
-                                                        }}
+                                                        onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
                                                         disabled={!canManage}
                                                         style={disabledInputStyle}
                                                     />
                                                 </div>
+
                                                 <div className="field">
-                                                    <label className="field-label">End date (DD/MM/YYYY)</label>
+                                                    <label className="field-label">End date</label>
                                                     <input
                                                         type="date"
                                                         className="input"
                                                         min={formData.startDate || getTodayString()}
                                                         value={formData.dueDate}
-                                                        onChange={(e) => {
-                                                            const val = e.target.value;
-                                                            const minAllowed = formData.startDate || getTodayString();
-                                                            if (val && val < minAllowed) {
-                                                                alert('End date không được nhỏ hơn Start date hoặc ngày hiện tại!');
-                                                                setFormData({ ...formData, dueDate: minAllowed });
-                                                            } else {
-                                                                setFormData({ ...formData, dueDate: val });
-                                                            }
-                                                        }}
+                                                        onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
                                                         disabled={!canManage}
                                                         style={disabledInputStyle}
                                                     />
@@ -713,7 +747,6 @@ export default function ProjectSetting() {
                                             </p>
                                         </div>
 
-                                        {/* Tool bar */}
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', gap: '16px', flexWrap: 'wrap' }}>
                                             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                                                 <div className="input-icon-wrap" style={{ width: '220px', position: 'relative' }}>
@@ -756,7 +789,6 @@ export default function ProjectSetting() {
                                             )}
                                         </div>
 
-                                        {/* Bảng Danh Sách Member */}
                                         <div className="card" style={{ overflow: 'visible' }}>
                                             <div
                                                 className="member-table-header"
@@ -781,8 +813,8 @@ export default function ProjectSetting() {
 
                                             {filteredMembers.length > 0 ? (
                                                 filteredMembers.map((m, idx) => {
-                                                    const username = m.userId?.username || m.username || m.name || "Chưa cập nhật";
-                                                    const email = m.userId?.email || m.email || "Không có email";
+                                                    const username = m.userId?.username || m.username || m.name || "Not updated";
+                                                    const email = m.userId?.email || m.email || "No email";
                                                     const role = m.role || "Member";
                                                     const status = m.status || "Active";
 
@@ -924,28 +956,93 @@ export default function ProjectSetting() {
 
             {/* Modal Invite Member */}
             {openInviteModal && (
-                <div className="modal-overlay" id="inviteMemberModal" onClick={() => setOpenInviteModal(false)}>
-                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+                <div
+                    className="modal-overlay"
+                    id="inviteMemberModal"
+                    onClick={() => { setOpenInviteModal(false); setShowSuggestions(false); }}
+                >
+                    <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ overflow: 'visible' }}>
                         <div className="modal-header">
                             <div>
                                 <h2 className="modal-title">Invite a member</h2>
                                 <p className="modal-desc">Add a new person to this project.</p>
                             </div>
-                            <button onClick={() => setOpenInviteModal(false)} className="icon-btn" aria-label="Close" style={{ cursor: 'pointer' }}>
+                            <button onClick={() => { setOpenInviteModal(false); setShowSuggestions(false); }} className="icon-btn" aria-label="Close" style={{ cursor: 'pointer' }}>
                                 <X size={18} />
                             </button>
                         </div>
-                        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                            <div className="field">
+
+                        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', overflow: 'visible' }}>
+
+                            {/* --- INPUT WITH AUTOCOMPLETE SUGGESTIONS --- */}
+                            <div className="field" style={{ position: 'relative' }} ref={suggestionRef}>
                                 <label className="field-label">Email *</label>
                                 <input
                                     value={inviteEmail}
-                                    onChange={(e) => setInviteEmail(e.target.value)}
+                                    onChange={(e) => {
+                                        setInviteEmail(e.target.value);
+                                        setShowSuggestions(true);
+                                    }}
+                                    onFocus={() => setShowSuggestions(true)}
                                     className="input"
                                     type="email"
-                                    placeholder="teammate@company.com"
+                                    placeholder="Type username or email..."
                                     required
+                                    autoComplete="off"
                                 />
+
+                                {/* Suggestions Dropdown */}
+                                {showSuggestions && (
+                                    <div
+                                        className="suggestions-dropdown"
+                                        style={{
+                                            position: 'absolute',
+                                            top: '100%',
+                                            left: 0,
+                                            right: 0,
+                                            zIndex: 9999,
+                                            backgroundColor: '#ffffff',
+                                            border: '1px solid #cbd5e1',
+                                            borderRadius: '8px',
+                                            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15)',
+                                            marginTop: '4px',
+                                            maxHeight: '220px',
+                                            overflowY: 'auto'
+                                        }}
+                                    >
+                                        {suggestedUsers.length > 0 ? (
+                                            suggestedUsers.map((u) => (
+                                                <div
+                                                    key={u._id || u.id}
+                                                    onClick={() => {
+                                                        setInviteEmail(u.email);
+                                                        setShowSuggestions(false);
+                                                    }}
+                                                    style={{
+                                                        padding: '10px 14px',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        borderBottom: '1px solid #f1f5f9'
+                                                    }}
+                                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                >
+                                                    <span style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>
+                                                        {u.username || u.name || 'User'}
+                                                    </span>
+                                                    <span style={{ fontSize: '12px', color: '#64748b' }}>
+                                                        {u.email}
+                                                    </span>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div style={{ padding: '12px 14px', fontSize: '13px', color: '#94a3b8', textAlign: 'center' }}>
+                                                {inviteEmail.trim() ? "No matching user found" : "Type name or email to search..."}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="field">
@@ -960,6 +1057,7 @@ export default function ProjectSetting() {
                                     <option value="Manager">Manager</option>
                                 </select>
                             </div>
+
                             <button className="btn btn-primary" style={{ alignSelf: 'flex-start', cursor: 'pointer' }} onClick={handleInvite}>
                                 Add Member
                             </button>

@@ -305,6 +305,22 @@ export default function ProjectList() {
         }
     };
 
+    // Hàm xóa Task
+    const handleDeleteTask = async (taskId) => {
+        if (!isManager) return;
+
+        if (window.confirm("Bạn có chắc chắn muốn xóa task này khỏi backlog?")) {
+            try {
+                setTasks(prevTasks => prevTasks.filter(t => (t._id || t.id) !== taskId));
+                await deleteTask(taskId);
+            } catch (error) {
+                console.error("Lỗi khi xóa task:", error);
+                alert("Xóa task thất bại. Vui lòng thử lại!");
+                loadData();
+            }
+        }
+    };
+
     // Định dạng ngày bắt đầu và ngày kết thúc theo chuẩn DD/MM/YYYY
     const formattedStartDate = formatDate(project?.startDate || project?.start_date || project?.createdAt);
     const formattedDueDate = formatDate(project?.date || project?.dueDate || project?.endDate);
