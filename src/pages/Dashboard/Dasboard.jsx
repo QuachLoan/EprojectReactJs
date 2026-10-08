@@ -321,7 +321,7 @@ export default function Dashboard() {
                     )}
                 </div>
 
-                {/* Biểu đồ Weekly Progress Overview (Viết trực tiếp) */}
+                {/* Biểu đồ Weekly Progress Overview */}
                 <div className="card" style={{ padding: "20px", background: "#fff", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
                     {/* Header + Modern Filter Dropdown */}
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
@@ -339,7 +339,7 @@ export default function Dashboard() {
                             </div>
                         </div>
 
-                        {/* Filter đẹp mắt */}
+                        {/* Filter */}
                         <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
                             {projectsList && projectsList.length > 0 && (
                                 <div className="relative flex items-center min-w-[220px]">
@@ -406,7 +406,7 @@ export default function Dashboard() {
                                         activeDot={{ r: 7, stroke: "#6366f1", strokeWidth: 3 }}
                                     />
 
-                                    {/* Real Progress Line */}
+                                    {/* Real Progress Line: Hiển thị nốt chấm rõ ràng cho mọi tuần <= currentProjectWeek */}
                                     <Line
                                         name="Real Progress"
                                         type="monotone"
@@ -414,7 +414,8 @@ export default function Dashboard() {
                                         stroke="#10b981"
                                         strokeWidth={3}
                                         strokeDasharray="4 4"
-                                        dot={{ r: 4, fill: "#10b981", stroke: "#fff", strokeWidth: 2 }}
+                                        dot={{ r: 5, fill: "#10b981", stroke: "#fff", strokeWidth: 2 }}
+                                        activeDot={{ r: 7, stroke: "#10b981", strokeWidth: 3 }}
                                         connectNulls={true}
                                     />
                                 </LineChart>
