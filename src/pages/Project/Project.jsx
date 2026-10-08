@@ -100,11 +100,12 @@ export default function Projects() {
     const [loadingMembers, setLoadingMembers] = useState(false);
     const [isSubmittingProject, setIsSubmittingProject] = useState(false);
     const [isSubmittingTask, setIsSubmittingTask] = useState(false);
-
+const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
     const [projectName, setProjectName] = useState('');
     const [projectDesc, setProjectDesc] = useState('');
     const [projectStartDate, setProjectStartDate] = useState(todayStr);
     const [projectDueDate, setProjectDueDate] = useState('');
+    const [projectBudget, setProjectBudget] = useState('');
     const [selectedColor, setSelectedColor] = useState('#4f46e5');
     const [selectedMembers, setSelectedMembers] = useState([]);
 
@@ -149,6 +150,8 @@ export default function Projects() {
         setProjectDueDate('');
         setSelectedColor('#4f46e5');
         setSelectedMembers([]);
+        setProjectBudget('');
+        setProjectCostPerPoint('');
     };
 
     const closeModal = () => {
@@ -319,7 +322,9 @@ export default function Projects() {
                 userId: currentUserId,
                 startDate: projectStartDate || currentToday,
                 date: projectDueDate || currentToday,
-                assignees: validAssignees
+                assignees: validAssignees,
+                budget: Number(projectBudget) || 0,
+                costPerPoint: Number(projectCostPerPoint) || 0
             };
 
             await createProject(payload);
@@ -715,6 +720,30 @@ export default function Projects() {
                                         value={projectDesc}
                                         onChange={(e) => setProjectDesc(e.target.value)}
                                     ></input>
+                                </div>
+                                <div className="field">
+                                        <label className="field-label">Cost per point ($)</label>
+                                        <input
+                                            className="input"
+                                            type="number"
+                                            min="0"
+                                            step="any"
+                                            placeholder="e.g. 100"
+                                            value={projectCostPerPoint}
+                                            onChange={(e) => setProjectCostPerPoint(e.target.value)}
+                                        />
+                                    </div>
+                                <div className="field">
+                                    <label className="field-label">Budget ($)</label>
+                                    <input
+                                        className="input"
+                                        type="number"
+                                        min="0"
+                                        step="any"
+                                        placeholder="e.g. 10000"
+                                        value={projectBudget}
+                                        onChange={(e) => setProjectBudget(e.target.value)}
+                                    />
                                 </div>
 
                                 <div className="grid-2">

@@ -24,6 +24,7 @@ import {
 
 // Import KPI Component
 import KPI from "./KPI/KPI";
+import BudgetUsage from "./ProjectProgress/Budgetusage.jsx";
 
 // Tooltip tùy chỉnh cho biểu đồ Weekly Progress
 const CustomWeeklyTooltip = ({ active, payload, label }) => {
@@ -266,7 +267,7 @@ export default function Dashboard() {
 
                 {/* KPI Section */}
                 <KPI />
-
+                <BudgetUsage/>
                 {/* Project Progress (%) Chart */}
                 <div
                     className="card"
