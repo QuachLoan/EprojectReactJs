@@ -112,7 +112,9 @@ export default function ProjectSetting() {
         description: '',
         color: '#4f46e5',
         startDate: '',
-        dueDate: ''
+        dueDate: '',
+          budget: '',
+          costPerPoint: ''
     });
 
     const [projectMembers, setProjectMembers] = useState([]);
@@ -242,7 +244,9 @@ export default function ProjectSetting() {
                 description: realProject.description || realProject.desc || '',
                 color: realProject.color || '#4f46e5',
                 startDate: formattedStartDate,
-                dueDate: formattedDueDate
+                dueDate: formattedDueDate,
+                  budget: realProject.budget ?? 0,
+                costPerPoint: realProject.costPerPoint ?? 0
             });
 
             setProjectMembers(realMembers);
@@ -397,17 +401,29 @@ export default function ProjectSetting() {
                 return;
             }
         }
-
+            const budgetNum = Number(formData.budget) || 0;
+            if (budgetNum < 0) {
+                alert('Budget phải >= 0!');
+                return;
+            }
+            const costPerPointNum = Number(formData.costPerPoint) || 0;
+            if (costPerPointNum < 0) {
+                alert('Cost per point phải >= 0!');
+                return;
+            }
         try {
             setSaving(true);
 
-            const payload = {
-                name: formData.name.trim(),
-                description: formData.description.trim(),
-                color: formData.color,
-                startDate: formData.startDate ? new Date(formData.startDate).toISOString() : null,
-                dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
-            };
+           const payload = {
+            name: formData.name.trim(),
+            description: formData.description.trim(),
+            color: formData.color,
+            startDate: formData.startDate ? new Date(formData.startDate).toISOString() : null,
+            dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
+            budget: budgetNum,
+          
+            costPerPoint: costPerPointNum
+        };
 
             const res = await updateProject(projectId, payload);
             const updatedData = res?.data || res || {};
@@ -581,7 +597,34 @@ export default function ProjectSetting() {
                                                     style={disabledInputStyle}
                                                 />
                                             </div>
-
+                                             <div className="field">
+                                            <label className="field-label">Cost per point ($)</label>
+                                            <input
+                                                type="number"
+                                                className="input"
+                                                min="0"
+                                                step="any"
+                                                placeholder="e.g. 100"
+                                                value={formData.costPerPoint}
+                                                onChange={(e) => setFormData({ ...formData, costPerPoint: e.target.value })}
+                                                disabled={!canManage}
+                                                style={disabledInputStyle}
+                                            />
+                                        </div>
+                                        <div className="field">
+                                            <label className="field-label">Budget ($)</label>
+                                            <input
+                                                type="number"
+                                                className="input"
+                                                min="0"
+                                                step="any"
+                                                placeholder="e.g. 10000"
+                                                value={formData.budget}
+                                                onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
+                                                disabled={!canManage}
+                                                style={disabledInputStyle}
+                                            />
+                                        </div>
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)' }}>
                                                 <div className="field">
                                                     <label className="field-label">Color</label>

@@ -371,3 +371,12 @@ export const fetchWeeklyExpectancy = async (projectId) => {
 
     return await response.json();
 };
+
+// ==================== PORTFOLIO ====================
+
+export const fetchPortfolio = async () => {
+    const res = await fetch(`${API_BASE_URL}/project/portfolio`, {
+        headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
