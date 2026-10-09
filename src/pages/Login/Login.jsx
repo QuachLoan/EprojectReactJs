@@ -4,9 +4,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { KanbanSquare, ArrowRight, Lock, Mail } from 'lucide-react';
 
 const DEMO_USERS = [
-    { name: 'Cao Sơn', role: 'Team Leader', initials: 'CS', color: '#4f46e5', email: 'cason@teamflow.dev' },
-    { name: 'Quách Loan', role: 'Member', initials: 'QL', color: '#0ea5e9', email: 'quachloan@teamflow.dev' },
-    { name: 'Ngô Lâm', role: 'Member', initials: 'NL', color: '#16a34a', email: 'ngolam@teamflow.dev' },
+    { name: 'Quach Loan', role: 'Admin', initials: 'CS', color: '#4f46e5', email: 'quachloan2k3@gmail.com' },
+    { name: 'Ngo Lam', role: 'Manager', initials: 'QL', color: '#0ea5e9', email: 'Manager@gmail.com' },
+    { name: 'Khanh Ngoc', role: 'Member', initials: 'NL', color: '#16a34a', email: 'Member@gmail.com'},
     { name: 'Khánh Ngọc', role: 'System Admin', initials: 'KN', color: '#db2777', email: 'khanhngoc@teamflow.dev' },
 ];
 
@@ -55,10 +55,44 @@ export default function LoginPage() {
     };
 
     // Tự động điền dữ liệu khi chọn Demo Account
-    const handleDemoSelect = (demoEmail) => {
-        setEmail(demoEmail);
-        setPassword('123456'); // Mật khẩu demo mặc định
-    };
+const handleDemoSelect = async (demoEmail) => {
+    setErrorMessage('');
+    setIsLoading(true);
+
+    try {
+        const response = await fetch(
+            'http://localhost:3000/api/user/login',
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    email: demoEmail,
+                    password: '123456'
+                })
+            }
+        );
+
+        const data = await response.json();
+
+        if (response.ok) {
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+
+            navigate('/dashboard');
+        } else {
+            setErrorMessage(
+                data.message || data.error || 'Đăng nhập thất bại'
+            );
+        }
+    } catch (error) {
+        setErrorMessage('Không thể kết nối tới server (Port 3000)');
+    } finally {
+        setIsLoading(false);
+    }
+};
+
 
     return (
         <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
@@ -190,7 +224,8 @@ export default function LoginPage() {
                                     borderRadius: '6px',
                                     background: '#fff'
                                 }}
-                                onClick={() => handleDemoSelect(user.email)}
+                               onClick={() => handleDemoSelect(user.email)}
+                                    disabled={isLoading}
                             >
                 <span style={{ width: '32px', height: '32px', borderRadius: '50%', background: user.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 600 }}>
                   {user.initials}
