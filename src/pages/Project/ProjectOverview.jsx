@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import Header from './../../components/layout/Header/Header.jsx';
-import Sidebar from './../../components/layout/Sidebar/SideBar.jsx';
+import { useParams } from 'react-router-dom';
+import ErrorState from '../../components/common/ErrorState.jsx';
+import { useConfirm, deleteConfirm } from '../../components/common/confirmContext.js';
+import { notify } from '../../utils/notify.js';
+import { withFallback, failureMessage } from '../../utils/requestState.js';
 import {
     fetchProjectById,
     fetchTasksByProject,
@@ -10,29 +12,25 @@ import {
     uploadProjectDocument,
     deleteProjectDocument
 } from './../../../api.jsx';
+import { API_ORIGIN } from "../../config/apiConfig.js";
 import "./project.css";
 import {
-    Calendar,
-    CalendarClock,
-    LayoutGrid,
-    List,
-    ListChecks,
-    Settings,
-    UsersRound,
     Loader2,
     FileText,
     Upload,
     Trash2,
     Edit3,
-    Check,
-    Info, BarChart2
-} from "lucide-react";
+    Check
+    } from "lucide-react";
+
+import ProjectHeader from '../../components/project/ProjectHeader.jsx';
 
 // Domain Backend chứa thư mục uploads
-const API_BASE_URL = "http://localhost:3000";
+// uploads are served from the backend origin
+const API_BASE_URL = API_ORIGIN;
 
 // Helper function format ngày dạng DD/MM/YYYY
-const formatDate = (dateString, fallback = 'Chưa đặt') => {
+const formatDate = (dateString, fallback = 'Not set') => {
     if (!dateString) return fallback;
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return fallback;
@@ -51,7 +49,11 @@ export default function ProjectOverview() {
     const [project, setProject] = useState(null);
     const [projectMembers, setProjectMembers] = useState([]);
     const [tasks, setTasks] = useState([]);
+    const confirm = useConfirm();
     const [loading, setLoading] = useState(true);
+    // Requests that failed in the last load; bump reloadKey to retry
+    const [loadFailures, setLoadFailures] = useState([]);
+    const [reloadKey, setReloadKey] = useState(0);
     const [memberCurrentRole, setMemberRole] = useState("");
 
     // State for Project Details
@@ -113,10 +115,11 @@ export default function ProjectOverview() {
         if (!projectId) return;
 
         setLoading(true);
+        const failures = [];
         Promise.all([
-            fetchProjectById(projectId).catch(() => null),
-            fetchTasksByProject(projectId).catch(() => []),
-            fetchMembersByProject(projectId).catch(() => [])
+            withFallback(fetchProjectById(projectId), null, failures, 'project'),
+            withFallback(fetchTasksByProject(projectId), [], failures, 'tasks'),
+            withFallback(fetchMembersByProject(projectId), [], failures, 'members')
         ]).then(([projectData, tasksData, membersData]) => {
             const realProject = projectData?.data || projectData || {};
             setProject(realProject);
@@ -124,8 +127,11 @@ export default function ProjectOverview() {
             setDocuments(realProject.documents || []);
             setTasks(Array.isArray(tasksData) ? tasksData : (tasksData?.data || []));
             setProjectMembers(Array.isArray(membersData) ? membersData : (membersData?.data || []));
-        }).finally(() => setLoading(false));
-    }, [projectId]);
+        }).finally(() => {
+            setLoadFailures(failures);
+            setLoading(false);
+        });
+    }, [projectId, reloadKey]);
 
     // Save project overview description
     const handleSaveDetail = async () => {
@@ -139,7 +145,7 @@ export default function ProjectOverview() {
             setIsEditingDetail(false);
         } catch (error) {
             console.error("Failed to update project details:", error);
-            alert(error.message || "Failed to update project details.");
+            notify({ type: "error", title: "Failed to update project details.", message: error.message });
         } finally {
             setIsSavingDetail(false);
         }
@@ -151,12 +157,12 @@ export default function ProjectOverview() {
 
         // Chặn người dùng nếu không phải Manager hoặc Admin
         if (!isManager) {
-            alert("Bạn cần có quyền Manager hoặc Admin để thực hiện thao tác này!");
+            notify({ type: "error", title: "Only a Manager or an Admin can do this." });
             return;
         }
 
         if (!selectedFiles || selectedFiles.length === 0) {
-            alert("Please select at least one file to upload!");
+            notify({ type: "info", title: "Please select at least one file to upload!" });
             return;
         }
 
@@ -178,7 +184,7 @@ export default function ProjectOverview() {
             }
         } catch (error) {
             console.error("File upload error:", error);
-            alert(error.message || "An error occurred while uploading files!");
+            notify({ type: "error", title: "An error occurred while uploading files!", message: error.message });
         } finally {
             setIsUploading(false);
         }
@@ -186,26 +192,48 @@ export default function ProjectOverview() {
 
     // Delete project document
     const handleDeleteDocument = async (docId) => {
-        if (!window.confirm("Are you sure you want to delete this document?")) return;
-        try {
-            const res = await deleteProjectDocument(projectId, docId);
-            if (res?.documents) {
-                setDocuments(res.documents);
-            } else {
-                setDocuments(prev => prev.filter(d => String(d._id) !== String(docId)));
-            }
-        } catch (error) {
-            console.error("Failed to delete document:", error);
-            alert(error.message || "An error occurred while deleting the document.");
-        }
+        const doc = documents.find(d => String(d._id) === String(docId));
+        // the dialog stays open until the request finishes; a failure is shown inside it (was an alert)
+        await confirm(deleteConfirm({
+            item: "document",
+            name: doc?.name,
+            onConfirm: async () => {
+                try {
+                    const res = await deleteProjectDocument(projectId, docId);
+                    if (res?.documents) {
+                        setDocuments(res.documents);
+                    } else {
+                        setDocuments(prev => prev.filter(d => String(d._id) !== String(docId)));
+                    }
+                } catch (error) {
+                    console.error("Failed to delete document:", error);
+                    throw new Error(error.message || "An error occurred while deleting the document.");
+                }
+            },
+        }));
     };
 
     if (loading) {
         return (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: '12px', color: '#6b7280' }}>
-                <Loader2 className="animate-spin" size={40} style={{ color: '#4f46e5' }} />
+            <div className="page-loading" role="status">
+                <Loader2 className="icon animate-spin" aria-hidden="true" />
                 <span>Loading project details...</span>
             </div>
+        );
+    }
+
+    // The overview is meaningless without the project — show the error, not placeholder values
+    const coreFailure = loadFailures.find((f) => f.label === 'project');
+    const partialFailure = !coreFailure && loadFailures.length > 0;
+    if (coreFailure) {
+        return (
+            <main className="page-content">
+                <ErrorState
+                    title="Couldn't load this project"
+                    message={failureMessage(coreFailure)}
+                    onRetry={() => setReloadKey((k) => k + 1)}
+                />
+            </main>
         );
     }
 
@@ -214,56 +242,27 @@ export default function ProjectOverview() {
     const formattedDueDate = formatDate(project?.date || project?.dueDate || project?.endDate);
 
     return (
-        <div className="app-shell">
-            <Sidebar />
+        <>
 
-            <div className="app-main">
-                <Header />
-
-                {/* Project Header */}
-                <div className="project-header">
-                    <div className="project-header-top">
-                        <div>
-                            <div className="project-title-row">
-                                <span className="project-color-dot" style={{ background: project?.color || '#4f46e5' }}></span>
-                                <h1>{project?.name || 'Project'}</h1>
-                            </div>
-                            <p className="page-subtitle">{project?.description || 'No description'}</p>
-
-                            <div className="project-meta-row">
-                                <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} Members</span>
-                                <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} Tasks</span>
-                                <span className="project-meta-item"><Calendar className="icon icon-sm" />Start Date: {formattedStartDate}</span>
-                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />End Date: {formattedDueDate}</span>
-                            </div>
-                        </div>
-                        <Link to={`/projectsetting/${projectId}`} className="icon-btn icon-btn-outline" style={{ cursor: 'pointer' }}>
-                            <Settings className="icon" />
-                        </Link>
-                    </div>
-
-                    {/* Navigation Tabs */}
-                    <nav className="project-tabs">
-                        <Link to={`/projectoverview/${projectId}`} className="project-tab active">
-                            <Info className="icon icon-sm" /> Overview
-                        </Link>
-                        <Link to={`/projectchart/${projectId}`} className="project-tab">
-                            <BarChart2 className="icon icon-sm" /> Chart
-                        </Link>
-                        <Link to={`/projectboard/${projectId}`} className="project-tab">
-                            <LayoutGrid className="icon icon-sm" /> Board
-                        </Link>
-                        <Link to={`/projectlist/${projectId}`} className="project-tab">
-                            <List className="icon icon-sm" /> Backlog
-                        </Link>
-                        <Link to={`/projectcalendar/${projectId}`} className="project-tab">
-                            <Calendar className="icon icon-sm" /> Calendar
-                        </Link>
-                    </nav>
-                </div>
+                <ProjectHeader
+                    projectId={projectId}
+                    project={project}
+                    memberCount={projectMembers.length}
+                    taskCount={tasks.length}
+                    startDate={formattedStartDate}
+                    endDate={formattedDueDate}
+                />
 
                 {/* Main Content */}
                 <main className="page-content" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                    {partialFailure && (
+                        <ErrorState
+                            variant="inline"
+                            title="Some project data could not be loaded."
+                            message="Task or member counts may be incomplete."
+                            onRetry={() => setReloadKey((k) => k + 1)}
+                        />
+                    )}
 
                     {/* Section 1: Project Details Description */}
                     <div className="card" style={{ padding: '20px', background: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
@@ -317,6 +316,7 @@ export default function ProjectOverview() {
                                 <input
                                     type="file"
                                     multiple
+                                    aria-label="Choose files to upload"
                                     className="input"
                                     style={{ flex: '1', padding: '8px' }}
                                     onChange={(e) => setSelectedFiles(e.target.files)}
@@ -373,9 +373,11 @@ export default function ProjectOverview() {
 
                                             {isOwnerOrManager && (
                                                 <button
+                                                    type="button"
                                                     onClick={() => handleDeleteDocument(doc._id)}
                                                     style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '6px' }}
-                                                    title="Delete File"
+                                                    title="Delete file"
+                                                    aria-label={`Delete document ${doc.name || ''}`.trim()}
                                                 >
                                                     <Trash2 size={18} />
                                                 </button>
@@ -388,7 +390,6 @@ export default function ProjectOverview() {
                     </div>
 
                 </main>
-            </div>
-        </div>
+        </>
     );
 }

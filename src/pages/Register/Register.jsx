@@ -1,6 +1,8 @@
 import { Target, Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { API_BASE_URL, translateBackendMessage } from "../../config/apiConfig.js";
+import { notify } from "../../utils/notify.js";
 
 function Register() {
   const navigate = useNavigate();
@@ -27,11 +29,11 @@ function Register() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
-      alert("Mật khẩu xác nhận không khớp!");
+      notify({ type: "error", title: "The passwords do not match." });
       return;
     }
     try {
-      const res = await fetch("http://localhost:3000/api/user/register", {
+      const res = await fetch(`${API_BASE_URL}/user/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData)
@@ -41,7 +43,7 @@ function Register() {
         // Đăng ký thành công -> Chuyển hướng sang trang Login
         navigate("/login");
       } else {
-        alert(data.message || "Đăng ký thất bại");
+        notify({ type: "error", title: "Registration failed", message: translateBackendMessage(data.message) });
       }
     } catch (error) {
       console.log(error);

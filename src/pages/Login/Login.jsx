@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { KanbanSquare, ArrowRight, Lock, Mail } from 'lucide-react';
+import { API_BASE_URL, translateBackendMessage } from "../../config/apiConfig.js";
 
 const DEMO_USERS = [
     { name: 'Cao Sơn', role: 'Team Leader', initials: 'CS', color: '#4f46e5', email: 'cason@teamflow.dev' },
@@ -28,7 +29,7 @@ export default function LoginPage() {
         setIsLoading(true);
 
         try {
-            const response = await fetch('http://localhost:3000/api/user/login', {
+            const response = await fetch(`${API_BASE_URL}/user/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password }),
@@ -45,10 +46,10 @@ export default function LoginPage() {
                 navigate('/dashboard');
             } else {
                 // Hiển thị thông báo lỗi từ server (Ví dụ: 'email or password not available')
-                setErrorMessage(data.message || data.error || 'Đăng nhập thất bại');
+                setErrorMessage(translateBackendMessage(data.message || data.error) || 'Sign-in failed.');
             }
         } catch (error) {
-            setErrorMessage('Không thể kết nối tới server (Port 3000)');
+            setErrorMessage('Could not reach the server. Check that the backend is running.');
         } finally {
             setIsLoading(false);
         }
@@ -114,7 +115,7 @@ export default function LoginPage() {
                     {/* Ô nhập Password */}
                     <div className="field">
                         <label className="field-label" htmlFor="password" style={{ display: 'block', fontSize: '14px', fontWeight: 500, marginBottom: '6px' }}>
-                            Mật khẩu
+                            Password
                         </label>
                         <div style={{ position: 'relative' }}>
                             <input

@@ -3,14 +3,11 @@ import "./project.css";
 
 import {
     Plus,
-    X,
     ListChecks,
     UsersRound,
     CalendarClock,
     Loader2
 } from 'lucide-react';
-import SideBar from './../../components/layout/SideBar/SideBar';
-import Header from './../../components/layout/Header/Header';
 import {
     fetchProjects,
     createProject,
@@ -20,6 +17,12 @@ import {
     fetchMembersByProject
 } from './../../../api.jsx';
 import { Link } from "react-router-dom";
+import ErrorState from '../../components/common/ErrorState.jsx';
+import { failureMessage } from '../../utils/requestState.js';
+import { avatarToneClass } from "../../utils/avatar.js";
+import { notify } from "../../utils/notify.js";
+import { buildFinancePayload } from '../../utils/projectFinance.js';
+import Modal from '../../components/common/Modal.jsx';
 
 const COLOR_OPTIONS = [
     '#4f46e5',
@@ -87,25 +90,29 @@ const getProjectStatus = (dueDateStr) => {
 export default function Projects() {
     const todayStr = getTodayString();
 
-    const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
     const [activeModal, setActiveModal] = useState(null);
 
     const [projects, setProjects] = useState([]);
     const [members, setMembers] = useState([]);
 
+    // per project: { status: 'loading' | 'success' | 'error', total, done } — a failed count is shown as "—", never 0
     const [projectTaskStats, setProjectTaskStats] = useState({});
+    const [retryingStats, setRetryingStats] = useState(false);
     const [projectMembersMap, setProjectMembersMap] = useState({});
 
     const [loadingProjects, setLoadingProjects] = useState(true);
+    // Set when the project list request fails: show an error, not "No projects found"
+    const [projectsError, setProjectsError] = useState(null);
     const [loadingMembers, setLoadingMembers] = useState(false);
     const [isSubmittingProject, setIsSubmittingProject] = useState(false);
     const [isSubmittingTask, setIsSubmittingTask] = useState(false);
-const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
+
     const [projectName, setProjectName] = useState('');
     const [projectDesc, setProjectDesc] = useState('');
     const [projectStartDate, setProjectStartDate] = useState(todayStr);
     const [projectDueDate, setProjectDueDate] = useState('');
-    const [projectBudget, setProjectBudget] = useState('');
+    // Budget / Cost per Point as typed (strings; empty = not sent)
+    const [projectFinance, setProjectFinance] = useState({ budget: '', costPerPoint: '' });
     const [selectedColor, setSelectedColor] = useState('#4f46e5');
     const [selectedMembers, setSelectedMembers] = useState([]);
 
@@ -115,7 +122,6 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
     const [taskPriority, setTaskPriority] = useState('Medium');
     const [taskDueDate, setTaskDueDate] = useState('');
 
-    const [toasts, setToasts] = useState([]);
 
     const getCurrentUser = () => {
         try {
@@ -148,10 +154,9 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
         setProjectDesc('');
         setProjectStartDate(currentToday);
         setProjectDueDate('');
+        setProjectFinance({ budget: '', costPerPoint: '' });
         setSelectedColor('#4f46e5');
         setSelectedMembers([]);
-        setProjectBudget('');
-        setProjectCostPerPoint('');
     };
 
     const closeModal = () => {
@@ -159,8 +164,47 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
         resetProjectForm();
     };
 
+    // Task count + done count of one project (same request and "done" rule as before)
+    const loadTaskStats = async (pId) => {
+        try {
+            const tasksData = await fetchTasksByProject(pId);
+            const tasksList = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
+
+            const doneTasksCount = tasksList.filter((task) => {
+                if (task.columnId && typeof task.columnId === 'object') {
+                    return task.columnId.position === 3;
+                }
+                if (task.position === 3) {
+                    return true;
+                }
+                return false;
+            }).length;
+
+            return { status: 'success', total: tasksList.length, done: doneTasksCount };
+        } catch (err) {
+            console.error("Lỗi fetch tasks của project:", pId, err);
+            return { status: 'error', error: err };
+        }
+    };
+
+    // Retry only the projects whose count failed; their cards show a spinner meanwhile
+    const retryFailedStats = async () => {
+        const failedIds = Object.keys(projectTaskStats).filter((id) => projectTaskStats[id]?.status === 'error');
+        if (failedIds.length === 0) return;
+        setRetryingStats(true);
+        setProjectTaskStats((prev) => {
+            const next = { ...prev };
+            failedIds.forEach((id) => { next[id] = { status: 'loading' }; });
+            return next;
+        });
+        const results = await Promise.all(failedIds.map(async (id) => [id, await loadTaskStats(id)]));
+        setProjectTaskStats((prev) => ({ ...prev, ...Object.fromEntries(results) }));
+        setRetryingStats(false);
+    };
+
     const loadProjects = async () => {
         setLoadingProjects(true);
+        setProjectsError(null);
         try {
             const data = await fetchProjects();
             const list = Array.isArray(data) ? data : (data?.data || []);
@@ -177,27 +221,7 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                 list.map(async (project) => {
                     const pId = project._id || project.id;
 
-                    try {
-                        const tasksData = await fetchTasksByProject(pId);
-                        const tasksList = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
-
-                        const doneTasksCount = tasksList.filter((task) => {
-                            if (task.columnId && typeof task.columnId === 'object') {
-                                return task.columnId.position === 3;
-                            }
-                            if (task.position === 3) {
-                                return true;
-                            }
-                            return false;
-                        }).length;
-
-                        statsMap[pId] = {
-                            total: tasksList.length,
-                            done: doneTasksCount
-                        };
-                    } catch (err) {
-                        statsMap[pId] = { total: 0, done: 0 };
-                    }
+                    statsMap[pId] = await loadTaskStats(pId);
 
                     try {
                         const projectMembersData = await fetchMembersByProject(pId);
@@ -218,7 +242,8 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
 
         } catch (error) {
             console.error("Lỗi fetch projects:", error);
-            showToast('Lỗi', 'Không thể tải danh sách Projects.', 'error');
+            setProjectsError(error);
+            // the page shows ErrorState + Retry for this failure (no extra toast)
         } finally {
             setLoadingProjects(false);
         }
@@ -232,7 +257,7 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
             setMembers(list);
         } catch (error) {
             console.error("Lỗi fetch members:", error);
-            showToast('Lỗi', 'Không thể tải danh sách Members.', 'error');
+            showToast('Error', 'The member list could not be loaded.', 'error');
         } finally {
             setLoadingMembers(false);
         }
@@ -257,19 +282,18 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
+    // the page's toasts were kept in state but never rendered: they now go to the shared notifier
     const showToast = (title, description = null, variant = 'info') => {
-        const id = Date.now();
-        setToasts((prev) => [...prev, { id, title, description, variant }]);
-        setTimeout(() => {
-            setToasts((prev) => prev.filter((t) => t.id !== id));
-        }, 4000);
+        notify({ type: variant, title, message: description || '' });
     };
 
+    // null = not known (still loading or the request failed)
     const calculateProgress = (project) => {
         const pId = project._id || project.id;
         const stats = projectTaskStats[pId];
+        if (stats?.status !== 'success') return null;
 
-        if (stats && stats.total > 0) {
+        if (stats.total > 0) {
             return Math.round((stats.done / stats.total) * 100);
         }
 
@@ -278,11 +302,11 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
 
     const getTaskCount = (project) => {
         const pId = project._id || project.id;
-        if (projectTaskStats[pId] !== undefined) {
-            return projectTaskStats[pId].total;
-        }
-        return 0;
+        const stats = projectTaskStats[pId];
+        return stats?.status === 'success' ? stats.total : null;
     };
+
+    const failedStatsCount = Object.values(projectTaskStats).filter((st) => st?.status === 'error').length;
 
     const handleCreateProject = async (e) => {
         e.preventDefault();
@@ -291,17 +315,23 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
         const currentToday = getTodayString();
 
         if (projectStartDate && projectStartDate < currentToday) {
-            showToast('Lỗi', 'Start date không được là ngày trong quá khứ.', 'error');
+            showToast('Error', 'The start date cannot be in the past.', 'error');
             return;
         }
 
         if (projectDueDate && projectDueDate < currentToday) {
-            showToast('Lỗi', 'End date không được là ngày trong quá khứ.', 'error');
+            showToast('Error', 'The end date cannot be in the past.', 'error');
             return;
         }
 
         if (projectStartDate && projectDueDate && projectStartDate > projectDueDate) {
-            showToast('Lỗi', 'Start date không được sau End date.', 'error');
+            showToast('Error', 'The start date cannot be after the end date.', 'error');
+            return;
+        }
+
+        const finance = buildFinancePayload(projectFinance);
+        if (finance.error) {
+            showToast('Error', finance.error, 'error');
             return;
         }
 
@@ -323,18 +353,17 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                 startDate: projectStartDate || currentToday,
                 date: projectDueDate || currentToday,
                 assignees: validAssignees,
-                budget: Number(projectBudget) || 0,
-                costPerPoint: Number(projectCostPerPoint) || 0
+                ...finance.payload
             };
 
             await createProject(payload);
 
-            showToast('Project created', 'Project đã lưu thành công.', 'success');
+            showToast('Project created', 'The project has been saved.', 'success');
             closeModal();
             loadProjects();
         } catch (error) {
             console.error("Lỗi tạo Project:", error);
-            showToast('Lỗi', error.response?.data?.message || error.message || 'Không thể tạo project.', 'error');
+            showToast('Error', error.message || 'The project could not be created.', 'error');
         } finally {
             setIsSubmittingProject(false);
         }
@@ -345,7 +374,7 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
         const currentToday = getTodayString();
 
         if (taskDueDate && taskDueDate < currentToday) {
-            showToast('Lỗi', 'End date không được là ngày trong quá khứ.', 'error');
+            showToast('Error', 'The end date cannot be in the past.', 'error');
             return;
         }
 
@@ -358,34 +387,23 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                 priority: taskPriority,
                 dueDate: taskDueDate
             });
-            showToast('Task created', 'Task mới đã tạo thành công.', 'success');
+            showToast('Task created', 'The new task has been created.', 'success');
             setTaskTitle('');
             setTaskDueDate('');
             setActiveModal(null);
             loadProjects();
         } catch (error) {
-            showToast('Lỗi', 'Không thể tạo task.', 'error');
+            showToast('Error', 'The task could not be created.', 'error');
         } finally {
             setIsSubmittingTask(false);
         }
     };
 
     return (
-        <div className="app-shell">
-            <SideBar />
-
-            {sidebarMobileOpen && (
-                <div
-                    className="sidebar-overlay show"
-                    onClick={() => setSidebarMobileOpen(false)}
-                />
-            )}
-
-            <div className="app-main">
-                <Header />
+        <>
 
                 <main className="page-content">
-                    <div className="page-content-inner">
+                    <div className="page-content-inner projects-page">
                         <div className="page-header">
                             <div>
                                 <h1>Projects</h1>
@@ -414,6 +432,12 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                 <Loader2 className="animate-spin" size={36} style={{ color: '#4f46e5' }} />
                                 <span style={{ fontSize: '15px', fontWeight: 500 }}>Loading...</span>
                             </div>
+                        ) : projectsError ? (
+                            <ErrorState
+                                title="Couldn't load projects"
+                                message={failureMessage({ error: projectsError })}
+                                onRetry={loadProjects}
+                            />
                         ) : projects.length === 0 ? (
                             <div className="empty-state" style={{ padding: '48px 0', textAlign: 'center' }}>
                                 <p className="empty-state-title" style={{ fontSize: '16px', color: '#6b7280' }}>
@@ -421,12 +445,24 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                 </p>
                             </div>
                         ) : (
+                            <>
+                            {failedStatsCount > 0 && (
+                                <ErrorState
+                                    variant="inline"
+                                    title="Couldn't load task counts."
+                                    message={`${failedStatsCount} ${failedStatsCount === 1 ? 'project shows' : 'projects show'} “—” instead of a number.`}
+                                    onRetry={retryFailedStats}
+                                    retrying={retryingStats}
+                                />
+                            )}
                             <div className="grid-cards">
                                 {projects.map((project) => {
                                     const pId = project._id || project.id;
                                     const memberList = projectMembersMap[pId] || [];
+                                    const statsStatus = projectTaskStats[pId]?.status || 'loading';
                                     const totalTask = getTaskCount(project);
-                                    const progressPercent = calculateProgress(project);
+                                    const progressValue = calculateProgress(project);
+                                    const progressPercent = progressValue ?? 0;
                                     const statusObj = getProjectStatus(project.date || project.dueDate);
 
                                     return (
@@ -450,12 +486,25 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                             <p className="project-card-desc">{project.description || project.desc}</p>
                                             <div>
                                                 <div className="project-card-progress-row">
-                                                    <span className="icon-inline">
-                                                        <ListChecks className="icon icon-sm" />
-                                                        {totalTask} {totalTask === 1 ? 'task' : 'tasks'}
-                                                    </span>
+                                                    {statsStatus === 'success' ? (
+                                                        <span className="icon-inline">
+                                                            <ListChecks className="icon icon-sm" />
+                                                            {totalTask} {totalTask === 1 ? 'task' : 'tasks'}
+                                                        </span>
+                                                    ) : statsStatus === 'error' ? (
+                                                        <span className="icon-inline project-stats-error" title="Couldn't load the task count">
+                                                            <ListChecks className="icon icon-sm" />
+                                                            <span aria-hidden="true">—</span>
+                                                            <span className="sr-only">Task count unavailable</span>
+                                                        </span>
+                                                    ) : (
+                                                        <span className="icon-inline project-stats-loading" role="status">
+                                                            <Loader2 className="icon icon-sm animate-spin" aria-hidden="true" />
+                                                            <span className="sr-only">Loading task count</span>
+                                                        </span>
+                                                    )}
                                                     <span style={{ fontWeight: 700, color: '#0f172a' }}>
-                                                        {progressPercent}%
+                                                        {progressValue === null ? '—' : `${progressPercent}%`}
                                                     </span>
                                                 </div>
 
@@ -487,29 +536,19 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                             </div>
 
                                             <div className="project-card-footer">
-                                                <span className="avatar-group" style={{ display: 'flex', alignItems: 'center' }}>
+                                                <span className="avatar-group">
                                                     {memberList.slice(0, 4).map((member, index) => {
                                                         const displayName = getMemberDisplayName(member);
                                                         const initials = getInitials(displayName);
+                                                        // same color seed as task cards / drawer: the USER id (KI-26)
+                                                        const userId = typeof member.userId === 'object'
+                                                            ? (member.userId?._id || member.userId?.id)
+                                                            : (member.userId || member._id || member.id);
 
                                                         return (
                                                             <span
                                                                 key={member._id || member.id || index}
-                                                                className="avatar avatar-xs"
-                                                                style={{
-                                                                    background: '#4f46e5',
-                                                                    color: '#ffffff',
-                                                                    fontWeight: 600,
-                                                                    fontSize: '11px',
-                                                                    marginLeft: index > 0 ? '-6px' : '0',
-                                                                    border: '2px solid #ffffff',
-                                                                    borderRadius: '50%',
-                                                                    width: '24px',
-                                                                    height: '24px',
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    justifyContent: 'center'
-                                                                }}
+                                                                className={`avatar avatar-sm ${avatarToneClass(userId)}`}
                                                                 title={displayName}
                                                             >
                                                                 {initials}
@@ -517,23 +556,7 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                                         );
                                                     })}
                                                     {memberList.length > 4 && (
-                                                        <span
-                                                            className="avatar avatar-xs"
-                                                            style={{
-                                                                background: '#9ca3af',
-                                                                color: '#ffffff',
-                                                                fontSize: '10px',
-                                                                fontWeight: 600,
-                                                                marginLeft: '-6px',
-                                                                border: '2px solid #ffffff',
-                                                                borderRadius: '50%',
-                                                                width: '24px',
-                                                                height: '24px',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center'
-                                                            }}
-                                                        >
+                                                        <span className="avatar-overflow avatar-sm">
                                                             +{memberList.length - 4}
                                                         </span>
                                                     )}
@@ -547,7 +570,7 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                                     <span className="icon-inline">
                                                         <CalendarClock className="icon icon-sm" />
                                                         {(project.date || project.dueDate)
-                                                            ? new Date(project.date || project.dueDate).toLocaleDateString('vi-VN')
+                                                            ? new Date(project.date || project.dueDate).toLocaleDateString('en-GB')
                                                             : 'N/A'}
                                                     </span>
                                                 </span>
@@ -556,26 +579,19 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                     );
                                 })}
                             </div>
+                            </>
                         )}
                     </div>
                 </main>
-            </div>
 
             {/* Modal Create Task */}
             {activeModal === 'quickCreateTaskModal' && (
-                <div className="modal-overlay" onClick={() => setActiveModal(null)}>
-                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h2 className="modal-title">Create task</h2>
-                            <button className="icon-btn" onClick={() => setActiveModal(null)} aria-label="Close" style={{ cursor: 'pointer' }}>
-                                <X className="icon" />
-                            </button>
-                        </div>
-                        <form onSubmit={handleCreateTask}>
-                            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                <Modal title="Create task" onClose={() => setActiveModal(null)}>
+                        <form className="modal-form" onSubmit={handleCreateTask}>
+                            <div className="modal-body">
                                 <div className="field">
-                                    <label className="field-label">Title</label>
-                                    <input
+                                    <label className="field-label" htmlFor="quick-task-title">Title</label>
+                                    <input id="quick-task-title"
                                         className="input"
                                         placeholder="e.g. Fix pagination bug"
                                         required
@@ -586,8 +602,8 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                 </div>
                                 <div className="grid-2">
                                     <div className="field">
-                                        <label className="field-label">Project</label>
-                                        <select className="select" value={taskProject} onChange={(e) => setTaskProject(e.target.value)}>
+                                        <label className="field-label" htmlFor="quick-task-project">Project</label>
+                                        <select id="quick-task-project" className="select" value={taskProject} onChange={(e) => setTaskProject(e.target.value)}>
                                             {projects.map((p) => (
                                                 <option key={p._id || p.id} value={p._id || p.id}>
                                                     {p.name}
@@ -596,8 +612,8 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                         </select>
                                     </div>
                                     <div className="field">
-                                        <label className="field-label">Column</label>
-                                        <select className="select" value={taskColumn} onChange={(e) => setTaskColumn(e.target.value)}>
+                                        <label className="field-label" htmlFor="quick-task-column">Column</label>
+                                        <select id="quick-task-column" className="select" value={taskColumn} onChange={(e) => setTaskColumn(e.target.value)}>
                                             <option value="Todo">Todo</option>
                                             <option value="In Progress">In Progress</option>
                                             <option value="Review">Review</option>
@@ -607,8 +623,8 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                 </div>
                                 <div className="grid-2">
                                     <div className="field">
-                                        <label className="field-label">Priority</label>
-                                        <select className="select" value={taskPriority} onChange={(e) => setTaskPriority(e.target.value)}>
+                                        <label className="field-label" htmlFor="quick-task-priority">Priority</label>
+                                        <select id="quick-task-priority" className="select" value={taskPriority} onChange={(e) => setTaskPriority(e.target.value)}>
                                             <option value="Medium">Medium</option>
                                             <option value="Urgent">Urgent</option>
                                             <option value="High">High</option>
@@ -616,8 +632,8 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                         </select>
                                     </div>
                                     <div className="field">
-                                        <label className="field-label">End date</label>
-                                        <input
+                                        <label className="field-label" htmlFor="quick-task-end-date">End date</label>
+                                        <input id="quick-task-end-date"
                                             className="input"
                                             type="date"
                                             min={getTodayString()}
@@ -626,7 +642,7 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                                 const val = e.target.value;
                                                 const currentToday = getTodayString();
                                                 if (val && val < currentToday) {
-                                                    showToast('Lỗi', 'End date không được là ngày trong quá khứ.', 'error');
+                                                    showToast('Error', 'The end date cannot be in the past.', 'error');
                                                     setTaskDueDate(currentToday);
                                                 } else {
                                                     setTaskDueDate(val);
@@ -637,13 +653,13 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                 </div>
                             </div>
                             <div className="modal-footer">
-                                <button type="button" className="btn btn-outline btn-sm" onClick={() => setActiveModal(null)} style={{ cursor: 'pointer' }}>
+                                <button type="button" className="btn btn-outline btn-sm" onClick={() => setActiveModal(null)}>
                                     Cancel
                                 </button>
-                                <button type="submit" className="btn btn-primary btn-sm" disabled={isSubmittingTask} style={{ cursor: isSubmittingTask ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <button type="submit" className="btn btn-primary btn-sm" disabled={isSubmittingTask}>
                                     {isSubmittingTask ? (
                                         <>
-                                            <Loader2 className="animate-spin" size={14} />
+                                            <Loader2 className="animate-spin" size={14} aria-hidden="true" />
                                             <span>Creating...</span>
                                         </>
                                     ) : (
@@ -652,58 +668,17 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                 </button>
                             </div>
                         </form>
-                    </div>
-                </div>
+                </Modal>
             )}
 
             {/* Modal Create Project */}
             {canCreateProject && activeModal === 'createProjectModal' && (
-                <div className="modal-overlay" onClick={closeModal}>
-                    <div
-                        className="modal-box"
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                            width: '100%',
-                            maxWidth: '640px',
-                            maxHeight: '85vh',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            overflow: 'hidden'
-                        }}
-                    >
-                        <div className="modal-header" style={{ flexShrink: 0, padding: '20px 24px 16px' }}>
-                            <div>
-                                <h2 className="modal-title">Create project</h2>
-                                <p className="modal-desc">Set up a new board for your team.</p>
-                            </div>
-                            <button className="icon-btn" onClick={closeModal} aria-label="Close" style={{ cursor: 'pointer' }}>
-                                <X className="icon" />
-                            </button>
-                        </div>
-
-                        <form
-                            onSubmit={handleCreateProject}
-                            style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                flex: 1,
-                                overflow: 'hidden'
-                            }}
-                        >
-                            <div
-                                className="modal-body"
-                                style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 'var(--space-4)',
-                                    overflowY: 'auto',
-                                    padding: '0 24px 8px',
-                                    flex: 1
-                                }}
-                            >
+                <Modal title="Create project" description="Set up a new board for your team." size="lg" onClose={closeModal}>
+                        <form className="modal-form" onSubmit={handleCreateProject}>
+                            <div className="modal-body">
                                 <div className="field">
-                                    <label className="field-label">Name</label>
-                                    <input
+                                    <label className="field-label" htmlFor="new-project-name">Name</label>
+                                    <input id="new-project-name"
                                         className="input"
                                         placeholder="e.g. Growth Experiments"
                                         required
@@ -713,43 +688,19 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                     />
                                 </div>
                                 <div className="field">
-                                    <label className="field-label">Description</label>
-                                    <input
+                                    <label className="field-label" htmlFor="new-project-description">Description</label>
+                                    <input id="new-project-description"
                                         className="textarea"
                                         placeholder="What is this project about?"
                                         value={projectDesc}
                                         onChange={(e) => setProjectDesc(e.target.value)}
                                     ></input>
                                 </div>
-                                <div className="field">
-                                        <label className="field-label">Cost per point ($)</label>
-                                        <input
-                                            className="input"
-                                            type="number"
-                                            min="0"
-                                            step="any"
-                                            placeholder="e.g. 100"
-                                            value={projectCostPerPoint}
-                                            onChange={(e) => setProjectCostPerPoint(e.target.value)}
-                                        />
-                                    </div>
-                                <div className="field">
-                                    <label className="field-label">Budget ($)</label>
-                                    <input
-                                        className="input"
-                                        type="number"
-                                        min="0"
-                                        step="any"
-                                        placeholder="e.g. 10000"
-                                        value={projectBudget}
-                                        onChange={(e) => setProjectBudget(e.target.value)}
-                                    />
-                                </div>
 
                                 <div className="grid-2">
                                     <div className="field">
-                                        <label className="field-label">Start date</label>
-                                        <input
+                                        <label className="field-label" htmlFor="new-project-start-date">Start date</label>
+                                        <input id="new-project-start-date"
                                             className="input"
                                             type="date"
                                             min={getTodayString()}
@@ -758,7 +709,7 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                                 const val = e.target.value;
                                                 const currentToday = getTodayString();
                                                 if (val && val < currentToday) {
-                                                    showToast('Lỗi', 'Start date không được là ngày trong quá khứ.', 'error');
+                                                    showToast('Error', 'The start date cannot be in the past.', 'error');
                                                     setProjectStartDate(currentToday);
                                                 } else {
                                                     setProjectStartDate(val);
@@ -767,8 +718,8 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                         />
                                     </div>
                                     <div className="field">
-                                        <label className="field-label">End date</label>
-                                        <input
+                                        <label className="field-label" htmlFor="new-project-end-date">End date</label>
+                                        <input id="new-project-end-date"
                                             className="input"
                                             type="date"
                                             min={projectStartDate || getTodayString()}
@@ -777,7 +728,7 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                                 const val = e.target.value;
                                                 const minAllowed = projectStartDate || getTodayString();
                                                 if (val && val < minAllowed) {
-                                                    showToast('Lỗi', 'End date không được nhỏ hơn Start date hoặc ngày hiện tại.', 'error');
+                                                    showToast('Error', 'The end date cannot be before the start date or today.', 'error');
                                                     setProjectDueDate(minAllowed);
                                                 } else {
                                                     setProjectDueDate(val);
@@ -787,38 +738,62 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                     </div>
                                 </div>
 
+                                <div className="grid-2">
+                                    <div className="field">
+                                        <label className="field-label" htmlFor="new-project-budget">Budget</label>
+                                        <input id="new-project-budget"
+                                            className="input"
+                                            type="number"
+                                            min="0"
+                                            step="any"
+                                            inputMode="decimal"
+                                            placeholder="0"
+                                            value={projectFinance.budget}
+                                            onChange={(e) => setProjectFinance({ ...projectFinance, budget: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="field">
+                                        <label className="field-label" htmlFor="new-project-cost-per-point">Cost per Point</label>
+                                        <input id="new-project-cost-per-point"
+                                            className="input"
+                                            type="number"
+                                            min="0"
+                                            step="any"
+                                            inputMode="decimal"
+                                            placeholder="0"
+                                            value={projectFinance.costPerPoint}
+                                            onChange={(e) => setProjectFinance({ ...projectFinance, costPerPoint: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                                <p className="field-hint">Optional. Numbers of 0 or more; leave empty to use 0.</p>
+
                                 <div className="field">
-                                    <span className="field-label">Color</span>
-                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    <span className="field-label" id="new-project-color">Color</span>
+                                    <div className="color-swatches" role="group" aria-labelledby="new-project-color">
                                         {COLOR_OPTIONS.map((color) => (
                                             <button
                                                 key={color}
                                                 type="button"
-                                                aria-label="Color"
+                                                aria-label={`Color ${color}`}
+                                                aria-pressed={selectedColor === color}
                                                 onClick={() => setSelectedColor(color)}
-                                                style={{
-                                                    width: '24px',
-                                                    height: '24px',
-                                                    borderRadius: '50%',
-                                                    background: color,
-                                                    border: 'none',
-                                                    cursor: 'pointer',
-                                                    boxShadow: selectedColor === color ? `0 0 0 2px #fff, 0 0 0 4px ${color}` : 'none'
-                                                }}
+                                                className={`color-swatch${selectedColor === color ? ' is-selected' : ''}`}
+                                                style={{ '--swatch': color }}
                                             />
                                         ))}
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="modal-footer" style={{ flexShrink: 0, padding: '16px 24px 20px' }}>
-                                <button type="button" className="btn btn-outline btn-sm" onClick={closeModal} style={{ cursor: 'pointer' }}>
+                            <div className="modal-footer">
+                                <button type="button" className="btn btn-outline btn-sm" onClick={closeModal}>
                                     Cancel
                                 </button>
-                                <button type="submit" className="btn btn-primary btn-sm" disabled={isSubmittingProject} style={{ cursor: isSubmittingProject ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <button type="submit" className="btn btn-primary btn-sm" disabled={isSubmittingProject}>
                                     {isSubmittingProject ? (
                                         <>
-                                            <Loader2 className="animate-spin" size={14} />
+                                            <Loader2 className="animate-spin" size={14} aria-hidden="true" />
                                             <span>Creating...</span>
                                         </>
                                     ) : (
@@ -827,9 +802,8 @@ const [projectCostPerPoint, setProjectCostPerPoint] = useState('');
                                 </button>
                             </div>
                         </form>
-                    </div>
-                </div>
+                </Modal>
             )}
-        </div>
+        </>
     );
 }

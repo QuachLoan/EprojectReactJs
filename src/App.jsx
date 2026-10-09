@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Route, Routes, useNavigate } from 'react-router-dom'
+import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import { socket } from './utils/socket' // Đảm bảo đúng đường dẫn file socket.js của bạn
 
 import './App.css'
@@ -18,6 +18,16 @@ import ForgetPassword from './pages/ForgetPassword/ForgetPassword.jsx'
 import ResetPassword from './pages/ForgetPassword/ResetPassword/ResetPassword.jsx'
 import ProjectOverview from "./pages/Project/ProjectOverview.jsx";
 import ProjectChart from "./pages/Project/ProjectChart.jsx";
+import ProjectTimeline from "./pages/Project/ProjectTimeline.jsx";
+import ConfirmProvider from "./components/common/ConfirmProvider.jsx";
+import Notifier from "./components/common/Notifier.jsx";
+import { notify } from "./utils/notify.js";
+
+// "/gantchart/:id" (team route) → "/projecttimeline/:id"
+function GanttRedirect() {
+    const { id } = useParams();
+    return <Navigate to={`/projecttimeline/${id}`} replace />;
+}
 
 function App() {
     const navigate = useNavigate();
@@ -31,7 +41,7 @@ function App() {
 
             // Nếu user đăng nhập trùng khớp với userId bị ban
             if (currentUserId && currentUserId === data.userId) {
-                alert("Tài khoản của bạn đã bị vô hiệu hóa bởi Quản trị viên.");
+                notify({ type: "error", title: "Your account has been deactivated by an administrator." });
 
                 // Xóa thông tin đăng nhập
                 localStorage.removeItem("user");
@@ -50,29 +60,32 @@ function App() {
     }, [navigate]);
 
     return (
-        <>
+        <ConfirmProvider>
             <Routes>
                 <Route index element={<Login/>}/>
+                {/* Signed-in pages share one shell (sidebar + header). Paths are unchanged. */}
                 <Route element={<MainLayout/>}>
                     <Route path='/dashboard' element ={<Dashboard/>}/>
                     <Route path='/myTasks' element ={<MyTasks/>}/>
                     <Route path='/adminuser' element ={<AdminUsers/>}/>
+                    <Route path = "/project" element={<Project/>}/>
+                    <Route path="/projectboard/:id" element={<ProjectBoard />} />
+                    <Route path = "/projectlist/:id" element = {<ProjectList/>}/>
+                    <Route path = "/projectcalendar/:id" element = {<ProjectCalendar/>}/>
+                    <Route path = "/projectsetting/:id" element = {<ProjectSetting/>}/>
+                    <Route path = "/projectoverview/:id" element = {<ProjectOverview/>}/>
+                    <Route path = "/projectchart/:id" element = {<ProjectChart/>}/>
+                    <Route path = "/projecttimeline/:id" element = {<ProjectTimeline/>}/>
+                    {/* the team's older "/gantchart/:id" links keep working: the week-based Gantt is the Timeline */}
+                    <Route path = "/gantchart/:id" element = {<GanttRedirect/>}/>
                 </Route>
-                <Route path = "/project" element={<Project/>}/>
                 <Route path = "/login" element={<Login/>}/>
                 <Route path = "/register" element={<Register/>}/>
                 <Route path = "/forgot" element={<ForgetPassword/>}/>
                 <Route path = "/resetPassword" element={<ResetPassword/>}/>
-                <Route path="/projectboard/:id" element={<ProjectBoard />} />
-                <Route path = "/projectlist/:id" element = {<ProjectList/>}/>
-                <Route path = "/projectcalendar/:id" element = {<ProjectCalendar/>}/>
-                  <Route path = "/gantchart/:id" element = {<ProjectCalendar/>}/>
-
-                <Route path = "/projectsetting/:id" element = {<ProjectSetting/>}/>
-                <Route path = "/projectoverview/:id" element = {<ProjectOverview/>}/>
-                <Route path = "/projectchart/:id" element = {<ProjectChart/>}/>
             </Routes>
-        </>
+            <Notifier/>
+        </ConfirmProvider>
     )
 }
 
