@@ -1,22 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import Header from './../../components/layout/Header/Header.jsx';
-import Sidebar from './../../components/layout/Sidebar/Sidebar.jsx';
+import { useParams } from 'react-router-dom';
+import ErrorState from '../../components/common/ErrorState.jsx';
+import { withFallback, failureMessage } from '../../utils/requestState.js';
 
 import {
-    LayoutGrid,
-    List,
-    Calendar,
-    Settings,
     Plus,
     Loader2,
     ArrowRightCircle,
-    UsersRound,
-    ListChecks,
-    CalendarClock,
-    Trash2,
-    Info, BarChart2,
-} from 'lucide-react';
+    Trash2
+    } from 'lucide-react';
 
 import {
     fetchProjectById,
@@ -27,9 +19,14 @@ import {
     moveTask,
     deleteTask
 } from '../../../api.jsx';
+import { API_BASE_URL } from "../../config/apiConfig.js";
+
+import ProjectHeader from '../../components/project/ProjectHeader.jsx';
+import Modal from '../../components/common/Modal.jsx';
+import { useConfirm, deleteConfirm } from '../../components/common/confirmContext.js';
 
 // Helper function format ngày dạng DD/MM/YYYY
-const formatDate = (dateString, fallback = 'Chưa đặt') => {
+const formatDate = (dateString, fallback = 'Not set') => {
     if (!dateString) return fallback;
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return fallback;
@@ -44,8 +41,6 @@ const formatDate = (dateString, fallback = 'Chưa đặt') => {
 export default function ProjectList() {
     const { id: projectId } = useParams();
 
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-    const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
     const [activeModal, setActiveModal] = useState(null);
 
     const [project, setProject] = useState({});
@@ -54,7 +49,10 @@ export default function ProjectList() {
     const [columns, setColumns] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
+    // Requests that failed in the last load (empty = everything loaded)
+    const [loadFailures, setLoadFailures] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const confirm = useConfirm();
 
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
@@ -78,7 +76,7 @@ export default function ProjectList() {
             const token = localStorage.getItem("token");
             if (!token) return;
 
-            const res = await fetch("http://localhost:3000/api/user/currentUser", {
+            const res = await fetch(`${API_BASE_URL}/user/currentUser`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             const data = await res.json();
@@ -131,14 +129,15 @@ export default function ProjectList() {
 
     const loadData = async () => {
         if (!projectId) return;
+        const failures = [];
 
         try {
             setLoading(true);
             const [pData, colsData, tskList, membersData] = await Promise.all([
-                fetchProjectById(projectId).catch(() => ({})),
-                fetchColumnsByProject(projectId).catch(() => []),
-                fetchTasksByProject(projectId).catch(() => []),
-                fetchMembersByProject(projectId).catch(() => [])
+                withFallback(fetchProjectById(projectId), {}, failures, 'project'),
+                withFallback(fetchColumnsByProject(projectId), [], failures, 'columns'),
+                withFallback(fetchTasksByProject(projectId), [], failures, 'tasks'),
+                withFallback(fetchMembersByProject(projectId), [], failures, 'members')
             ]);
 
             const realProject = pData?.data || pData || {};
@@ -190,7 +189,9 @@ export default function ProjectList() {
             setProjectMembers(realMembers);
         } catch (err) {
             console.error('Error loading backlog tasks:', err);
+            failures.push({ label: 'backlog', error: err });
         } finally {
+            setLoadFailures(failures);
             setLoading(false);
         }
     };
@@ -305,91 +306,64 @@ export default function ProjectList() {
         }
     };
 
-    // Hàm xóa Task
+    // Backlog "Delete" button: confirm first, then DELETE /task/:id; the row stays if the request fails
     const handleDeleteTask = async (taskId) => {
         if (!isManager) return;
-
-        if (window.confirm("Bạn có chắc chắn muốn xóa task này khỏi backlog?")) {
-            try {
-                setTasks(prevTasks => prevTasks.filter(t => (t._id || t.id) !== taskId));
+        const task = tasks.find(t => String(t._id || t.id) === String(taskId));
+        await confirm(deleteConfirm({
+            item: 'task',
+            name: task?.title,
+            onConfirm: async () => {
                 await deleteTask(taskId);
-            } catch (error) {
-                console.error("Lỗi khi xóa task:", error);
-                alert("Xóa task thất bại. Vui lòng thử lại!");
-                loadData();
-            }
-        }
+                setTasks(prev => prev.filter(t => String(t._id || t.id) !== String(taskId)));
+            },
+        }));
     };
 
     // Định dạng ngày bắt đầu và ngày kết thúc theo chuẩn DD/MM/YYYY
     const formattedStartDate = formatDate(project?.startDate || project?.start_date || project?.createdAt);
     const formattedDueDate = formatDate(project?.date || project?.dueDate || project?.endDate);
 
-    return (
-        <div className="app-shell">
-            <Sidebar
-                collapsed={sidebarCollapsed}
-                setCollapsed={setSidebarCollapsed}
-                mobileOpen={sidebarMobileOpen}
-                setMobileOpen={setSidebarMobileOpen}
-            />
+    // Without the project, its columns and tasks the backlog would be wrong — show the error instead
+    const coreFailure = loadFailures.find((f) => f.label !== 'members');
+    const membersFailed = loadFailures.some((f) => f.label === 'members');
 
-            <div className="app-main">
-                <Header
-                    onOpenSidebar={() => setSidebarMobileOpen(true)}
-                    onOpenModal={(modal) => setActiveModal(modal)}
-                />
+    return (
+        <>
 
                 {loading ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: '60vh', color: '#64748b', gap: '12px' }}>
-                        <Loader2 className="animate-spin" style={{ width: 36, height: 36, color: '#4f46e5' }} />
-                        <span style={{ fontSize: '15px', fontWeight: 500 }}>Loading...</span>
+                    <div className="page-loading" role="status">
+                        <Loader2 className="icon animate-spin" aria-hidden="true" />
+                        <span>Loading...</span>
                     </div>
+                ) : coreFailure ? (
+                    <main className="page-content">
+                        <ErrorState
+                            title="Couldn't load the backlog"
+                            message={failureMessage(coreFailure)}
+                            onRetry={loadData}
+                        />
+                    </main>
                 ) : (
                     <>
-                        <div className="project-header">
-                            <div className="project-header-top">
-                                <div style={{ minWidth: 0 }}>
-                                    <div className="project-title-row">
-                                        <span className="project-color-dot" style={{ background: project.color || '#4f46e5' }}></span>
-                                        <h1>{project.name || 'Project'}</h1>
-                                    </div>
-                                    <p className="page-subtitle">{project.description || 'no description'}</p>
-
-                                    <div className="project-meta-row" style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '13px', color: '#64748b', flexWrap: 'wrap' }}>
-                                        <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} members</span>
-                                        <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
-                                        <span className="project-meta-item"><CalendarClock className="icon icon-sm" />start date: {formattedStartDate}</span>
-                                        <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate}</span>
-                                    </div>
-                                </div>
-                                <div className="project-header-actions">
-                                    <Link to={`/projectsetting/${projectId}`} className="icon-btn icon-btn-outline">
-                                        <Settings className="icon" />
-                                    </Link>
-                                </div>
-                            </div>
-
-                            <nav className="project-tabs">
-                                <Link to={`/projectoverview/${projectId}`} className="project-tab">
-                                    <Info className="icon icon-sm" /> Overview
-                                </Link>
-                                <Link to={`/projectchart/${projectId}`} className="project-tab">
-                                    <BarChart2 className="icon icon-sm" /> Chart
-                                </Link>
-                                <Link to={`/projectboard/${projectId}`} className="project-tab">
-                                    <LayoutGrid className="icon icon-sm" /> Board
-                                </Link>
-                                <Link to={`/projectlist/${projectId}`} className="project-tab active">
-                                    <List className="icon icon-sm" /> Backlog
-                                </Link>
-                                <Link to={`/projectcalendar/${projectId}`} className="project-tab">
-                                    <Calendar className="icon icon-sm" /> Calendar
-                                </Link>
-                            </nav>
-                        </div>
+                        <ProjectHeader
+                            projectId={projectId}
+                            project={project}
+                            memberCount={projectMembers.length}
+                            taskCount={tasks.length}
+                            startDate={formattedStartDate}
+                            endDate={formattedDueDate}
+                        />
 
                         <main className="page-content" style={{ padding: '20px' }}>
+                            {membersFailed && (
+                                <ErrorState
+                                    variant="inline"
+                                    title="Project members could not be loaded."
+                                    message="Assignee names may be missing."
+                                    onRetry={loadData}
+                                />
+                            )}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                                 <div>
                                     <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#0f172a' }}>Pending Backlog Tasks</h2>
@@ -401,8 +375,8 @@ export default function ProjectList() {
                                 )}
                             </div>
 
-                            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'visible' }}>
-                                <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse', fontSize: '14px' }}>
+                            <div className="backlog-table-wrap">
+                                <table className="backlog-table">
                                     <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontWeight: 600 }}>
                                     <tr>
                                         <th style={{ padding: '12px 16px' }}>Title</th>
@@ -473,6 +447,8 @@ export default function ProjectList() {
 
                                                             {isManager && (
                                                                 <button
+                                                                    type="button"
+                                                                    aria-label={`Delete task ${task.title || ''}`.trim()}
                                                                     onClick={() => handleDeleteTask(taskId)}
                                                                     className="btn btn-danger btn-sm"
                                                                     style={{
@@ -511,21 +487,15 @@ export default function ProjectList() {
                         </main>
                     </>
                 )}
-            </div>
 
             {/* CREATE TASK MODAL */}
             {isManager && activeModal === 'quickCreateTaskModal' && (
-                <div className="modal-overlay" onClick={closeModal}>
-                    <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-                        <form onSubmit={handleCreateTask}>
-                            <div className="modal-header">
-                                <h2>Add Task to Backlog</h2>
-                                <button type="button" className="btn-icon" onClick={closeModal}>✕</button>
-                            </div>
+                <Modal title="Add Task to Backlog" onClose={closeModal}>
+                        <form className="modal-form" onSubmit={handleCreateTask}>
                             <div className="modal-body">
                                 <div className="form-group">
-                                    <label className="form-label">Title *</label>
-                                    <input
+                                    <label className="form-label" htmlFor="backlog-task-title">Title *</label>
+                                    <input id="backlog-task-title"
                                         className="input"
                                         placeholder="e.g: My task"
                                         value={newTaskTitle}
@@ -535,8 +505,8 @@ export default function ProjectList() {
                                 </div>
 
                                 <div className="form-group">
-                                    <label className="form-label">Points</label>
-                                    <input
+                                    <label className="form-label" htmlFor="backlog-task-points">Points</label>
+                                    <input id="backlog-task-points"
                                         type="number"
                                         min="0"
                                         className="input"
@@ -547,12 +517,11 @@ export default function ProjectList() {
                                 </div>
 
                                 <div className="form-group">
-                                    <label className="form-label">Week</label>
-                                    <select
+                                    <label className="form-label" htmlFor="backlog-task-week">Week</label>
+                                    <select id="backlog-task-week"
                                         className="select"
                                         value={newTaskWeek}
                                         onChange={(e) => setNewTaskWeek(Number(e.target.value))}
-                                        style={{ cursor: 'pointer' }}
                                     >
                                         {Array.from({ length: totalProjectWeeks }, (_, i) => i + 1).map(w => (
                                             <option key={w} value={w}>Week {w}</option>
@@ -561,8 +530,8 @@ export default function ProjectList() {
                                 </div>
 
                                 <div className="form-group">
-                                    <label className="form-label">Priority</label>
-                                    <select
+                                    <label className="form-label" htmlFor="backlog-task-priority">Priority</label>
+                                    <select id="backlog-task-priority"
                                         className="select"
                                         value={newTaskPriority}
                                         onChange={(e) => setNewTaskPriority(e.target.value)}
@@ -575,8 +544,8 @@ export default function ProjectList() {
                                 </div>
 
                                 <div className="form-group">
-                                    <label className="form-label">Description</label>
-                                    <textarea
+                                    <label className="form-label" htmlFor="backlog-task-description">Description</label>
+                                    <textarea id="backlog-task-description"
                                         className="textarea"
                                         placeholder="Add task description..."
                                         value={newTaskDesc}
@@ -592,9 +561,8 @@ export default function ProjectList() {
                                 </button>
                             </div>
                         </form>
-                    </div>
-                </div>
+                </Modal>
             )}
-        </div>
+        </>
     );
 }

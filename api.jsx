@@ -1,4 +1,5 @@
-const API_BASE_URL = 'http://localhost:3000/api'; // Thay bằng URL API của bạn
+import { API_BASE_URL, getApiErrorMessage } from './src/config/apiConfig.js';
+import { queueNotice } from './src/utils/notify.js';
 
 // Hàm xử lý Response chung
 const handleResponse = async (res) => {
@@ -8,7 +9,8 @@ const handleResponse = async (res) => {
         if (data.message === 'ACCOUNT_SUSPENDED' || data.logout) {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
-            alert('Tài khoản của bạn đã bị khóa bởi Quản trị viên!');
+            // the page reloads right after: show the message on /login instead of a blocking alert
+            queueNotice({ type: 'error', title: 'Your account has been suspended by an administrator.' });
             window.location.href = '/login';
             throw new Error('Account banned');
         }
@@ -23,7 +25,9 @@ const handleResponse = async (res) => {
             window.location.href = '/login';
         }
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || `Lỗi ${res.status}: Không thể thực hiện yêu cầu`);
+        const error = new Error(getApiErrorMessage(errorData, res.status));
+        error.status = res.status;
+        throw error;
     }
 
     return res.json();
@@ -42,6 +46,14 @@ const getAuthHeaders = () => {
 
 export const fetchProjects = async () => {
     const res = await fetch(`${API_BASE_URL}/project`, {
+        headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
+
+// Workspace statistics for the Dashboard KPI ({ totalProjects, totalBudget, onTimeRate })
+export const fetchPortfolio = async () => {
+    const res = await fetch(`${API_BASE_URL}/project/portfolio`, {
         headers: getAuthHeaders()
     });
     return handleResponse(res);
@@ -160,6 +172,32 @@ export const fetchTasksByProject = async (projectId) => {
     return handleResponse(res);
 };
 
+// Tasks assigned to the signed-in user, across all projects (My Tasks page)
+export const fetchMyTasks = async () => {
+    const res = await fetch(`${API_BASE_URL}/task/my-task`, {
+        headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
+
+// Epic Burndown of one project. The body is the chart itself — { totalPoints, currentWeek, weeks } —
+// with no { success, data } wrapper (see src/utils/epicBurndown.js)
+export const fetchEpicBurndown = async (projectId) => {
+    const res = await fetch(`${API_BASE_URL}/task/project/${encodeURIComponent(projectId)}/epic-burndown`, {
+        headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
+
+// Plan vs. Real Progress (cumulative, burn-up) of one project:
+// { success, currentProjectWeek, maxProjectWeek, weeks } — a different contract from the Epic Burndown
+export const fetchWeeklyExpectancy = async (projectId) => {
+    const res = await fetch(`${API_BASE_URL}/task/project/${encodeURIComponent(projectId)}/weekly-expectancy`, {
+        headers: getAuthHeaders()
+    });
+    return handleResponse(res);
+};
+
 export const fetchTaskById = async (taskId) => {
     const res = await fetch(`${API_BASE_URL}/task/${taskId}`, {
         headers: getAuthHeaders()
@@ -222,6 +260,10 @@ export const toggleChecklistItem = async (taskId, itemId, completed) => {
     return handleResponse(res);
 };
 
+// ⚠ BACKEND MISMATCH (verified at runtime, Phase E): the route is DELETE /task/:id/checklist/:itemId but the
+// backend controller reads :id as the CHECKLIST ITEM id. Calling it the documented way
+// (deleteChecklist(taskId, itemId)) returns 404. The drawers call deleteChecklist(itemId) — the item id lands in
+// :id and the delete works. Keep that call until the backend reads req.params.itemId; then pass (taskId, itemId).
 export const deleteChecklist = async (taskId, checklistId) => {
     const res = await fetch(`${API_BASE_URL}/task/${taskId}/checklist/${checklistId}`, {
         method: 'DELETE',
@@ -267,14 +309,7 @@ export const register = async (userData) => {
     return handleResponse(res);
 };
 
-export const reviewTask = async (taskId, isAccepted) => {
-    const res = await fetch(`${API_BASE_URL}/task/${taskId}/review`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ action: isAccepted ? 'accept' : 'not_accept' })
-    });
-    return handleResponse(res);
-};
+// POST /task/:id/review is not mounted by the backend (reviewTask has no route) — intentionally no client function
 
 // ==================== NOTES ====================
 
@@ -312,24 +347,23 @@ export const updateUserStatus = async (userId, status) => {
 };
 
 // Thêm vào api.jsx của bạn
+// Both go through handleResponse like every other call: a failed request throws (the UI keeps its data
+// and shows the error) instead of being read as a success.
 export const updateProjectDetail = async (projectId, projectDetail) => {
-    const token = localStorage.getItem('token');
     const response = await fetch(`${API_BASE_URL}/project/${projectId}/project-detail`, {
         method: 'PUT',
         headers: getAuthHeaders(),
-
         body: JSON.stringify({ projectDetail })
     });
-    return response.json();
+    return handleResponse(response);
 };
 
 export const deleteProjectDocument = async (projectId, documentId) => {
-    const token = localStorage.getItem('token');
     const response = await fetch(`${API_BASE_URL}/project/${projectId}/documents/${documentId}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
     });
-    return response.json();
+    return handleResponse(response);
 };
 
 // api.jsx
@@ -357,26 +391,4 @@ export const fetchTasksByWeek = async (projectId) => {
     const response = await fetch(`${API_BASE_URL}/project/${projectId}/tasks-by-week`);
     if (!response.ok) throw new Error('Failed to fetch tasks by week');
     return response.json();
-};
-
-export const fetchWeeklyExpectancy = async (projectId) => {
-    const token = localStorage.getItem("token");
-    const response = await fetch(`${API_BASE_URL}/task/project/${projectId}/weekly-expectancy`, {
-        headers: getAuthHeaders(),
-    });
-
-    if (!response.ok) {
-        throw new Error("Không thể tải dữ liệu điểm tiến độ theo tuần");
-    }
-
-    return await response.json();
-};
-
-// ==================== PORTFOLIO ====================
-
-export const fetchPortfolio = async () => {
-    const res = await fetch(`${API_BASE_URL}/project/portfolio`, {
-        headers: getAuthHeaders()
-    });
-    return handleResponse(res);
 };

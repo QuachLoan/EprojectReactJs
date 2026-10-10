@@ -1,10 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 // Import socket instance từ file socket.js của bạn
-import { socket } from './../../utils/socket.js';
-import Header from './../../components/layout/Header/Header.jsx';
-import Sidebar from './../../components/layout/Sidebar/SideBar.jsx';
+import {socket} from './../../utils/socket.js';
 import {
     fetchProjectById,
     fetchTasksByProject,
@@ -20,29 +18,36 @@ import {
     fetchTaskComments,
     addComment,
     fetchTaskActivities,
-    moveTask,
+    moveTask
 } from './../../../api.jsx';
+import { API_BASE_URL } from "../../config/apiConfig.js";
 import "./project.css";
+import ErrorState from '../../components/common/ErrorState.jsx';
+import { useConfirm, deleteConfirm } from '../../components/common/confirmContext.js';
+import Modal from '../../components/common/Modal.jsx';
+import { withFallback, failureMessage } from '../../utils/requestState.js';
 import {
-    Calendar,
-    CalendarClock,
-    LayoutGrid,
-    List,
-    ListChecks,
-    Settings,
-    UsersRound,
+    Plus,
     Loader2,
     Check,
-    X,
-    Info,
-    BarChart2
+    CalendarClock
 } from "lucide-react";
+
+import ProjectHeader from '../../components/project/ProjectHeader.jsx';
+import { applyMoveToColumns, buildMovePayload, getDestinationIndex, mergeMovedTask, idOf } from '../../utils/taskMove.js';
+import BoardToolbar from './board/BoardToolbar.jsx';
+import BoardColumnHeader from './board/BoardColumnHeader.jsx';
+import TaskCard from './board/TaskCard.jsx';
+import { getColumnStatus } from './board/columnStatus.js';
+import { getProjectStart, isMoveLockedForRole, formatDayDMY } from '../../utils/projectSchedule.js';
+import TaskDrawerFrame from '../../components/task/TaskDrawerFrame.jsx';
+import { DrawerSection, ChecklistSection, CommentsSection, ActivitySection, AssigneePicker, UserAvatar } from '../../components/task/TaskDrawerSections.jsx';
 
 // Helper function định dạng ngày theo chuẩn DD/MM/YYYY
 const formatDateDMY = (dateValue) => {
-    if (!dateValue) return 'Chưa đặt';
+    if (!dateValue) return 'Not set';
     const d = new Date(dateValue);
-    if (isNaN(d.getTime())) return 'Chưa đặt';
+    if (isNaN(d.getTime())) return 'Not set';
     const day = String(d.getDate()).padStart(2, '0');
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
@@ -174,7 +179,7 @@ const calculateTaskWeekAndStatus = (task, project) => {
 };
 
 // ==========================================
-// COMPONENT TASK DRAWER
+// COMPONENT TASK DRAWER (Board) — data + permissions here, presentation in components/task/*
 // ==========================================
 function TaskDrawer({
                         taskId,
@@ -185,19 +190,25 @@ function TaskDrawer({
                         maxWeeks = 1,
                         onTaskUpdated,
                         onTaskDeleted,
+                        onMoveTask,
                         isManager = false,
                         isLeader = false,
-                        currentUserId = null
+                        syncEvent = null
                     }) {
     const [task, setTask] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [loadError, setLoadError] = useState('');
+    const [reloadKey, setReloadKey] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
+    const [saveError, setSaveError] = useState('');
+    const confirm = useConfirm();
 
-    const [checklistText, setChecklistText] = useState('');
     const [comments, setComments] = useState([]);
-    const [commentText, setCommentText] = useState('');
+    const [commentsError, setCommentsError] = useState('');
     const [activities, setActivities] = useState([]);
-    const [assigneeSearchQuery, setAssigneeSearchQuery] = useState('');
+    const [activitiesError, setActivitiesError] = useState('');
+    // fields the user is typing in — a realtime update must not overwrite them
+    const dirtyFieldsRef = useRef(new Set());
 
     const canEditAll = isManager;
     const canEditManagement = isManager || isLeader;
@@ -205,49 +216,72 @@ function TaskDrawer({
     const canAddChecklist = isManager || isLeader;
     const canDeleteChecklist = isManager || isLeader;
 
+    const normalizeTask = (realTask) => ({
+        ...realTask,
+        name: realTask.name || realTask.title || '',
+        columnId: extractColumnId(realTask.columnId),
+        assignees: Array.isArray(realTask.assignees)
+            ? realTask.assignees.map(a => typeof a === 'object' ? String(a._id || a.id) : String(a))
+            : [],
+        points: realTask.points ?? realTask.point ?? 0,
+        week: realTask.week ?? 1
+    });
+
+    const loadActivities = () => fetchTaskActivities(taskId)
+        .then((data) => { setActivities(Array.isArray(data) ? data : (data?.data || [])); setActivitiesError(''); })
+        .catch((err) => setActivitiesError(failureMessage({ error: err })));
+    const loadComments = () => fetchTaskComments(taskId)
+        .then((data) => { setComments(Array.isArray(data) ? data : (data?.data || [])); setCommentsError(''); })
+        .catch((err) => setCommentsError(failureMessage({ error: err })));
+
     useEffect(() => {
-        if (isDrawerOpen && taskId) {
-            setLoading(true);
-            setAssigneeSearchQuery('');
-            Promise.all([
-                fetchTaskById(taskId),
-                fetchTaskComments(taskId).catch(() => []),
-                fetchTaskActivities(taskId).catch(() => [])
-            ])
-                .then(([taskData, commentsData, activitiesData]) => {
-                    const realTask = taskData?.data || taskData;
+        if (!isDrawerOpen || !taskId) return;
+        let cancelled = false;
+        setLoading(true);
+        setLoadError('');
+        setSaveError('');
+        dirtyFieldsRef.current.clear();
+        Promise.all([
+            fetchTaskById(taskId),
+            fetchTaskComments(taskId).then((d) => ({ ok: d }), (e) => ({ err: failureMessage({ error: e }) })),
+            fetchTaskActivities(taskId).then((d) => ({ ok: d }), (e) => ({ err: failureMessage({ error: e }) }))
+        ])
+            .then(([taskData, c, a]) => {
+                if (cancelled) return;
+                setTask(normalizeTask(taskData?.data || taskData));
+                setComments(c.ok ? (Array.isArray(c.ok) ? c.ok : (c.ok?.data || [])) : []);
+                setCommentsError(c.err || '');
+                setActivities(a.ok ? (Array.isArray(a.ok) ? a.ok : (a.ok?.data || [])) : []);
+                setActivitiesError(a.err || '');
+            })
+            .catch((err) => {
+                if (cancelled) return;
+                console.error("Lỗi khi tải chi tiết task:", err);
+                setTask(null);
+                setLoadError(failureMessage({ error: err }));
+            })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [taskId, isDrawerOpen, reloadKey]);
 
-                    const formattedAssignees = Array.isArray(realTask.assignees)
-                        ? realTask.assignees.map(a => typeof a === 'object' ? String(a._id || a.id) : String(a))
-                        : [];
-
-                    setTask({
-                        ...realTask,
-                        name: realTask.name || realTask.title || '',
-                        columnId: extractColumnId(realTask.columnId),
-                        assignees: formattedAssignees,
-                        points: realTask.points ?? realTask.point ?? 0,
-                        week: realTask.week ?? 1
-                    });
-                    setComments(Array.isArray(commentsData) ? commentsData : (commentsData?.data || []));
-                    setActivities(Array.isArray(activitiesData) ? activitiesData : (activitiesData?.data || []));
-                })
-                .catch((err) => console.error("Lỗi khi tải chi tiết task:", err))
-                .finally(() => setLoading(false));
+    // Realtime: the board forwards socket events for the open task (one set of listeners, owned by the board)
+    useEffect(() => {
+        if (!syncEvent || !task) return;
+        if (syncEvent.type === 'task') {
+            const incoming = normalizeTask(syncEvent.data);
+            setTask(prev => {
+                if (!prev) return prev;
+                const next = { ...prev, ...incoming };
+                dirtyFieldsRef.current.forEach((field) => { next[field] = prev[field]; });
+                return next;
+            });
+        } else if (syncEvent.type === 'comment') {
+            setComments(prev => prev.some(c => String(c._id) === String(syncEvent.data._id)) ? prev : [...prev, syncEvent.data]);
         }
-    }, [taskId, isDrawerOpen]);
-
-    const filteredProjectMembers = useMemo(() => {
-        if (!assigneeSearchQuery.trim()) return projectMembers;
-        const query = assigneeSearchQuery.toLowerCase().trim();
-        return projectMembers.filter(member => {
-            const email = getMemberEmail(member).toLowerCase();
-            const name = getMemberDisplayName(member).toLowerCase();
-            return email.includes(query) || name.includes(query);
-        });
-    }, [projectMembers, assigneeSearchQuery]);
-
-    if (!isDrawerOpen) return null;
+        loadActivities();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [syncEvent]);
 
     const handleUpdateTaskField = async (updatedFields) => {
         if (!task || isSaving) return;
@@ -270,17 +304,19 @@ function TaskDrawer({
         const updatedTaskLocal = { ...task, ...updatedFields };
 
         setTask(updatedTaskLocal);
+        setSaveError('');
         if (onTaskUpdated) onTaskUpdated(updatedTaskLocal);
 
         try {
             setIsSaving(true);
             const updatedData = await updateTask(taskId, updatedFields);
             const returnedTask = updatedData?.data || updatedData;
+            Object.keys(updatedFields).forEach((f) => dirtyFieldsRef.current.delete(f));
 
             if (returnedTask) {
                 const finalTask = {
                     ...updatedTaskLocal,
-                    ...returnedTask,
+                    ...normalizeTask(returnedTask),
                     columnId: extractColumnId(returnedTask.columnId) || updatedTaskLocal.columnId,
                     points: returnedTask.points ?? returnedTask.point ?? updatedTaskLocal.points,
                     week: returnedTask.week ?? updatedTaskLocal.week
@@ -288,10 +324,31 @@ function TaskDrawer({
                 setTask(finalTask);
                 if (onTaskUpdated) onTaskUpdated(finalTask);
             }
+            loadActivities();
         } catch (error) {
             console.error("Lỗi khi cập nhật task, đang hoàn tác:", error);
             setTask(previousTask);
+            setSaveError(`Couldn't save changes — ${error.message}`);
             if (onTaskUpdated) onTaskUpdated(previousTask);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    // Changing the column is a move (PUT /task/:id/move), not a field update: only the move endpoint sets
+    // status / completedAt / completedDate and the column order. The board performs it (it owns the order).
+    const handleColumnChange = async (destColumnId) => {
+        if (!task || isSaving || !onMoveTask) return;
+        const sourceColumnId = extractColumnId(task.columnId);
+        if (!destColumnId || destColumnId === sourceColumnId) return;
+        setSaveError('');
+        setIsSaving(true);
+        try {
+            const moved = await onMoveTask(taskId, sourceColumnId, destColumnId);
+            setTask(prev => prev ? normalizeTask({ ...prev, ...moved, assignees: prev.assignees }) : prev);
+            loadActivities();
+        } catch (error) {
+            setSaveError(`Couldn't move the task — ${error.message}`);
         } finally {
             setIsSaving(false);
         }
@@ -303,6 +360,7 @@ function TaskDrawer({
             updatedFields.points = value;
             updatedFields.point = value;
         }
+        Object.keys(updatedFields).forEach((f) => dirtyFieldsRef.current.add(f));
         setTask(prev => {
             const nextState = { ...prev, ...updatedFields };
             if (onTaskUpdated) onTaskUpdated(nextState);
@@ -338,203 +396,166 @@ function TaskDrawer({
 
     const handleDeleteTask = async () => {
         if (!canDeleteTask) return;
-        if (!window.confirm("Bạn có chắc chắn muốn xóa task này?")) return;
-        try {
-            await deleteTask(taskId);
-            if (onTaskDeleted) onTaskDeleted(taskId);
-            handleCloseDrawer();
-        } catch (error) {
-            console.error("Lỗi khi xóa task:", error);
-        }
+        // the dialog stays open (loading) until the request finishes and shows the API error if it fails
+        await confirm(deleteConfirm({
+            item: "task",
+            onConfirm: async () => {
+                try {
+                    await deleteTask(taskId);
+                    if (onTaskDeleted) onTaskDeleted(taskId);
+                    handleCloseDrawer();
+                } catch (error) {
+                    console.error("Lỗi khi xóa task:", error);
+                    setSaveError(`Couldn't delete the task — ${error.message}`);
+                    throw error;
+                }
+            },
+        }));
     };
 
-    const handleAddChecklist = async () => {
-        if (!canAddChecklist || !checklistText.trim()) return;
+    // Checklist / comment actions return promises: the shared sections show progress and errors
+    const handleAddChecklist = async (text) => {
+        if (!canAddChecklist || !text.trim()) return;
+        const response = await addChecklistItem(taskId, text.trim());
+        const realTask = response?.data || response;
+        if (realTask && realTask.checklist) {
+            setTask(prev => ({ ...prev, checklist: realTask.checklist }));
+        }
+        loadActivities();
+    };
 
-        const textToSend = checklistText.trim();
-        setChecklistText('');
-
+    const handleToggleChecklist = async (item) => {
+        const previousChecklist = task.checklist;
+        setTask(prev => ({
+            ...prev,
+            checklist: (prev.checklist || []).map(i => String(i._id) === String(item._id) ? { ...i, completed: !item.completed } : i)
+        }));
         try {
-            const response = await addChecklistItem(taskId, textToSend);
+            const response = await toggleChecklistItem(taskId, item._id, item.completed);
             const realTask = response?.data || response;
             if (realTask && realTask.checklist) {
                 setTask(prev => ({ ...prev, checklist: realTask.checklist }));
             }
-        } catch (error) {
-            console.error("Lỗi khi thêm checklist:", error);
-        }
-    };
-
-    const handleToggleChecklist = async (itemId, completed) => {
-        const updatedChecklist = (task.checklist || []).map(item =>
-            String(item._id) === String(itemId) ? { ...item, completed: !completed } : item
-        );
-        setTask(prev => ({ ...prev, checklist: updatedChecklist }));
-
-        try {
-            const response = await toggleChecklistItem(taskId, itemId, completed);
-            const realTask = response?.data || response;
-
-            if (realTask && realTask.checklist) {
-                setTask(prev => ({ ...prev, checklist: realTask.checklist }));
-            }
+            loadActivities();
         } catch (error) {
             console.error("Lỗi khi cập nhật checklist:", error);
-            setTask(prev => ({ ...prev, checklist: task.checklist }));
-        }
-    };
-
-    const handleDeleteChecklist = async (checklistId) => {
-        if (!canDeleteChecklist) return;
-        if (!window.confirm("Bạn có chắc chắn muốn xóa checklist này?")) return;
-
-        const previousChecklist = task.checklist;
-        const updatedChecklist = (task.checklist || []).filter(
-            item => String(item._id) !== String(checklistId)
-        );
-        setTask(prev => ({ ...prev, checklist: updatedChecklist }));
-
-        try {
-            if (typeof deleteChecklist === 'function') {
-                await deleteChecklist(checklistId);
-            }
-        } catch (error) {
-            console.error("Lỗi khi xóa checklist:", error);
             setTask(prev => ({ ...prev, checklist: previousChecklist }));
+            throw error;
         }
     };
 
-    const handleAddComment = async (e) => {
-        e.preventDefault();
-        if (!commentText.trim()) return;
+    const handleDeleteChecklist = async (item) => {
+        if (!canDeleteChecklist) return;
 
-        const textToSend = commentText;
-        setCommentText('');
+        await confirm(deleteConfirm({
+            item: "checklist",
+            name: item.text,
+            // same optimistic remove + rollback as before; the dialog shows the API error and stays open
+            onConfirm: async () => {
+                const previousChecklist = task.checklist;
+                setTask(prev => ({ ...prev, checklist: (prev.checklist || []).filter(i => String(i._id) !== String(item._id)) }));
 
-        try {
-            const newComment = await addComment(taskId, textToSend);
-            setComments(prev => [...prev, newComment?.data || newComment]);
-        } catch (error) {
-            console.error("Lỗi khi gửi bình luận:", error);
-        }
+                try {
+                    // see the BACKEND MISMATCH note on deleteChecklist in api.jsx — the item id is passed on purpose
+                    await deleteChecklist(item._id);
+                } catch (error) {
+                    console.error("Deleting the checklist item failed:", error);
+                    setTask(prev => ({ ...prev, checklist: previousChecklist }));
+                    throw error;
+                }
+            },
+        }));
     };
 
-    const renderPriorityBadge = (priority) => {
-        const priorityConfig = {
-            Low: { color: '#2563eb', bg: '#eff6ff' },
-            Medium: { color: '#d97706', bg: '#fffbeb' },
-            High: { color: '#dc2626', bg: '#fef2f2' },
-            Urgent: { color: '#7c3aed', bg: '#f5f3ff' }
-        };
-        const config = priorityConfig[priority] || priorityConfig.Medium;
-
-        return (
-            <span className="priority-badge" style={{ color: config.color, background: config.bg, padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                <span className="icon icon-xs">
-                    <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" strokeWidth="2">
-                        <path d="M12 5v14"></path>
-                        <path d="m19 12-7 7-7-7"></path>
-                    </svg>
-                </span>
-                <span>{priority}</span>
-            </span>
-        );
+    const handleAddComment = async (text) => {
+        const newComment = await addComment(taskId, text);
+        const created = newComment?.data || newComment;
+        setComments(prev => prev.some(c => String(c._id) === String(created._id)) ? prev : [...prev, created]);
+        loadActivities();
     };
 
-    const totalChecklist = task?.checklist?.length || 0;
-    const completedChecklist = task?.checklist?.filter(item => item.completed)?.length || 0;
-    const progressPercent = totalChecklist > 0 ? Math.round((completedChecklist / totalChecklist) * 100) : 0;
+    const column = columns.find(c => String(c._id) === String(task?.columnId));
+    const assigneeMembers = projectMembers.filter(m => (task?.assignees || []).includes(extractUserId(m)));
 
     return (
-        <div className={`drawer-overlay ${isDrawerOpen ? "" : "hidden"}`} id="taskDrawer">
-            <div className="drawer-panel">
-                <div className="drawer-header">
-                    <div className="drawer-header-meta" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        {renderPriorityBadge(task?.priority || 'Medium')}
-                        <span style={{ fontSize: '12px', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            {isSaving ? (
-                                <>
-                                    <Loader2 className="animate-spin" size={14} />
-                                    <span>Updating...</span>
-                                </>
-                            ) : (
-                                task?.updatedAt ? `Updated ${formatDateDMY(task.updatedAt)}` : 'Recently'
-                            )}
-                        </span>
-                    </div>
-                    <button className="icon-btn" onClick={handleCloseDrawer} aria-label="Close panel" style={{ cursor: 'pointer' }}>
-                        <span className="icon">
-                            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none" strokeWidth="2">
-                                <path d="M18 6 6 18"></path>
-                                <path d="m6 6 12 12"></path>
-                            </svg>
-                        </span>
-                    </button>
+        <TaskDrawerFrame
+            open={isDrawerOpen}
+            onClose={handleCloseDrawer}
+            labelledBy="task-drawer-title"
+            returnFocusSelector={taskId ? `[data-rfd-draggable-id="${taskId}"]` : undefined}
+            headerContent={
+                <>
+                    {task && <span className={`priority-tag priority-${(task.priority || 'Medium').toLowerCase()}`}>{task.priority || 'Medium'}</span>}
+                    <span className="drawer-save-state" role="status">
+                        {isSaving ? (
+                            <><Loader2 className="icon icon-sm animate-spin" aria-hidden="true" /> Saving…</>
+                        ) : task?.updatedAt ? `Updated ${formatDateDMY(task.updatedAt)}` : ''}
+                    </span>
+                </>
+            }
+        >
+            {loading ? (
+                <div className="drawer-body drawer-state" role="status">
+                    <Loader2 className="icon animate-spin" aria-hidden="true" />
+                    <span>Loading task…</span>
                 </div>
-
-                {loading || !task ? (
-                    <div className="drawer-body" style={{ padding: '48px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', color: '#6b7280' }}>
-                        <Loader2 className="animate-spin" size={32} style={{ color: '#4f46e5' }} />
-                        <span>Loading...</span>
-                    </div>
-                ) : (
-                    <div className="drawer-body">
+            ) : loadError || !task ? (
+                <div className="drawer-body">
+                    <ErrorState
+                        title="Couldn't load this task"
+                        message={loadError || 'The task could not be loaded.'}
+                        onRetry={() => setReloadKey(k => k + 1)}
+                    />
+                </div>
+            ) : (
+                <div className="drawer-body">
+                    <div className="drawer-title-block">
                         <textarea
+                            id="task-drawer-title"
                             className="drawer-title-input"
-                            rows="1"
+                            rows="2"
+                            aria-label="Task title"
                             value={task.title || ''}
                             readOnly={!canEditManagement}
-                            style={{ cursor: canEditManagement ? 'text' : 'not-allowed' }}
                             onChange={(e) => handleInputChange('title', e.target.value)}
-                            onBlur={(e) => handleUpdateTaskField({ title: e.target.value })}
-                            placeholder="Nhập tiêu đề task..."
+                            onBlur={(e) => canEditManagement && handleUpdateTaskField({ title: e.target.value })}
+                            placeholder="Task title"
                         />
+                        <div className="drawer-subline">
+                            {column && <span className="drawer-chip">{column.title || column.name}</span>}
+                            {assigneeMembers.length > 0 && (
+                                <span className="avatar-group">
+                                    {assigneeMembers.map(m => (
+                                        <UserAvatar key={extractUserId(m)} userId={extractUserId(m)} name={getMemberDisplayName(m)} size="xs" />
+                                    ))}
+                                </span>
+                            )}
+                        </div>
+                    </div>
 
+                    {saveError && <div className="drawer-inline-error" role="alert">{saveError}</div>}
+
+                    <DrawerSection title="Properties">
                         <div className="drawer-field-grid">
-                            <div style={{ gridColumn: 'span 2' }}>
-                                <span className="drawer-field-label">Title</span>
-                                <input
-                                    className="input"
-                                    type="text"
-                                    value={task.title || ''}
-                                    readOnly={!canEditAll}
-                                    disabled={!canEditAll}
-                                    style={{
-                                        backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6',
-                                        cursor: canEditAll ? 'text' : 'not-allowed',
-                                        color: '#374151',
-                                        fontWeight: 500
-                                    }}
-                                    onChange={(e) => handleInputChange('title', e.target.value)}
-                                    onBlur={(e) => handleUpdateTaskField({ title: e.target.value })}
-                                    placeholder="Task's title"
-                                />
-                            </div>
-
-                            <div>
-                                <span className="drawer-field-label">Status</span>
+                            <label className="drawer-field">
+                                <span className="drawer-field-label">Column</span>
                                 <select
                                     className="select"
                                     value={extractColumnId(task.columnId)}
-                                    disabled={!canEditAll}
-                                    style={{ backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6', cursor: canEditAll ? 'pointer' : 'not-allowed' }}
-                                    onChange={(e) => handleUpdateTaskField({ columnId: e.target.value })}
+                                    disabled={!canEditAll || isSaving}
+                                    onChange={(e) => handleColumnChange(e.target.value)}
                                 >
                                     {columns.map((col) => (
-                                        <option key={col._id} value={String(col._id)}>
-                                            {col.name || col.title}
-                                        </option>
+                                        <option key={col._id} value={String(col._id)}>{col.name || col.title}</option>
                                     ))}
                                 </select>
-                            </div>
-
-                            <div>
+                            </label>
+                            <label className="drawer-field">
                                 <span className="drawer-field-label">Priority</span>
                                 <select
                                     className="select"
                                     value={task.priority || 'Medium'}
                                     disabled={!canEditAll}
-                                    style={{ backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6', cursor: canEditAll ? 'pointer' : 'not-allowed' }}
                                     onChange={(e) => handleUpdateTaskField({ priority: e.target.value })}
                                 >
                                     <option value="Low">Low</option>
@@ -542,9 +563,8 @@ function TaskDrawer({
                                     <option value="High">High</option>
                                     <option value="Urgent">Urgent</option>
                                 </select>
-                            </div>
-
-                            <div>
+                            </label>
+                            <label className="drawer-field">
                                 <span className="drawer-field-label">Points</span>
                                 <input
                                     className="input"
@@ -552,216 +572,82 @@ function TaskDrawer({
                                     min="0"
                                     value={task.points ?? task.point ?? 0}
                                     disabled={!canEditAll}
-                                    style={{ backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6', cursor: canEditAll ? 'text' : 'not-allowed' }}
                                     onChange={(e) => handleInputChange('points', e.target.value)}
                                     onBlur={(e) => handleUpdateTaskField({ points: Number(e.target.value) || 0, point: Number(e.target.value) || 0 })}
                                 />
-                            </div>
-
-                            <div>
+                            </label>
+                            <label className="drawer-field">
                                 <span className="drawer-field-label">Week</span>
                                 <select
                                     className="select"
                                     value={task.week || 1}
                                     disabled={!canEditAll}
-                                    style={{ backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6', cursor: canEditAll ? 'pointer' : 'not-allowed' }}
                                     onChange={(e) => handleUpdateTaskField({ week: Number(e.target.value) })}
                                 >
                                     {Array.from({ length: maxWeeks }, (_, i) => i + 1).map(w => (
                                         <option key={w} value={w}>Week {w}</option>
                                     ))}
                                 </select>
-                            </div>
-
-                            <div style={{ gridColumn: 'span 2' }}>
+                            </label>
+                            <div className="drawer-field drawer-field--wide">
                                 <span className="drawer-field-label">
-                                    Assignees {task.assignees?.length > 0 && `(${task.assignees.length} selected)`}
+                                    Assignees{task.assignees?.length > 0 ? ` · ${task.assignees.length}` : ''}
                                 </span>
-
-                                <input
-                                    className="input"
-                                    type="text"
-                                    placeholder="Search assignee by email..."
-                                    value={assigneeSearchQuery}
-                                    onChange={(e) => setAssigneeSearchQuery(e.target.value)}
-                                    style={{ marginBottom: '6px', fontSize: '13px' }}
+                                <AssigneePicker
+                                    members={projectMembers}
+                                    selectedIds={task.assignees || []}
+                                    canEdit={canEditManagement}
+                                    onToggle={handleToggleAssignee}
+                                    getUserId={extractUserId}
+                                    getName={getMemberDisplayName}
+                                    getEmail={getMemberEmail}
                                 />
-
-                                <div className="card" style={{ maxHeight: '140px', overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    {filteredProjectMembers.map((member, idx) => {
-                                        const memberUserId = extractUserId(member);
-                                        const memberRecordId = String(member._id || member.id || '');
-                                        const name = getMemberDisplayName(member);
-                                        const email = getMemberEmail(member);
-
-                                        const isChecked = task.assignees?.some(a => {
-                                            const id = typeof a === 'object' ? String(a._id || a.id) : String(a);
-                                            return id === String(memberUserId) || id === memberRecordId;
-                                        });
-
-                                        return (
-                                            <label key={memberRecordId || idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: canEditManagement ? 'pointer' : 'not-allowed', fontSize: '13px' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    className="checkbox"
-                                                    checked={!!isChecked}
-                                                    disabled={!canEditManagement}
-                                                    style={{ cursor: canEditManagement ? 'pointer' : 'not-allowed' }}
-                                                    onChange={() => handleToggleAssignee(member)}
-                                                />
-                                                <span className="avatar avatar-xs" style={{ background: '#4f46e5', color: '#fff', fontSize: '10px', width: '22px', height: '22px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                    {getInitials(name)}
-                                                </span>
-                                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                    <span>{name}</span>
-                                                    {email && <span style={{ fontSize: '11px', color: '#6b7280' }}>{email}</span>}
-                                                </div>
-                                            </label>
-                                        );
-                                    })}
-                                </div>
                             </div>
                         </div>
+                    </DrawerSection>
 
-                        <div>
-                            <span className="drawer-field-label">Description</span>
-                            <textarea
-                                className="textarea"
-                                rows="3"
-                                placeholder="Add a more detailed description…"
-                                value={task.description || ''}
-                                readOnly={!canEditAll}
-                                style={{ backgroundColor: canEditAll ? '#ffffff' : '#f3f4f6', cursor: canEditAll ? 'text' : 'not-allowed' }}
-                                onChange={(e) => handleInputChange('description', e.target.value)}
-                                onBlur={(e) => handleUpdateTaskField({ description: e.target.value })}
-                            />
+                    <DrawerSection title="Description">
+                        <textarea
+                            className="textarea"
+                            rows="4"
+                            aria-label="Description"
+                            placeholder={canEditAll ? 'Add a more detailed description…' : 'No description.'}
+                            value={task.description || ''}
+                            readOnly={!canEditAll}
+                            onChange={(e) => handleInputChange('description', e.target.value)}
+                            onBlur={(e) => canEditAll && handleUpdateTaskField({ description: e.target.value })}
+                        />
+                    </DrawerSection>
+
+                    <ChecklistSection
+                        items={task.checklist || []}
+                        canToggle
+                        canAdd={canAddChecklist}
+                        canDelete={canDeleteChecklist}
+                        onToggle={handleToggleChecklist}
+                        onAdd={handleAddChecklist}
+                        onDelete={handleDeleteChecklist}
+                    />
+
+                    <CommentsSection
+                        comments={comments}
+                        loadError={commentsError}
+                        onRetry={loadComments}
+                        onSubmit={handleAddComment}
+                    />
+
+                    <ActivitySection activities={activities} loadError={activitiesError} onRetry={loadActivities} />
+
+                    {canDeleteTask && (
+                        <div className="drawer-danger">
+                            <button type="button" className="btn btn-outline btn-sm drawer-delete-task" onClick={handleDeleteTask}>
+                                Delete task
+                            </button>
                         </div>
-
-                        <div className="drawer-section">
-                            <div className="checklist-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                <span className="comments-title">Checklists</span>
-                                <span className="checklist-count">{completedChecklist}/{totalChecklist}</span>
-                            </div>
-                            <div className="progress-bar" style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px', marginBottom: '12px', overflow: 'hidden' }}>
-                                <span
-                                    className="progress-bar-fill tone-success"
-                                    style={{ display: 'block', height: '100%', background: '#22c55e', width: `${progressPercent}%`, transition: 'width 0.3s' }}
-                                ></span>
-                            </div>
-                            <div className="checklist-items" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                {task.checklist && task.checklist.map((item, index) => (
-                                    <div
-                                        key={item._id || index}
-                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0' }}
-                                    >
-                                        <label className="checklist-item" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flex: 1 }}>
-                                            <input
-                                                type="checkbox"
-                                                className="checkbox"
-                                                checked={item.completed || false}
-                                                style={{ cursor: 'pointer' }}
-                                                onChange={() => handleToggleChecklist(item._id, item.completed)}
-                                            />
-                                            <span className={`checklist-text ${item.completed ? 'completed' : ''}`} style={{ textDecoration: item.completed ? 'line-through' : 'none', color: item.completed ? '#9ca3af' : 'inherit', cursor: 'pointer' }}>
-                                                {item.text || item.title}
-                                            </span>
-                                        </label>
-
-                                        {canDeleteChecklist && (
-                                            <button
-                                                type="button"
-                                                onClick={() => handleDeleteChecklist(item._id)}
-                                                title="Xóa checklist"
-                                                style={{
-                                                    background: 'transparent',
-                                                    border: 'none',
-                                                    color: '#ef4444',
-                                                    cursor: 'pointer',
-                                                    fontSize: '14px',
-                                                    fontWeight: 'bold',
-                                                    padding: '0 6px',
-                                                    lineHeight: 1
-                                                }}
-                                            >
-                                                ✕
-                                            </button>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-
-                            {canAddChecklist && (
-                                <div className="checklist-add-row" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                                    <input
-                                        className="input"
-                                        placeholder="Add checklist item…"
-                                        value={checklistText}
-                                        onChange={(e) => setChecklistText(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleAddChecklist()}
-                                    />
-                                    <button className="checklist-add-btn btn btn-secondary" onClick={handleAddChecklist} aria-label="Add checklist item" style={{ cursor: 'pointer' }}>
-                                        +
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="drawer-section">
-                            <p className="comments-title" style={{ fontWeight: 600, marginBottom: '8px' }}>Comments</p>
-                            <div className="comments-list" style={{ marginBottom: '12px' }}>
-                                {comments.length === 0 ? (
-                                    <div className="empty-state" style={{ padding: '16px 0', textAlign: 'center' }}>
-                                        <p className="empty-state-title" style={{ fontSize: '14px', color: '#6b7280' }}>No comments yet</p>
-                                    </div>
-                                ) : (
-                                    comments.map((comment, idx) => (
-                                        <div key={comment._id || idx} className="comment-item" style={{ marginBottom: '8px', fontSize: '14px' }}>
-                                            <strong>{comment.user?.username || comment.user?.name || 'User'}: </strong>
-                                            <span>{comment.text}</span>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                            <form className="comment-form" onSubmit={handleAddComment}>
-                                <textarea
-                                    className="textarea"
-                                    rows="2"
-                                    placeholder="Write a comment…"
-                                    value={commentText}
-                                    onChange={(e) => setCommentText(e.target.value)}
-                                />
-                                <div className="comment-form-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-                                    <button type="submit" className="btn btn-primary btn-sm" style={{ cursor: 'pointer' }}>Send</button>
-                                </div>
-                            </form>
-                        </div>
-
-                        <div className="drawer-section">
-                            <p className="comments-title" style={{ fontWeight: 600, marginBottom: '8px' }}>Activities</p>
-                            <ol className="timeline" style={{ paddingLeft: '16px', fontSize: '13px', color: '#4b5563' }}>
-                                {activities.map((act, index) => (
-                                    <li key={act._id || index} className="timeline-item" style={{ marginBottom: '6px' }}>
-                                        <strong>{act.user?.username || act.user?.name || 'User'}</strong> {act.action || 'đã thao tác'}
-                                    </li>
-                                ))}
-                            </ol>
-                        </div>
-
-                        {canDeleteTask && (
-                            <div className="drawer-section" style={{ marginTop: '24px' }}>
-                                <button
-                                    className="btn btn-outline btn-full"
-                                    style={{ color: '#dc2626', borderColor: '#fca5a5', width: '100%', cursor: 'pointer' }}
-                                    onClick={handleDeleteTask}
-                                >
-                                    Delete task
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
-        </div>
+                    )}
+                </div>
+            )}
+        </TaskDrawerFrame>
     );
 }
 
@@ -778,6 +664,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [columns, setColumns] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
+    // Requests that failed in the last load (empty = everything loaded)
+    const [loadFailures, setLoadFailures] = useState([]);
 
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedWeek, setSelectedWeek] = useState('all');
@@ -786,6 +674,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [isColumnFixed, setIsColumnFixed] = useState(false);
 
     const [selectedTaskId, setSelectedTaskId] = useState(null);
+    // socket events for the task open in the drawer (forwarded so the drawer needs no listeners of its own)
+    const [drawerSync, setDrawerSync] = useState(null);
+    const selectedTaskIdRef = useRef(null);
+    useEffect(() => { selectedTaskIdRef.current = selectedTaskId; }, [selectedTaskId]);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
     const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -796,6 +688,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [newTaskWeek, setNewTaskWeek] = useState(1);
     const [newTaskDesc, setNewTaskDesc] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    // last failed drag / move (the board was already rolled back)
+    const [moveError, setMoveError] = useState('');
 
     const getCurrentUser = () => {
         try {
@@ -813,7 +707,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             const token = localStorage.getItem("token");
             if (!token) return;
 
-            const res = await fetch("http://localhost:3000/api/user/currentUser", {
+            const res = await fetch(`${API_BASE_URL}/user/currentUser`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             const data = await res.json();
@@ -844,33 +738,22 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
     const canCreateTask = isManager || isLeader;
 
-    // ==========================================
-    // KIỂM TRA DỰ ÁN ĐÃ BẮT ĐẦU CHƯA (START DATE)
-    // ==========================================
-    const isProjectStarted = useMemo(() => {
-        const projStart = project?.startDate || project?.createdDate || project?.createdAt;
-        if (!projStart) return true;
-
-        const startDate = new Date(projStart);
-        startDate.setHours(0, 0, 0, 0);
-
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        return today >= startDate;
-    }, [project]);
+    // Members wait for the project start day before moving tasks (UI rule — the backend does not check it)
+    const moveLocked = isMoveLockedForRole({ isManager, isLeader }, project);
+    const projectStartLabel = formatDayDMY(getProjectStart(project));
 
     const fetchBoardData = async () => {
         if (!activeProjectId) return;
+        const failures = [];
 
         try {
             setLoading(true);
 
             const [projectData, columnsData, tasksData, membersData] = await Promise.all([
-                fetchProjectById(activeProjectId).catch(() => null),
-                fetchColumnsByProject(activeProjectId).catch(() => []),
-                fetchTasksByProject(activeProjectId).catch(() => []),
-                fetchMembersByProject(activeProjectId).catch(() => [])
+                withFallback(fetchProjectById(activeProjectId), null, failures, 'project'),
+                withFallback(fetchColumnsByProject(activeProjectId), [], failures, 'columns'),
+                withFallback(fetchTasksByProject(activeProjectId), [], failures, 'tasks'),
+                withFallback(fetchMembersByProject(activeProjectId), [], failures, 'members')
             ]);
 
             const realProject = projectData?.data || projectData || {};
@@ -888,7 +771,9 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             setProjectMembers(realMembers);
         } catch (error) {
             console.error("Lỗi khi tải dữ liệu từ API:", error);
+            failures.push({ label: 'board', error });
         } finally {
+            setLoadFailures(failures);
             setLoading(false);
         }
     };
@@ -925,6 +810,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 };
                 return [...prevTasks, formattedTask];
             });
+            // POST /task appends the task to its column order
+            if (taskData.columnId) {
+                setColumns(prev => applyMoveToColumns(prev, taskId, null, taskData.columnId, Number.MAX_SAFE_INTEGER, true));
+            }
         };
 
         // Sự kiện 2: Khi có Task được cập nhật
@@ -948,9 +837,13 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                     return t;
                 })
             );
+            if (String(selectedTaskIdRef.current) === taskId) setDrawerSync({ type: 'task', data: taskData, at: Date.now() });
         };
 
         // Sự kiện 3: Khi Kéo Thả / Di chuyển Task
+        // payload { taskId, sourceColumnId, destColumnId, destinationIndex, task } — `task` is not populated,
+        // so only the move fields are taken from it (status / completedAt / completedDate); the same order
+        // change as the backend is applied (idempotent for this tab's own move)
         const handleTaskMoved = (data) => {
             if (!data) return;
             const taskId = String(data.taskId || data._id || data.id);
@@ -959,16 +852,18 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             if (!taskId || !targetColumnId) return;
 
             setTasks(prevTasks =>
-                prevTasks.map(t => {
-                    if (String(t._id || t.id) === taskId) {
-                        return {
-                            ...t,
-                            columnId: targetColumnId
-                        };
-                    }
-                    return t;
-                })
+                prevTasks.map(t => String(t._id || t.id) === taskId ? mergeMovedTask(t, data.task, targetColumnId) : t)
             );
+            setColumns(prev => applyMoveToColumns(prev, taskId, data.sourceColumnId, targetColumnId, data.destinationIndex));
+            if (String(selectedTaskIdRef.current) === taskId) {
+                setDrawerSync({ type: 'task', data: mergeMovedTask({ _id: taskId }, data.task, targetColumnId), at: Date.now() });
+            }
+        };
+
+        // Sự kiện 5: Comment mới (chỉ drawer của task đang mở cần)
+        const handleCommentAdded = (comment) => {
+            if (!comment || String(comment.taskId) !== String(selectedTaskIdRef.current)) return;
+            setDrawerSync({ type: 'comment', data: comment, at: Date.now() });
         };
 
         // Sự kiện 4: Khi Task bị xóa
@@ -984,6 +879,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         socket.on('task_updated', handleTaskUpdated);
         socket.on('task_moved', handleTaskMoved);
         socket.on('task_deleted', handleTaskDeleted);
+        socket.on('comment_added', handleCommentAdded);
 
         // Hủy đăng ký listener và rời room khi unmount
         return () => {
@@ -992,6 +888,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             socket.off('task_updated', handleTaskUpdated);
             socket.off('task_moved', handleTaskMoved);
             socket.off('task_deleted', handleTaskDeleted);
+            socket.off('comment_added', handleCommentAdded);
         };
     }, [activeProjectId]);
 
@@ -1053,10 +950,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         return Array.from(columnTaskMap.values());
     };
 
-    const getCurrentUserId = () => {
-        return currentUser._id || currentUser.id || null;
-    };
-
     const resetTaskForm = () => {
         setNewTaskTitle('');
         setNewTaskName('');
@@ -1094,6 +987,36 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setTasks(prevTasks => prevTasks.filter(t => String(t._id || t.id) !== String(deletedTaskId)));
     };
 
+    /**
+     * Move a task to another column / position: optimistic (column + order), PUT /task/:id/move, then the
+     * backend's status / completedAt / completedDate from response.task; everything rolls back if it fails.
+     * Resolves with the merged task, rejects with the API error.
+     */
+    const performMove = async (taskId, sourceColumnId, destColumnId, destinationIndex) => {
+        if (moveLocked) {
+            throw new Error(`members can move tasks once the project starts on ${projectStartLabel}`);
+        }
+        const id = String(taskId);
+        const payload = buildMovePayload(sourceColumnId, destColumnId, destinationIndex);
+        const previousTasks = tasks;
+        const previousColumns = columns;
+
+        setTasks(prev => prev.map(t => String(t._id || t.id) === id ? { ...t, columnId: payload.destColumnId } : t));
+        setColumns(prev => applyMoveToColumns(prev, id, payload.sourceColumnId, payload.destColumnId, payload.destinationIndex));
+
+        try {
+            const response = await moveTask(id, payload);
+            const current = previousTasks.find(t => String(t._id || t.id) === id) || { _id: id };
+            setTasks(prev => prev.map(t => String(t._id || t.id) === id ? mergeMovedTask(t, response?.task, payload.destColumnId) : t));
+            return mergeMovedTask(current, response?.task, payload.destColumnId);
+        } catch (error) {
+            console.error("Moving the task failed, reverting:", error);
+            setTasks(previousTasks);
+            setColumns(previousColumns);
+            throw error;
+        }
+    };
+
     const handleOnDragEnd = async (result) => {
         const { destination, source, draggableId } = result;
         if (!destination) return;
@@ -1104,75 +1027,47 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             return;
         }
 
-        // Chặn thao tác di chuyển ở cấp độ function nếu không có quyền
-        if (!isManager && !isLeader && !isProjectStarted) {
-            alert("Dự án chưa đến ngày bắt đầu. Bạn không thể di chuyển task!");
-            return;
+        // destination.index counts the cards shown (search / week filters may hide some): place the task
+        // right before the card it was dropped above, in the column's full order
+        const destColumn = columns.find(c => String(c._id) === String(destination.droppableId));
+        const shown = getSortedTasksForColumn(destColumn || {}).filter(t => String(t._id || t.id) !== String(draggableId));
+        const before = shown[destination.index];
+        let destinationIndex = getDestinationIndex(destColumn, draggableId, before ? (before._id || before.id) : undefined);
+        if (!before && shown.length > 0) {
+            const order = (destColumn?.taskOrderIds || []).map(idOf).filter(x => x !== String(draggableId));
+            const lastShown = order.indexOf(String(shown[shown.length - 1]._id || shown[shown.length - 1].id));
+            if (lastShown !== -1) destinationIndex = lastShown + 1;
         }
 
-        const targetColumn = columns.find(c => String(c._id) === String(destination.droppableId));
-        const targetColumnName = (targetColumn?.name || targetColumn?.title || '').toLowerCase();
-        const isMovingToDone = targetColumnName.includes('done');
-
-        const previousTasks = [...tasks];
-
-        setTasks((prevTasks) => {
-            const newTasks = Array.from(prevTasks);
-            const movedTaskIndex = newTasks.findIndex(t => String(t._id || t.id) === String(draggableId));
-
-            if (movedTaskIndex !== -1) {
-                newTasks[movedTaskIndex] = {
-                    ...newTasks[movedTaskIndex],
-                    columnId: destination.droppableId
-                };
-            }
-            return newTasks;
-        });
-
-        const payload = {
-            sourceColumnId: source.droppableId === 'backlog' ? null : source.droppableId,
-            destColumnId: destination.droppableId,
-            destinationIndex: destination.index,
-            action: isMovingToDone ? 'accept' : undefined
-        };
-
+        setMoveError('');
         try {
-            await moveTask(draggableId, payload);
+            await performMove(draggableId, source.droppableId === 'backlog' ? null : source.droppableId, destination.droppableId, destinationIndex);
         } catch (error) {
-            console.error("Lỗi kéo thả task, hoàn tác UI:", error);
-            setTasks(previousTasks);
+            setMoveError(`Couldn't move the task — ${error.message}`);
         }
     };
 
-    const handleLeaderDecisionOnTask = async (e, task, currentColumnId, isAccepted) => {
+    // Drawer "Column" field: append to the end of the destination column
+    const handleMoveFromDrawer = (taskId, sourceColumnId, destColumnId) => {
+        const destColumn = columns.find(c => String(c._id) === String(destColumnId));
+        return performMove(taskId, sourceColumnId, destColumnId, getDestinationIndex(destColumn, taskId));
+    };
+
+    // "Not accept" on a Done card sends it back to the top of Review (the move endpoint resets completion)
+    const handleLeaderDecisionOnTask = async (e, task, currentColumnId) => {
         e.stopPropagation();
 
         const targetColumn = columns.find(c => {
             const name = (c.name || c.title || '').toLowerCase();
-            return isAccepted ? name.includes('done') : (name.includes('review') || name.includes('in review'));
+            return name.includes('review') || name.includes('in review');
         }) || columns[0];
+        if (!targetColumn || String(targetColumn._id) === String(currentColumnId)) return;
 
-        const destColumnId = targetColumn ? targetColumn._id : currentColumnId;
-        const previousTasks = [...tasks];
-
-        setTasks((prevTasks) =>
-            prevTasks.map(t =>
-                String(t._id || t.id) === String(task._id || task.id)
-                    ? { ...t, columnId: extractColumnId(destColumnId) }
-                    : t
-            )
-        );
-
+        setMoveError('');
         try {
-            await moveTask(task._id || task.id, {
-                sourceColumnId: currentColumnId,
-                destColumnId: destColumnId,
-                destinationIndex: 0,
-                action: isAccepted ? 'accept' : 'not_accept'
-            });
+            await performMove(task._id || task.id, currentColumnId, targetColumn._id, 0);
         } catch (error) {
-            console.error("Lỗi cập nhật trạng thái duyệt task:", error);
-            setTasks(previousTasks);
+            setMoveError(`Couldn't move the task — ${error.message}`);
         }
     };
 
@@ -1230,6 +1125,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 if (exists) return prevTasks;
                 return [...prevTasks, formattedNewTask];
             });
+            // POST /task appends the new task to its column order
+            setColumns(prev => applyMoveToColumns(prev, formattedNewTask._id, null, formattedNewTask.columnId, Number.MAX_SAFE_INTEGER, true));
 
             closeModal();
         } catch (error) {
@@ -1241,147 +1138,115 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
     if (loading) {
         return (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: '12px', color: '#6b7280' }}>
-                <Loader2 className="animate-spin" size={40} style={{ color: '#4f46e5' }} />
-                <span style={{ fontSize: '15px', fontWeight: 500 }}>Loading...</span>
+            <div className="page-loading" role="status">
+                <Loader2 className="icon animate-spin" aria-hidden="true" />
+                <span>Loading...</span>
             </div>
         );
     }
+
+    // Board cannot be shown without the project, its columns and its tasks — show the error, not an empty board
+    const coreFailure = loadFailures.find((f) => f.label !== 'members');
+    const membersFailed = loadFailures.some((f) => f.label === 'members');
+    if (coreFailure) {
+        return (
+            <main className="page-content">
+                <ErrorState
+                    title="Couldn't load this project board"
+                    message={failureMessage(coreFailure)}
+                    onRetry={fetchBoardData}
+                />
+            </main>
+        );
+    }
+
+    // project context for the toolbar (counts of the loaded tasks; completion = backend task.status)
+    const boardSummary = {
+        tasks: tasks.length,
+        points: tasks.reduce((sum, t) => sum + (Number(t.points ?? t.point) || 0), 0),
+        completed: tasks.filter(t => t.status === 'completed').length,
+    };
 
     const formattedStartDate = formatDateDMY(project?.startDate || project?.createdDate || project?.createdAt);
     const formattedDueDate = formatDateDMY(project?.date || project?.dueDate || project?.endDate);
 
     return (
-        <div className="app-shell">
-            <Sidebar />
+        <>
 
-            <div className="app-main">
-                <Header onOpenModal={(modal) => setActiveModal(modal)} />
+                <ProjectHeader
+                    projectId={activeProjectId}
+                    project={project}
+                    memberCount={projectMembers.length}
+                    taskCount={tasks.length}
+                    startDate={formattedStartDate}
+                    endDate={formattedDueDate}
+                />
 
-                <div className="project-header">
-                    <div className="project-header-top">
-                        <div>
-                            <div className="project-title-row">
-                                <span className="project-color-dot" style={{ background: project?.color || '#4f46e5' }}></span>
-                                <h1>{project?.name || 'Dự án'}</h1>
-                            </div>
-                            <p className="page-subtitle">{project?.description || 'No description'}</p>
-
-                            <div className="project-meta-row">
-                                <span className="project-meta-item"><UsersRound className="icon icon-sm" />{projectMembers.length} members</span>
-                                <span className="project-meta-item"><ListChecks className="icon icon-sm" />{tasks.length} tasks</span>
-                                <span className="project-meta-item"><Calendar className="icon icon-sm" />start date: {formattedStartDate}</span>
-                                <span className="project-meta-item"><CalendarClock className="icon icon-sm" />end date: {formattedDueDate}</span>
-                            </div>
-                        </div>
-                        <Link to={`/projectsetting/${activeProjectId}`} className="icon-btn icon-btn-outline" style={{ cursor: 'pointer' }}>
-                            <Settings className="icon" />
-                        </Link>
-                    </div>
-                    <nav className="project-tabs">
-                        <Link to={`/projectoverview/${activeProjectId}`} className="project-tab">
-                            <Info className="icon icon-sm" /> Overview
-                        </Link>
-                        <Link to={`/projectchart/${activeProjectId}`} className="project-tab">
-                            <BarChart2 className="icon icon-sm" /> Chart
-                        </Link>
-                        <Link to={`/projectboard/${activeProjectId}`} className="project-tab active">
-                            <LayoutGrid className="icon icon-sm" /> Board
-                        </Link>
-                        <Link to={`/projectlist/${activeProjectId}`} className="project-tab">
-                            <List className="icon icon-sm" /> Backlog
-                        </Link>
-                        <Link to={`/projectcalendar/${activeProjectId}`} className="project-tab">
-                            <Calendar className="icon icon-sm" /> Calendar
-                        </Link>
-                         <Link to={`/gantchart/${activeProjectId}`} className="project-tab">
-                            <Calendar className="icon icon-sm" /> gancchart
-                        </Link>
-
-                    </nav>
-                </div>
-
-                <main className="page-content">
-                    <div className="filter-bar" style={{ display: 'flex', gap: '12px', marginBottom: '16px', alignItems: 'center' }}>
-                        <div className="input-icon-wrap" style={{ width: '260px', flexShrink: 0 }}>
-                            <span className="input-icon">🔍</span>
-                            <input
-                                className="input"
-                                placeholder="Search task name..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                style={{ width: '100%' }}
-                            />
-                        </div>
-
-                        <div style={{ width: '150px', flexShrink: 0 }}>
-                            <select
-                                className="select"
-                                value={selectedWeek}
-                                onChange={(e) => setSelectedWeek(e.target.value)}
-                                style={{ cursor: 'pointer', height: '100%' }}
-                            >
-                                <option value="all">All Weeks</option>
-                                {Array.from({ length: totalProjectWeeks }, (_, i) => i + 1).map(w => (
-                                    <option key={w} value={w}>Week {w}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {canCreateTask && (
-                            <button
-                                className="btn btn-primary"
-                                style={{ marginLeft: 'auto', flexShrink: 0, cursor: 'pointer' }}
-                                onClick={() => handleOpenCreateModal('', false)}
-                            >
-                                + Add Task
-                            </button>
-                        )}
-                    </div>
+                <main className="page-content page-content--board">
+                    {membersFailed && (
+                        <ErrorState
+                            variant="inline"
+                            title="Project members could not be loaded."
+                            message="Assignee names may be missing."
+                            onRetry={fetchBoardData}
+                        />
+                    )}
+                    {moveError && (
+                        <ErrorState
+                            variant="inline"
+                            title={moveError}
+                            message="The board was restored to its previous state."
+                            onRetry={fetchBoardData}
+                        />
+                    )}
+                    <BoardToolbar
+                        summary={boardSummary}
+                        searchQuery={searchQuery}
+                        onSearchChange={setSearchQuery}
+                        selectedWeek={selectedWeek}
+                        onWeekChange={setSelectedWeek}
+                        totalWeeks={totalProjectWeeks}
+                        canCreateTask={canCreateTask}
+                        onCreateTask={() => handleOpenCreateModal('', false)}
+                    />
+                    {moveLocked && (
+                        <p className="board-notice" role="status">
+                            <CalendarClock className="icon icon-sm" aria-hidden="true" />
+                            This project starts on {projectStartLabel}. Members can move their tasks from that day.
+                        </p>
+                    )}
 
                     <DragDropContext onDragEnd={handleOnDragEnd}>
                         <div className="board scroll-x" id="kanbanBoard">
                             {columns.map((column) => {
                                 const columnTasks = getSortedTasksForColumn(column);
                                 const isDoneColumn = (column.name || column.title || '').toLowerCase().includes('done');
+                                const columnPoints = columnTasks.reduce((sum, t) => sum + (Number(t.points ?? t.point) || 0), 0);
 
                                 return (
-                                    <div className="board-column" key={column._id}>
-                                        <div className="board-column-header">
-                                            <span className="board-column-title">{column.name || column.title}</span>
-                                            <span className="board-column-count">{columnTasks.length}</span>
-                                            {canCreateTask && (
-                                                <button
-                                                    className="btn-icon"
-                                                    style={{ marginLeft: 'auto', cursor: 'pointer' }}
-                                                    onClick={() => handleOpenCreateModal(column._id, true)}
-                                                    title="Thêm task vào cột này"
-                                                >
-                                                    +
-                                                </button>
-                                            )}
-                                        </div>
+                                    <div className={`board-column kind-${getColumnStatus(column.name || column.title).kind}`} key={column._id}>
+                                        <BoardColumnHeader
+                                            title={column.name || column.title}
+                                            count={columnTasks.length}
+                                            points={columnPoints}
+                                            canCreateTask={canCreateTask}
+                                            onAddTask={() => handleOpenCreateModal(column._id, true)}
+                                        />
 
                                         <Droppable droppableId={String(column._id)}>
                                             {(provided, snapshot) => (
                                                 <div
-                                                    className="board-column-body"
+                                                    className={`board-column-body${snapshot.isDraggingOver ? ' is-drop-target' : ''}`}
                                                     ref={provided.innerRef}
                                                     {...provided.droppableProps}
-                                                    style={{
-                                                        minHeight: '150px',
-                                                        backgroundColor: snapshot.isDraggingOver ? 'rgba(79, 70, 229, 0.05)' : 'transparent',
-                                                        transition: 'background-color 0.2s cubic-bezier(0.2, 0, 0, 1)',
-                                                        borderRadius: '8px',
-                                                        padding: '4px'
-                                                    }}
                                                 >
                                                     {columnTasks.length === 0 ? (
-                                                        <div className="empty-state" style={{ padding: '24px 0' }}>
-                                                            <div className="empty-state-desc">
-                                                                {searchQuery || selectedWeek !== 'all' ? 'Not found' : 'Empty'}
-                                                            </div>
-                                                        </div>
+                                                        // hidden while a card hovers this column so the drop placeholder isn't pushed down
+                                                        !snapshot.isDraggingOver && (
+                                                            <p className="board-column-empty">
+                                                                {searchQuery.trim() || selectedWeek !== 'all' ? 'No tasks match the filters' : 'No tasks yet'}
+                                                            </p>
+                                                        )
                                                     ) : (
                                                         columnTasks.map((task, index) => {
                                                             const assignees = Array.isArray(task.assignees) ? task.assignees : [];
@@ -1392,13 +1257,14 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                 const assigneeId = typeof a === 'object' ? String(a._id || a.id) : String(a);
                                                                 return currentUserId && assigneeId === String(currentUserId);
                                                             });
-
-                                                            // ĐIỀU KIỆN KÉO THẢ:
-                                                            // - Manager / Leader được phép kéo thả
-                                                            // - Member chỉ kéo thả được NẾU là Assignee CỦA TASK VÀ DỰ ÁN ĐÃ BẮT ĐẦU (isProjectStarted)
-                                                            const canDragThisTask = isManager || isLeader || (isTaskAssignee && isProjectStarted);
+                                                            const canDragThisTask = isManager || isLeader || (isTaskAssignee && !moveLocked);
 
                                                             const { displayWeek, status } = calculateTaskWeekAndStatus(task, project);
+                                                            const assigneeList = assignees.map((assignee, aIdx) => {
+                                                                const name = getMemberDisplayName(getUserInfo(assignee, projectMembers));
+                                                                const id = typeof assignee === 'object' ? (assignee._id || assignee.id || aIdx) : assignee;
+                                                                return { id: String(id), name, initials: getInitials(name) };
+                                                            });
 
                                                             return (
                                                                 <Draggable
@@ -1408,213 +1274,20 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                                                     isDragDisabled={!canDragThisTask}
                                                                 >
                                                                     {(provided, snapshot) => (
-                                                                        <div
-                                                                            className="task-card"
-                                                                            ref={provided.innerRef}
-                                                                            {...provided.draggableProps}
-                                                                            {...provided.dragHandleProps}
-                                                                            onClick={() => handleOpenTaskDrawer(task._id || task.id)}
-                                                                            style={{
-                                                                                ...provided.draggableProps.style,
-                                                                                opacity: snapshot.isDragging ? 0.9 : 1,
-                                                                                transform: snapshot.isDragging
-                                                                                    ? `${provided.draggableProps.style?.transform} scale(1.02) translateY(-2px)`
-                                                                                    : provided.draggableProps.style?.transform,
-                                                                                boxShadow: snapshot.isDragging
-                                                                                    ? '0 12px 20px -5px rgba(79, 70, 229, 0.25), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
-                                                                                    : '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
-                                                                                transition: snapshot.isDragging
-                                                                                    ? 'box-shadow 0.2s ease, transform 0.1s ease'
-                                                                                    : 'transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s ease',
-                                                                                cursor: canDragThisTask
-                                                                                    ? (snapshot.isDragging ? 'grabbing' : 'grab')
-                                                                                    : 'pointer',
-                                                                                marginBottom: '8px',
-                                                                                position: 'relative',
-                                                                                backgroundColor: '#ffffff',
-                                                                                borderRadius: '8px'
-                                                                            }}
-                                                                        >
-                                                                            <div
-                                                                                className="task-card-top"
-                                                                                style={{
-                                                                                    display: 'flex',
-                                                                                    justifyContent: 'space-between',
-                                                                                    alignItems: 'flex-start',
-                                                                                    gap: '8px',
-                                                                                    marginBottom: '8px',
-                                                                                    paddingRight: showNotAcceptBtn ? '32px' : '0'
-                                                                                }}
-                                                                            >
-                                                                                <div className="task-card-title" style={{ flex: 1, margin: 0, fontWeight: 500 }}>
-                                                                                    {task.title || task.name}
-                                                                                </div>
-
-                                                                                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                                                                    {status === 'Overdue' && (
-                                                                                        <span
-                                                                                            title="Task đã quá hạn dự án"
-                                                                                            style={{
-                                                                                                background: '#fef2f2',
-                                                                                                color: '#dc2626',
-                                                                                                border: '1px solid #fca5a5',
-                                                                                                borderRadius: '12px',
-                                                                                                padding: '1px 7px',
-                                                                                                fontSize: '11px',
-                                                                                                fontWeight: 600,
-                                                                                                lineHeight: '16px',
-                                                                                                whiteSpace: 'nowrap'
-                                                                                            }}
-                                                                                        >
-                                                                                            Overdue
-                                                                                        </span>
-                                                                                    )}
-
-                                                                                    {status === 'Expiring' && (
-                                                                                        <span
-                                                                                            title="Task sắp hết hạn tuần"
-                                                                                            style={{
-                                                                                                background: '#fef3c7',
-                                                                                                color: '#d97706',
-                                                                                                border: '1px solid #fde68a',
-                                                                                                borderRadius: '12px',
-                                                                                                padding: '1px 7px',
-                                                                                                fontSize: '11px',
-                                                                                                fontWeight: 600,
-                                                                                                lineHeight: '16px',
-                                                                                                whiteSpace: 'nowrap'
-                                                                                            }}
-                                                                                        >
-                                                                                            Expiring
-                                                                                        </span>
-                                                                                    )}
-
-                                                                                    {status === 'On Track' && (
-                                                                                        <span
-                                                                                            title="Task đang đúng tiến độ"
-                                                                                            style={{
-                                                                                                background: '#dcfce7',
-                                                                                                color: '#15803d',
-                                                                                                border: '1px solid #bbf7d0',
-                                                                                                borderRadius: '12px',
-                                                                                                padding: '1px 7px',
-                                                                                                fontSize: '11px',
-                                                                                                fontWeight: 600,
-                                                                                                lineHeight: '16px',
-                                                                                                whiteSpace: 'nowrap'
-                                                                                            }}
-                                                                                        >
-                                                                                            On Track
-                                                                                        </span>
-                                                                                    )}
-
-                                                                                    <span
-                                                                                        title="Week"
-                                                                                        style={{
-                                                                                            background: '#e0e7ff',
-                                                                                            color: '#3730a3',
-                                                                                            border: '1px solid #c7d2fe',
-                                                                                            borderRadius: '12px',
-                                                                                            padding: '1px 7px',
-                                                                                            fontSize: '11px',
-                                                                                            fontWeight: 600,
-                                                                                            lineHeight: '16px',
-                                                                                            whiteSpace: 'nowrap'
-                                                                                        }}
-                                                                                    >
-                                                                                        W{displayWeek}
-                                                                                    </span>
-                                                                                    <span
-                                                                                        title="Story Points"
-                                                                                        style={{
-                                                                                            background: '#f1f5f9',
-                                                                                            color: '#475569',
-                                                                                            border: '1px solid #e2e8f0',
-                                                                                            borderRadius: '12px',
-                                                                                            padding: '1px 7px',
-                                                                                            fontSize: '11px',
-                                                                                            fontWeight: 600,
-                                                                                            lineHeight: '16px',
-                                                                                            whiteSpace: 'nowrap'
-                                                                                        }}
-                                                                                    >
-                                                                                        {taskPoints} pts
-                                                                                    </span>
-                                                                                </div>
-                                                                            </div>
-
-                                                                            <div
-                                                                                className="task-card-bottom"
-                                                                                style={{
-                                                                                    display: 'flex',
-                                                                                    justifyContent: 'space-between',
-                                                                                    alignItems: 'center',
-                                                                                    marginTop: 'auto',
-                                                                                    paddingRight: showNotAcceptBtn ? '32px' : '0'
-                                                                                }}
-                                                                            >
-                                                                                <div className="task-card-meta" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                                    <span className={`priority-tag priority-${task.priority?.toLowerCase()}`}>
-                                                                                        {task.priority || 'Medium'}
-                                                                                    </span>
-                                                                                </div>
-
-                                                                                {assignees.length > 0 && (
-                                                                                    <div className="task-assignees-group" style={{ marginLeft: 'auto', display: 'flex', gap: '-4px' }}>
-                                                                                        {assignees.map((assignee, aIdx) => {
-                                                                                            const userInfo = getUserInfo(assignee, projectMembers);
-                                                                                            const name = getMemberDisplayName(userInfo);
-                                                                                            const assigneeId = typeof assignee === 'object'
-                                                                                                ? (assignee._id || assignee.id || aIdx)
-                                                                                                : assignee;
-
-                                                                                            return (
-                                                                                                <div
-                                                                                                    key={assigneeId}
-                                                                                                    className="task-assignee-avatar"
-                                                                                                    title={name}
-                                                                                                    style={{
-                                                                                                        marginLeft: aIdx > 0 ? '-6px' : '0',
-                                                                                                        border: '2px solid #ffffff',
-                                                                                                        borderRadius: '50%'
-                                                                                                    }}
-                                                                                                >
-                                                                                                    {getInitials(name)}
-                                                                                                </div>
-                                                                                            );
-                                                                                        })}
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-
-                                                                            {showNotAcceptBtn && (
-                                                                                <button
-                                                                                    type="button"
-                                                                                    title="Not Accept Task"
-                                                                                    onClick={(e) => handleLeaderDecisionOnTask(e, task, column._id, false)}
-                                                                                    style={{
-                                                                                        position: 'absolute',
-                                                                                        right: '10px',
-                                                                                        top: '50%',
-                                                                                        transform: 'translateY(-50%)',
-                                                                                        backgroundColor: '#dc2626',
-                                                                                        color: '#ffffff',
-                                                                                        border: 'none',
-                                                                                        borderRadius: '50%',
-                                                                                        width: '24px',
-                                                                                        height: '24px',
-                                                                                        cursor: 'pointer',
-                                                                                        display: 'flex',
-                                                                                        alignItems: 'center',
-                                                                                        justifyContent: 'center',
-                                                                                        transition: 'background-color 0.2s',
-                                                                                        zIndex: 2
-                                                                                    }}
-                                                                                >
-                                                                                    <X size={14} strokeWidth={3} />
-                                                                                </button>
-                                                                            )}
-                                                                        </div>
+                                                                        <TaskCard
+                                                                            task={task}
+                                                                            dragRef={provided.innerRef}
+                                                                            draggableProps={provided.draggableProps}
+                                                                            dragHandleProps={provided.dragHandleProps}
+                                                                            isDragging={snapshot.isDragging}
+                                                                            canDrag={canDragThisTask}
+                                                                            week={displayWeek}
+                                                                            points={taskPoints}
+                                                                            deadlineStatus={status}
+                                                                            assignees={assigneeList}
+                                                                            onOpen={() => handleOpenTaskDrawer(task._id || task.id)}
+                                                                            onNotAccept={showNotAcceptBtn ? (e) => handleLeaderDecisionOnTask(e, task, column._id) : undefined}
+                                                                        />
                                                                     )}
                                                                 </Draggable>
                                                             );
@@ -1627,11 +1300,12 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
                                         {canCreateTask && (
                                             <button
+                                                type="button"
                                                 className="add-task-btn"
-                                                style={{ width: '260px', cursor: 'pointer', marginTop: '4px' }}
                                                 onClick={() => handleOpenCreateModal(column._id, true)}
                                             >
-                                                + Add Task
+                                                <Plus className="icon icon-sm" aria-hidden="true" />
+                                                Add task
                                             </button>
                                         )}
                                     </div>
@@ -1640,7 +1314,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                         </div>
                     </DragDropContext>
                 </main>
-            </div>
 
             <TaskDrawer
                 taskId={selectedTaskId}
@@ -1651,55 +1324,19 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 maxWeeks={totalProjectWeeks}
                 onTaskUpdated={handleTaskUpdatedFromDrawer}
                 onTaskDeleted={handleTaskDeletedFromDrawer}
+                onMoveTask={handleMoveFromDrawer}
                 isManager={isManager}
                 isLeader={isLeader}
-                currentUserId={getCurrentUserId()}
+                syncEvent={drawerSync}
             />
 
             {canCreateTask && activeModal === 'quickCreateTaskModal' && (
-                <div className="modal-overlay" onClick={closeModal}>
-                    <div
-                        className="modal-box"
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                            maxHeight: '90vh',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            overflowY: 'auto',
-                            padding: '24px',
-                            boxSizing: 'border-box',
-                            width: '100%',
-                            maxWidth: '520px'
-                        }}
-                    >
-                        <form
-                            onSubmit={handleCreateTask}
-                            style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                flex: 1,
-                                overflow: 'hidden'
-                            }}
-                        >
-                            <div className="modal-header" style={{ flexShrink: 0 }}>
-                                <h2>Add Task</h2>
-                                <button type="button" className="btn-icon" onClick={closeModal} style={{ cursor: 'pointer' }}>✕</button>
-                            </div>
-
-                            <div
-                                className="modal-body"
-                                style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '16px',
-                                    overflowY: 'auto',
-                                    paddingRight: '4px',
-                                    flex: 1
-                                }}
-                            >
+                <Modal title="Add Task" onClose={closeModal}>
+                        <form className="modal-form" onSubmit={handleCreateTask}>
+                            <div className="modal-body">
                                 <div className="form-group">
-                                    <label className="form-label">Title *</label>
-                                    <input
+                                    <label className="form-label" htmlFor="board-task-title">Title *</label>
+                                    <input id="board-task-title"
                                         className="input"
                                         placeholder="e.g: My task title"
                                         value={newTaskTitle}
@@ -1708,17 +1345,12 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                     />
                                 </div>
                                 <div className="form-group">
-                                    <label className="form-label">Column *</label>
-                                    <select
+                                    <label className="form-label" htmlFor="board-task-column">Column *</label>
+                                    <select id="board-task-column"
                                         className="select"
                                         value={newTaskColumnId}
                                         onChange={(e) => setNewTaskColumnId(e.target.value)}
                                         disabled={isColumnFixed}
-                                        style={{
-                                            backgroundColor: isColumnFixed ? '#f1f5f9' : '#ffffff',
-                                            cursor: isColumnFixed ? 'not-allowed' : 'pointer',
-                                            opacity: isColumnFixed ? 0.8 : 1
-                                        }}
                                         required
                                     >
                                         {columns.map((col) => (
@@ -1728,8 +1360,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 </div>
 
                                 <div className="form-group">
-                                    <label className="form-label">Points</label>
-                                    <input
+                                    <label className="form-label" htmlFor="board-task-points">Points</label>
+                                    <input id="board-task-points"
                                         type="number"
                                         min="0"
                                         className="input"
@@ -1740,12 +1372,11 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 </div>
 
                                 <div className="form-group">
-                                    <label className="form-label">Week</label>
-                                    <select
+                                    <label className="form-label" htmlFor="board-task-week">Week</label>
+                                    <select id="board-task-week"
                                         className="select"
                                         value={newTaskWeek}
                                         onChange={(e) => setNewTaskWeek(Number(e.target.value))}
-                                        style={{ cursor: 'pointer' }}
                                     >
                                         {Array.from({ length: totalProjectWeeks }, (_, i) => i + 1).map(w => (
                                             <option key={w} value={w}>Week {w}</option>
@@ -1754,12 +1385,11 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 </div>
 
                                 <div className="form-group">
-                                    <label className="form-label">Priority</label>
-                                    <select
+                                    <label className="form-label" htmlFor="board-task-priority">Priority</label>
+                                    <select id="board-task-priority"
                                         className="select"
                                         value={newTaskPriority}
                                         onChange={(e) => setNewTaskPriority(e.target.value)}
-                                        style={{ cursor: 'pointer' }}
                                     >
                                         <option value="Low">Low</option>
                                         <option value="Medium">Medium</option>
@@ -1769,8 +1399,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 </div>
 
                                 <div className="form-group">
-                                    <label className="form-label">Description</label>
-                                    <textarea
+                                    <label className="form-label" htmlFor="board-task-description">Description</label>
+                                    <textarea id="board-task-description"
                                         className="textarea"
                                         value={newTaskDesc}
                                         onChange={(e) => setNewTaskDesc(e.target.value)}
@@ -1778,12 +1408,12 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 </div>
                             </div>
 
-                            <div className="modal-footer" style={{ flexShrink: 0, marginTop: '16px' }}>
-                                <button type="button" className="btn btn-secondary" onClick={closeModal} style={{ cursor: 'pointer' }}>Cancel</button>
-                                <button type="submit" className="btn btn-primary" disabled={isSubmitting} style={{ cursor: isSubmitting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div className="modal-footer">
+                                <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
+                                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
                                     {isSubmitting ? (
                                         <>
-                                            <Loader2 className="animate-spin" size={16} />
+                                            <Loader2 className="animate-spin" size={16} aria-hidden="true" />
                                             <span>Adding...</span>
                                         </>
                                     ) : (
@@ -1792,9 +1422,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                                 </button>
                             </div>
                         </form>
-                    </div>
-                </div>
+                </Modal>
             )}
-        </div>
+        </>
     );
 }

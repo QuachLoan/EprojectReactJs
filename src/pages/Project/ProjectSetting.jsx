@@ -1,27 +1,21 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import Header from './../../components/layout/Header/Header.jsx';
-import Sidebar from './../../components/layout/Sidebar/Sidebar.jsx';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import ErrorState from '../../components/common/ErrorState.jsx';
+import { useConfirm, deleteConfirm, removeMemberConfirm } from '../../components/common/confirmContext.js';
+import { notify } from '../../utils/notify.js';
+import Modal from '../../components/common/Modal.jsx';
+import { buildFinancePayload, toNumberInput } from '../../utils/projectFinance.js';
+import { withFallback, failureMessage } from '../../utils/requestState.js';
 
 import {
-    LayoutGrid,
-    List,
-    Calendar,
-    Settings,
-    UsersRound,
-    ListChecks,
-    CalendarClock,
     Save,
     Trash2,
     Loader2,
     Search,
     UserPlus,
-    X,
     MoreHorizontal,
-    UserCog,
-    Info,
-    BarChart2,
-} from 'lucide-react';
+    UserCog
+    } from 'lucide-react';
 
 import {
     fetchProjectById,
@@ -32,9 +26,15 @@ import {
     fetchMembersByProject,
     inviteMember,
     deleteMemberByProject,
-    fetchUsers // Or fetchAllUsers depending on your api/index.js exports
+    fetchUsers
 } from '../../../api';
+import InviteCombobox from '../../components/project/InviteCombobox.jsx';
+import { looksLikeEmail, validateProjectDates } from '../../utils/userSuggest.js';
+import { API_BASE_URL, translateBackendMessage } from "../../config/apiConfig.js";
 
+import ProjectHeader from '../../components/project/ProjectHeader.jsx';
+
+// Hàm lấy ngày hiện tại dạng YYYY-MM-DD (dành cho HTML input[type="date"])
 const getTodayString = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -43,6 +43,7 @@ const getTodayString = () => {
     return `${year}-${month}-${day}`;
 };
 
+// Hàm bổ trợ định dạng ngày dạng DD/MM/YYYY
 const formatDateDMY = (dateValue) => {
     if (!dateValue) return 'Not set';
     const d = new Date(dateValue);
@@ -53,6 +54,7 @@ const formatDateDMY = (dateValue) => {
     return `${day}/${month}/${year}`;
 };
 
+// Helper tính các tuần của dự án dựa trên startDate và dueDate
 const calculateProjectWeeks = (startDateStr, endDateStr) => {
     if (!startDateStr || !endDateStr) return [{ index: 1, label: 'Week 1' }];
 
@@ -98,9 +100,6 @@ export default function ProjectSetting() {
     const { id: projectId } = useParams();
     const navigate = useNavigate();
 
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-    const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
-    const [activeModal, setActiveModal] = useState(null);
 
     const [activeTab, setActiveTab] = useState('general');
 
@@ -126,15 +125,18 @@ export default function ProjectSetting() {
     const [openInviteModal, setOpenInviteModal] = useState(false);
     const [inviteEmail, setInviteEmail] = useState("");
     const [inviteRole, setInviteRole] = useState("Member");
-
-    // --- State & Ref for Autocomplete Suggestions ---
-    const [allUsers, setAllUsers] = useState([]);
-    const [showSuggestions, setShowSuggestions] = useState(false);
-    const suggestionRef = useRef(null);
+    // accounts for the invite suggestions (GET /user) — loaded when the modal opens
+    const [inviteUsers, setInviteUsers] = useState([]);
+    const [inviteUsersState, setInviteUsersState] = useState({ loading: false, error: "" });
+    const [inviteError, setInviteError] = useState("");
+    const [inviting, setInviting] = useState(false);
 
     const [tasks, setTasks] = useState([]);
+    const confirm = useConfirm();
     const [columns, setColumns] = useState([]);
     const [loading, setLoading] = useState(true);
+    // Requests that failed in the last load (empty = everything loaded)
+    const [loadFailures, setLoadFailures] = useState([]);
     const [saving, setSaving] = useState(false);
 
     const todayString = getTodayString();
@@ -156,71 +158,18 @@ export default function ProjectSetting() {
         return calculateProjectWeeks(sDate, eDate);
     }, [project, formData.startDate, formData.dueDate]);
 
-    // Fetch system users list when Invite Modal opens
-    useEffect(() => {
-        if (openInviteModal) {
-            const loadAllUsers = async () => {
-                try {
-                    // Call imported API function
-                    const res = await fetchUsers();
-
-                    // Flexibly handle response payload structure
-                    const userList = Array.isArray(res) ? res : (res?.data || res?.users || []);
-                    setAllUsers(userList);
-                } catch (err) {
-                    console.error("Failed to load user suggestions:", err);
-                }
-            };
-            loadAllUsers();
-        }
-    }, [openInviteModal]);
-
-    // Handle clicking outside to hide suggestions dropdown
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (suggestionRef.current && !suggestionRef.current.contains(event.target)) {
-                setShowSuggestions(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-
-    // Filter user suggestions based on input
-    const suggestedUsers = useMemo(() => {
-        if (!inviteEmail.trim()) return [];
-
-        const search = inviteEmail.toLowerCase();
-
-        // Collect existing project members' emails
-        const existingEmails = projectMembers.map(m => {
-            const email = m.userId?.email || m.email || "";
-            return email.toLowerCase();
-        });
-
-        return allUsers.filter(u => {
-            const userEmail = (u.email || "").toLowerCase();
-            const userName = (u.username || u.name || "").toLowerCase();
-
-            // Exclude users already in current project
-            const isAlreadyMember = existingEmails.includes(userEmail);
-
-            return !isAlreadyMember && (userEmail.includes(search) || userName.includes(search));
-        });
-    }, [inviteEmail, allUsers, projectMembers]);
-
     const fetchCurrentMemberRole = async () => {
         try {
             const token = localStorage.getItem("token");
             if (!token) return;
 
-            const res = await fetch("http://localhost:3000/api/user/currentUser", {
+            const res = await fetch(`${API_BASE_URL}/user/currentUser`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             const data = await res.json();
             setMemberRole(data.memberRole || "");
         } catch (err) {
-            console.error("Failed to get current role:", err);
+            console.error("Không thể lấy thông tin role hiện tại:", err);
         }
     };
 
@@ -272,15 +221,41 @@ export default function ProjectSetting() {
         }
     }, [projectId]);
 
+    useEffect(() => {
+        if (!openInviteModal) return;
+        let cancelled = false;
+        // loading state is set by openInvite (the click), not here
+        fetchUsers()
+            .then((res) => {
+                if (cancelled) return;
+                setInviteUsers(Array.isArray(res) ? res : (res?.data || res?.users || []));
+                setInviteUsersState({ loading: false, error: "" });
+            })
+            .catch((err) => {
+                if (cancelled) return;
+                console.error("Loading the account suggestions failed:", err);
+                setInviteUsers([]);
+                setInviteUsersState({ loading: false, error: "Suggestions are unavailable — type the exact email address." });
+            });
+        return () => { cancelled = true; };
+    }, [openInviteModal]);
+
+    // dates as stored on the server: an unchanged past start / end date stays valid
+    const savedDates = {
+        startDate: formatDateForInput(project?.startDate || project?.start_date || project?.createdAt),
+        dueDate: formatDateForInput(project?.date || project?.dueDate || project?.endDate),
+    };
+
     const loadData = async () => {
+        const failures = [];
         try {
             setLoading(true);
 
             const [projectData, memList, tskList, colList] = await Promise.all([
-                fetchProjectById(projectId).catch(() => null),
-                fetchMembersByProject(projectId).catch(() => []),
-                fetchTasksByProject(projectId).catch(() => []),
-                fetchColumnsByProject ? fetchColumnsByProject(projectId).catch(() => []) : []
+                withFallback(fetchProjectById(projectId), null, failures, 'project'),
+                withFallback(fetchMembersByProject(projectId), [], failures, 'members'),
+                withFallback(fetchTasksByProject(projectId), [], failures, 'tasks'),
+                fetchColumnsByProject ? withFallback(fetchColumnsByProject(projectId), [], failures, 'columns') : []
             ]);
 
             const realProject = projectData?.data || projectData || {};
@@ -302,8 +277,8 @@ export default function ProjectSetting() {
                 color: realProject.color || '#4f46e5',
                 startDate: formattedStartDate,
                 dueDate: formattedDueDate,
-                budget: realProject.budget ?? 0,
-                costPerPoint: realProject.costPerPoint ?? 0
+                budget: toNumberInput(realProject.budget),
+                costPerPoint: toNumberInput(realProject.costPerPoint)
             });
 
             setProjectMembers(realMembers);
@@ -312,8 +287,10 @@ export default function ProjectSetting() {
 
             await fetchCurrentMemberRole();
         } catch (err) {
-            console.error('Error loading project settings:', err);
+            console.error('Lỗi khi tải cài đặt dự án:', err);
+            failures.push({ label: 'settings', error: err });
         } finally {
+            setLoadFailures(failures);
             setLoading(false);
         }
     };
@@ -329,7 +306,7 @@ export default function ProjectSetting() {
         }
         try {
             const token = localStorage.getItem("token");
-            const res = await fetch(`http://localhost:3000/api/member/${memberId}`, {
+            const res = await fetch(`${API_BASE_URL}/member/${memberId}`, {
                 method: "PUT",
                 headers: {
                     "Content-Type": "application/json",
@@ -340,7 +317,7 @@ export default function ProjectSetting() {
 
             const data = await res.json();
             if (!res.ok) {
-                throw new Error(data.message || "Failed to update role");
+                throw new Error(translateBackendMessage(data.message) || "The update failed.");
             }
 
             setProjectMembers((prevMembers) =>
@@ -348,50 +325,74 @@ export default function ProjectSetting() {
             );
             setDropDown(null);
         } catch (error) {
-            console.error("Error updating role:", error);
+            console.error("Lỗi update role:", error);
         }
     };
 
     const handleDeleteMember = async (member) => {
-        if (!window.confirm("Are you sure you want to remove this member from the project?")) {
-            return;
-        }
+        await confirm(removeMemberConfirm({
+            name: member.userId?.username || member.username || member.userId?.email || member.email,
+            // same request and success handling; a failure is now shown in the dialog (was console only)
+            onConfirm: async () => {
+                try {
+                    await deleteMemberByProject(member._id);
 
-        try {
-            await deleteMemberByProject(member._id);
+                    setProjectMembers((prevMembers) =>
+                        prevMembers.filter((m) => m._id !== member._id)
+                    );
 
-            setProjectMembers((prevMembers) =>
-                prevMembers.filter((m) => m._id !== member._id)
-            );
-
-            setDropDown(null);
-        } catch (error) {
-            console.error("Error deleting member:", error);
-        }
+                    setDropDown(null);
+                } catch (error) {
+                    console.error("Removing the member failed:", error);
+                    throw error;
+                }
+            },
+        }));
     };
 
-    const handleInvite = async () => {
-        if (!inviteEmail.trim()) {
+    const openInvite = () => {
+        setInviteUsersState({ loading: true, error: "" });
+        setOpenInviteModal(true);
+    };
+
+    const closeInviteModal = () => {
+        setOpenInviteModal(false);
+        setInviteEmail("");
+        setInviteRole("Member");
+        setInviteError("");
+    };
+
+    const handleInvite = async (e) => {
+        e?.preventDefault();
+        if (inviting) return;
+        const email = inviteEmail.trim();
+        if (!looksLikeEmail(email)) {
+            setInviteError("Choose an account from the list or type a full email address.");
             return;
         }
 
         try {
+            setInviting(true);
+            setInviteError("");
             await inviteMember({
-                email: inviteEmail,
+                email,
                 role: inviteRole,
                 projectId: projectId
             });
 
-            const refreshedMembers = await fetchMembersByProject(projectId).catch(() => []);
-            const realMembers = Array.isArray(refreshedMembers) ? refreshedMembers : (refreshedMembers?.data || []);
-            setProjectMembers(realMembers);
+            const refreshedMembers = await fetchMembersByProject(projectId).catch(() => null);
+            if (refreshedMembers) {
+                setProjectMembers(Array.isArray(refreshedMembers) ? refreshedMembers : (refreshedMembers?.data || []));
+            }
 
-            setOpenInviteModal(false);
-            setInviteEmail("");
-            setInviteRole("Member");
-            setShowSuggestions(false);
+            closeInviteModal();
+            notify({ type: 'success', title: 'Member added', message: `${email} joined the project as ${inviteRole}.` });
         } catch (error) {
-            console.error("Error sending invitation:", error);
+            console.error("Inviting the member failed:", error);
+            // the modal stays open with what was typed: 404 unknown email, 400 already a member...
+            setInviteError(error?.message || "Couldn't add the member. Please try again.");
+        } finally {
+            setInviting(false);
         }
     };
 
@@ -441,29 +442,20 @@ export default function ProjectSetting() {
         e.preventDefault();
         if (!canManage) return;
 
-        const currentToday = getTodayString();
-
-        if (formData.dueDate && formData.dueDate < currentToday) {
-            alert('End date cannot be a date in the past!');
+        // a project that already started (or ended) stays editable: only a CHANGED date may not be in the past
+        const dateError = validateProjectDates(formData, savedDates, getTodayString());
+        if (dateError) {
+            notify({ type: 'error', title: dateError });
             return;
         }
 
-        if (formData.startDate && formData.dueDate) {
-            if (formData.startDate > formData.dueDate) {
-                alert('Start date cannot be after End date!');
-                return;
-            }
-        }
-        const budgetNum = Number(formData.budget) || 0;
-        if (budgetNum < 0) {
-            alert('Budget must be >= 0!');
+        // empty Budget / Cost per Point = keep the stored value (PUT ignores fields that are not sent)
+        const finance = buildFinancePayload(formData);
+        if (finance.error) {
+            notify({ type: 'error', title: finance.error });
             return;
         }
-        const costPerPointNum = Number(formData.costPerPoint) || 0;
-        if (costPerPointNum < 0) {
-            alert('Cost per point must be >= 0!');
-            return;
-        }
+
         try {
             setSaving(true);
 
@@ -473,12 +465,11 @@ export default function ProjectSetting() {
                 color: formData.color,
                 startDate: formData.startDate ? new Date(formData.startDate).toISOString() : null,
                 dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
-                budget: budgetNum,
-                costPerPoint: costPerPointNum
+                ...finance.payload
             };
 
             const res = await updateProject(projectId, payload);
-            const updatedData = res?.data || res || {};
+            const updatedProject = res?.project || res?.data || {};
 
             setProject(prev => ({
                 ...prev,
@@ -486,11 +477,22 @@ export default function ProjectSetting() {
                 date: payload.dueDate,
                 endDate: payload.dueDate,
                 start_date: payload.startDate,
-                ...updatedData
+                ...updatedProject
             }));
-
+            setFormData(prev => ({
+                ...prev,
+                budget: toNumberInput(updatedProject.budget ?? finance.payload.budget),
+                costPerPoint: toNumberInput(updatedProject.costPerPoint ?? finance.payload.costPerPoint)
+            }));
+            notify({ type: 'success', title: 'Project settings saved' });
         } catch (err) {
-            console.error('Error saving general settings:', err);
+            console.error('Saving the project settings failed:', err);
+            // 400 "No changes detected" is the backend's answer when nothing changed — not a failure
+            if (err?.status === 400 && /no changes/i.test(err.message || '')) {
+                notify({ type: 'info', title: 'No changes to save' });
+            } else {
+                notify({ type: 'error', title: "Couldn't save the project settings", message: err?.message });
+            }
         } finally {
             setSaving(false);
         }
@@ -499,16 +501,22 @@ export default function ProjectSetting() {
     const handleDeleteProject = async () => {
         if (!canDelete) return;
 
-        if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-            try {
-                await deleteProject(projectId);
-                navigate('/dashboard');
-            } catch (err) {
-                console.error('Error deleting project:', err);
-            }
-        }
+        await confirm(deleteConfirm({
+            item: 'project',
+            name: project?.name,
+            onConfirm: async () => {
+                try {
+                    await deleteProject(projectId);
+                    navigate('/dashboard');
+                } catch (err) {
+                    console.error('Deleting the project failed:', err);
+                    throw err;
+                }
+            },
+        }));
     };
 
+    // Định dạng hiển thị ngày trên Header theo chuẩn DD/MM/YYYY
     const headerStartDate = formatDateDMY(project?.startDate || project?.start_date || project?.createdAt);
     const headerDueDate = formatDateDMY(project?.date || project?.dueDate || project?.endDate);
 
@@ -516,82 +524,55 @@ export default function ProjectSetting() {
         ? { cursor: 'not-allowed', backgroundColor: 'var(--color-bg-muted, #f1f5f9)', opacity: 0.8 }
         : {};
 
-    return (
-        <div className="app-shell">
-            <Sidebar
-                collapsed={sidebarCollapsed}
-                setCollapsed={setSidebarCollapsed}
-                mobileOpen={sidebarMobileOpen}
-                setMobileOpen={setSidebarMobileOpen}
-            />
+    // Core data missing → show the error instead of placeholder values; other failures → inline notice
+    const CORE_LOADS = ['project', 'members', 'settings'];
+    const coreFailure = loadFailures.find((f) => CORE_LOADS.includes(f.label));
+    const partialFailure = !coreFailure && loadFailures.length > 0;
 
-            <div className="app-main">
-                <Header
-                    onOpenSidebar={() => setSidebarMobileOpen(true)}
-                    onOpenModal={(modal) => setActiveModal(modal)}
-                />
+    return (
+        <>
 
                 {loading ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: '60vh', color: '#64748b', gap: '12px' }}>
-                        <Loader2 className="animate-spin" style={{ width: 36, height: 36, color: '#4f46e5' }} />
-                        <span style={{ fontSize: '15px', fontWeight: 500 }}>Loading...</span>
+                    <div className="page-loading" role="status">
+                        <Loader2 className="icon animate-spin" aria-hidden="true" />
+                        <span>Loading...</span>
                     </div>
+                ) : coreFailure ? (
+                    <main className="page-content">
+                        <ErrorState
+                            title="Couldn't load project settings"
+                            message={failureMessage(coreFailure)}
+                            onRetry={loadData}
+                        />
+                    </main>
                 ) : (
                     <>
-                        <div className="project-header">
-                            <div className="project-header-top">
-                                <div style={{ minWidth: 0 }}>
-                                    <div className="project-title-row">
-                                        <span className="project-color-dot" style={{ background: project?.color || '#4f46e5' }}></span>
-                                        <h1>{project?.name || 'Project'}</h1>
-                                    </div>
-                                    <p className="page-subtitle" style={{ maxWidth: '640px' }}>
-                                        {project?.description || 'No description provided'}
-                                    </p>
-
-                                    <div className="project-meta-row">
-                                        <span className="project-meta-item">
-                                            <UsersRound className="icon icon-sm" />{projectMembers.length} members
-                                        </span>
-                                        <span className="project-meta-item">
-                                            <ListChecks className="icon icon-sm" />{tasks.length} tasks
-                                        </span>
-                                        <span className="project-meta-item">
-                                            <CalendarClock className="icon icon-sm" />Start date: {headerStartDate}
-                                        </span>
-                                        <span className="project-meta-item">
-                                            <CalendarClock className="icon icon-sm" />End date: {headerDueDate}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div className="project-header-actions">
-                                    <Link to={`/projectsetting/${projectId}`} className="icon-btn icon-btn-outline" aria-label="Project settings">
-                                        <Settings className="icon" />
-                                    </Link>
-                                </div>
-                            </div>
-
-                            <nav className="project-tabs">
-                                <Link to={`/projectoverview/${projectId}`} className="project-tab">
-                                    <Info className="icon icon-sm" /> Overview
-                                </Link>
-                                <Link to={`/projectchart/${projectId}`} className="project-tab">
-                                    <BarChart2 className="icon icon-sm" /> Chart
-                                </Link>
-                                <Link to={`/projectboard/${projectId}`} className="project-tab">
-                                    <LayoutGrid className="icon icon-sm" /> Board
-                                </Link>
-                                <Link to={`/projectlist/${projectId}`} className="project-tab">
-                                    <List className="icon icon-sm" /> Backlog
-                                </Link>
-                                <Link to={`/projectcalendar/${projectId}`} className="project-tab">
-                                    <Calendar className="icon icon-sm" /> Calendar
-                                </Link>
-                            </nav>
-                        </div>
+                        <ProjectHeader
+                            projectId={projectId}
+                            project={project}
+                            memberCount={projectMembers.length}
+                            taskCount={tasks.length}
+                            startDate={headerStartDate}
+                            endDate={headerDueDate}
+                        />
 
                         <main className="page-content" style={{ padding: 'var(--space-6)' }}>
+
+                            {partialFailure && (
+
+                                <ErrorState
+
+                                    variant="inline"
+
+                                    title="Some project data could not be loaded."
+
+                                    message="Task and column statistics may be incomplete."
+
+                                    onRetry={loadData}
+
+                                />
+
+                            )}
                             <div className="settings-layout">
                                 <nav className="settings-nav">
                                     <button
@@ -626,8 +607,8 @@ export default function ProjectSetting() {
                                         <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: 'var(--space-4)' }}>General Settings</h2>
                                         <form onSubmit={handleSaveGeneralSettings} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                                             <div className="field">
-                                                <label className="field-label">Project name</label>
-                                                <input
+                                                <label className="field-label" htmlFor="settings-project-name">Project name</label>
+                                                <input id="settings-project-name"
                                                     type="text"
                                                     className="input"
                                                     value={formData.name}
@@ -639,8 +620,8 @@ export default function ProjectSetting() {
                                             </div>
 
                                             <div className="field">
-                                                <label className="field-label">Description</label>
-                                                <input
+                                                <label className="field-label" htmlFor="settings-description">Description</label>
+                                                <input id="settings-description"
                                                     className="textarea"
                                                     value={formData.description}
                                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -648,38 +629,11 @@ export default function ProjectSetting() {
                                                     style={disabledInputStyle}
                                                 />
                                             </div>
-                                            <div className="field">
-                                                <label className="field-label">Cost per point ($)</label>
-                                                <input
-                                                    type="number"
-                                                    className="input"
-                                                    min="0"
-                                                    step="any"
-                                                    placeholder="e.g. 100"
-                                                    value={formData.costPerPoint}
-                                                    onChange={(e) => setFormData({ ...formData, costPerPoint: e.target.value })}
-                                                    disabled={!canManage}
-                                                    style={disabledInputStyle}
-                                                />
-                                            </div>
-                                            <div className="field">
-                                                <label className="field-label">Budget ($)</label>
-                                                <input
-                                                    type="number"
-                                                    className="input"
-                                                    min="0"
-                                                    step="any"
-                                                    placeholder="e.g. 10000"
-                                                    value={formData.budget}
-                                                    onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
-                                                    disabled={!canManage}
-                                                    style={disabledInputStyle}
-                                                />
-                                            </div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)' }}>
+
+                                            <div className="settings-field-grid">
                                                 <div className="field">
-                                                    <label className="field-label">Color</label>
-                                                    <input
+                                                    <label className="field-label" htmlFor="settings-color">Color</label>
+                                                    <input id="settings-color"
                                                         type="color"
                                                         style={{
                                                             height: '38px',
@@ -696,31 +650,83 @@ export default function ProjectSetting() {
                                                     />
                                                 </div>
                                                 <div className="field">
-                                                    <label className="field-label">Start date</label>
-                                                    <input
+                                                    <label className="field-label" htmlFor="settings-start-date">Start date (DD/MM/YYYY)</label>
+                                                    <input id="settings-start-date"
                                                         type="date"
                                                         className="input"
-                                                        min={formData.startDate && formData.startDate < getTodayString() ? formData.startDate : getTodayString()}
+                                                        min={savedDates.startDate && savedDates.startDate < todayString ? savedDates.startDate : todayString}
                                                         value={formData.startDate}
-                                                        onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            const currentToday = getTodayString();
+                                                            // the stored start date is kept even when it is already in the past
+                                                            if (val && val < currentToday && val !== savedDates.startDate) {
+                                                                notify({ type: 'error', title: 'The start date cannot be in the past.' });
+                                                                setFormData({ ...formData, startDate: savedDates.startDate || currentToday });
+                                                            } else {
+                                                                setFormData({ ...formData, startDate: val });
+                                                            }
+                                                        }}
                                                         disabled={!canManage}
                                                         style={disabledInputStyle}
                                                     />
                                                 </div>
-
                                                 <div className="field">
-                                                    <label className="field-label">End date</label>
-                                                    <input
+                                                    <label className="field-label" htmlFor="settings-end-date">End date (DD/MM/YYYY)</label>
+                                                    <input id="settings-end-date"
                                                         type="date"
                                                         className="input"
                                                         min={formData.startDate || getTodayString()}
                                                         value={formData.dueDate}
-                                                        onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            const minAllowed = formData.startDate || getTodayString();
+                                                            if (val && val < minAllowed && val !== savedDates.dueDate) {
+                                                                notify({ type: 'error', title: 'The end date cannot be before the start date or today.' });
+                                                                setFormData({ ...formData, dueDate: minAllowed });
+                                                            } else {
+                                                                setFormData({ ...formData, dueDate: val });
+                                                            }
+                                                        }}
                                                         disabled={!canManage}
                                                         style={disabledInputStyle}
                                                     />
                                                 </div>
                                             </div>
+
+                                                    <div className="grid-2">
+                                                        <div className="field">
+                                                            <label className="field-label" htmlFor="settings-budget">Budget</label>
+                                                            <input id="settings-budget"
+                                                                className="input"
+                                                                type="number"
+                                                                min="0"
+                                                                step="any"
+                                                                inputMode="decimal"
+                                                                placeholder="0"
+                                                                value={formData.budget}
+                                                                onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
+                                                                disabled={!canManage}
+                                                                style={disabledInputStyle}
+                                                            />
+                                                        </div>
+                                                        <div className="field">
+                                                            <label className="field-label" htmlFor="settings-cost-per-point">Cost per Point</label>
+                                                            <input id="settings-cost-per-point"
+                                                                className="input"
+                                                                type="number"
+                                                                min="0"
+                                                                step="any"
+                                                                inputMode="decimal"
+                                                                placeholder="0"
+                                                                value={formData.costPerPoint}
+                                                                onChange={(e) => setFormData({ ...formData, costPerPoint: e.target.value })}
+                                                                disabled={!canManage}
+                                                                style={disabledInputStyle}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <p className="field-hint">Numbers of 0 or more. Leave a field empty to keep its current value.</p>
 
                                             {canManage && (
                                                 <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end' }}>
@@ -747,6 +753,7 @@ export default function ProjectSetting() {
                                             </p>
                                         </div>
 
+                                        {/* Tool bar */}
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)', gap: '16px', flexWrap: 'wrap' }}>
                                             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                                                 <div className="input-icon-wrap" style={{ width: '220px', position: 'relative' }}>
@@ -780,7 +787,7 @@ export default function ProjectSetting() {
                                             {canManage && (
                                                 <button
                                                     type="button"
-                                                    onClick={() => setOpenInviteModal(true)}
+                                                    onClick={openInvite}
                                                     className="btn btn-primary"
                                                     style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', height: '38px' }}
                                                 >
@@ -789,6 +796,7 @@ export default function ProjectSetting() {
                                             )}
                                         </div>
 
+                                        {/* Bảng Danh Sách Member */}
                                         <div className="card" style={{ overflow: 'visible' }}>
                                             <div
                                                 className="member-table-header"
@@ -813,7 +821,7 @@ export default function ProjectSetting() {
 
                                             {filteredMembers.length > 0 ? (
                                                 filteredMembers.map((m, idx) => {
-                                                    const username = m.userId?.username || m.username || m.name || "Not updated";
+                                                    const username = m.userId?.username || m.username || m.name || "Unknown user";
                                                     const email = m.userId?.email || m.email || "No email";
                                                     const role = m.role || "Member";
                                                     const status = m.status || "Active";
@@ -877,6 +885,8 @@ export default function ProjectSetting() {
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => toggleDropdown(m._id)}
+                                                                            aria-label="Member actions"
+                                                                            aria-expanded={openDropdown === m._id}
                                                                             className="icon-btn icon-btn-sm"
                                                                             style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '6px' }}
                                                                         >
@@ -952,102 +962,31 @@ export default function ProjectSetting() {
                         </main>
                     </>
                 )}
-            </div>
 
             {/* Modal Invite Member */}
             {openInviteModal && (
-                <div
-                    className="modal-overlay"
-                    id="inviteMemberModal"
-                    onClick={() => { setOpenInviteModal(false); setShowSuggestions(false); }}
-                >
-                    <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ overflow: 'visible' }}>
-                        <div className="modal-header">
-                            <div>
-                                <h2 className="modal-title">Invite a member</h2>
-                                <p className="modal-desc">Add a new person to this project.</p>
-                            </div>
-                            <button onClick={() => { setOpenInviteModal(false); setShowSuggestions(false); }} className="icon-btn" aria-label="Close" style={{ cursor: 'pointer' }}>
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', overflow: 'visible' }}>
-
-                            {/* --- INPUT WITH AUTOCOMPLETE SUGGESTIONS --- */}
-                            <div className="field" style={{ position: 'relative' }} ref={suggestionRef}>
-                                <label className="field-label">Email *</label>
-                                <input
+                <Modal title="Invite a member" description="Search an existing account by name or email." size="sm" onClose={closeInviteModal}>
+                    <form className="modal-form" onSubmit={handleInvite} noValidate>
+                        <div className="modal-body">
+                            <div className="field">
+                                <label className="field-label" htmlFor="invite-email">Name or email *</label>
+                                <InviteCombobox
+                                    id="invite-email"
                                     value={inviteEmail}
-                                    onChange={(e) => {
-                                        setInviteEmail(e.target.value);
-                                        setShowSuggestions(true);
-                                    }}
-                                    onFocus={() => setShowSuggestions(true)}
-                                    className="input"
-                                    type="email"
-                                    placeholder="Type username or email..."
-                                    required
-                                    autoComplete="off"
+                                    onChange={(value) => { setInviteEmail(value); setInviteError(""); }}
+                                    users={inviteUsers}
+                                    members={projectMembers}
+                                    loadingUsers={inviteUsersState.loading}
+                                    usersError={inviteUsersState.error}
+                                    invalid={Boolean(inviteError)}
+                                    describedBy={inviteError ? "invite-error" : undefined}
                                 />
-
-                                {/* Suggestions Dropdown */}
-                                {showSuggestions && (
-                                    <div
-                                        className="suggestions-dropdown"
-                                        style={{
-                                            position: 'absolute',
-                                            top: '100%',
-                                            left: 0,
-                                            right: 0,
-                                            zIndex: 9999,
-                                            backgroundColor: '#ffffff',
-                                            border: '1px solid #cbd5e1',
-                                            borderRadius: '8px',
-                                            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15)',
-                                            marginTop: '4px',
-                                            maxHeight: '220px',
-                                            overflowY: 'auto'
-                                        }}
-                                    >
-                                        {suggestedUsers.length > 0 ? (
-                                            suggestedUsers.map((u) => (
-                                                <div
-                                                    key={u._id || u.id}
-                                                    onClick={() => {
-                                                        setInviteEmail(u.email);
-                                                        setShowSuggestions(false);
-                                                    }}
-                                                    style={{
-                                                        padding: '10px 14px',
-                                                        cursor: 'pointer',
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        borderBottom: '1px solid #f1f5f9'
-                                                    }}
-                                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
-                                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                                >
-                                                    <span style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b' }}>
-                                                        {u.username || u.name || 'User'}
-                                                    </span>
-                                                    <span style={{ fontSize: '12px', color: '#64748b' }}>
-                                                        {u.email}
-                                                    </span>
-                                                </div>
-                                            ))
-                                        ) : (
-                                            <div style={{ padding: '12px 14px', fontSize: '13px', color: '#94a3b8', textAlign: 'center' }}>
-                                                {inviteEmail.trim() ? "No matching user found" : "Type name or email to search..."}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
+                                {inviteError && <p id="invite-error" className="field-error-text" role="alert">{inviteError}</p>}
                             </div>
 
                             <div className="field">
-                                <label className="field-label">Role</label>
-                                <select
+                                <label className="field-label" htmlFor="invite-role">Role</label>
+                                <select id="invite-role"
                                     value={inviteRole}
                                     onChange={(e) => setInviteRole(e.target.value)}
                                     className="select"
@@ -1057,14 +996,19 @@ export default function ProjectSetting() {
                                     <option value="Manager">Manager</option>
                                 </select>
                             </div>
-
-                            <button className="btn btn-primary" style={{ alignSelf: 'flex-start', cursor: 'pointer' }} onClick={handleInvite}>
-                                Add Member
+                        </div>
+                        <div className="modal-footer">
+                            <button type="button" className="btn btn-secondary" onClick={closeInviteModal}>
+                                Cancel
+                            </button>
+                            <button type="submit" className="btn btn-primary" disabled={inviting}>
+                                {inviting && <Loader2 className="icon icon-sm animate-spin" aria-hidden="true" />}
+                                {inviting ? "Adding…" : "Add Member"}
                             </button>
                         </div>
-                    </div>
-                </div>
+                    </form>
+                </Modal>
             )}
-        </div>
+        </>
     );
 }
