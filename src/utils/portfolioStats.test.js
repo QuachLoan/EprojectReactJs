@@ -50,6 +50,27 @@ test("teamWorkload: per assignee across projects, sorted by active points", () =
     ]);
 });
 
+test("teamWorkload: members without tasks are listed with zeros and their real roles", () => {
+    const ann = { _id: "u1", username: "Ann" };
+    const cat = { _id: "u3", username: "Cat", email: "cat@x.test" };
+    const rows = teamWorkload(
+        [[{ assignees: [ann], point: 3 }]],
+        [
+            [{ userId: ann, role: "Leader", status: "Active" }, { userId: cat, role: "Member", status: "Active" }],
+            [{ userId: ann, role: "Member", status: "Active" }, { userId: { _id: "u4", username: "Off" }, role: "Member", status: "Inactive" }],
+        ],
+    );
+    assert.deepEqual(rows.map((r) => [r.name, r.roles, r.active, r.activePoints, r.completed, r.total]), [
+        ["Ann", ["Leader", "Member"], 1, 3, 0, 1],
+        ["Cat", ["Member"], 0, 0, 0, 0],
+    ]);
+});
+
+test("teamWorkload: assignee without membership has no role (not a guessed one)", () => {
+    const rows = teamWorkload([[{ assignees: [{ _id: "u1", username: "Ann" }], point: 1 }]], [[]]);
+    assert.deepEqual(rows[0].roles, []);
+});
+
 const parsed = (currentProjectWeek, weeks) => ({ currentProjectWeek, maxProjectWeek: weeks.length, weeks });
 const wk = (n, expectancy, realProgress) => ({ week: `Week ${n}`, weekNumber: n, expectancy, realProgress });
 

@@ -67,11 +67,31 @@ export function budgetUsage(project, progress) {
 const userIdOf = (user) => (user && typeof user === "object" ? String(user._id || user.id || "") : String(user || ""));
 
 /**
- * Workload per person over every project's tasks. Only populated assignees have a name
- * (GET /task/project/:id populates username / email); plain ids are counted under "Unknown user".
+ * Workload per person. Roster = every Active member of the loaded projects (GET /member/project/:id, which carries the
+ * real per-project role) plus every task assignee, so people without tasks show up with zeros.
+ * Role = the distinct membership roles the person holds across projects (empty when they have no membership: shown as "—").
+ * Only populated users have a name (plain ids are counted under "Unknown user"). Nothing here invents a person or a role.
  */
-export function teamWorkload(taskLists) {
+export function teamWorkload(taskLists, memberLists = []) {
     const people = new Map();
+    const entryFor = (id, user) => {
+        let entry = people.get(id);
+        if (!entry) {
+            const named = user && typeof user === "object";
+            entry = { id, name: (named && (user.username || user.name)) || "Unknown user", email: (named && user.email) || "", roles: [], active: 0, completed: 0, activePoints: 0 };
+            people.set(id, entry);
+        }
+        return entry;
+    };
+    for (const members of memberLists || []) {
+        for (const member of members || []) {
+            if (member?.status === "Inactive") continue;
+            const id = userIdOf(member?.userId);
+            if (!id) continue;
+            const entry = entryFor(id, member.userId);
+            if (member.role && !entry.roles.includes(member.role)) entry.roles.push(member.role);
+        }
+    }
     for (const tasks of taskLists || []) {
         for (const task of tasks || []) {
             const done = isTaskCompleted(task);
@@ -79,21 +99,12 @@ export function teamWorkload(taskLists) {
             for (const assignee of task?.assignees || []) {
                 const id = userIdOf(assignee);
                 if (!id) continue;
-                const named = assignee && typeof assignee === "object";
-                const entry = people.get(id) || {
-                    id,
-                    name: (named && (assignee.username || assignee.name)) || "Unknown user",
-                    email: (named && assignee.email) || "",
-                    active: 0,
-                    completed: 0,
-                    activePoints: 0,
-                };
+                const entry = entryFor(id, assignee);
                 if (done) entry.completed += 1;
                 else {
                     entry.active += 1;
                     entry.activePoints += p;
                 }
-                people.set(id, entry);
             }
         }
     }
