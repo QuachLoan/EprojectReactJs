@@ -42,6 +42,7 @@ import { getColumnStatus } from './board/columnStatus.js';
 import { getProjectStart, isMoveLockedForRole, formatDayDMY } from '../../utils/projectSchedule.js';
 import TaskDrawerFrame from '../../components/task/TaskDrawerFrame.jsx';
 import { DrawerSection, ChecklistSection, CommentsSection, ActivitySection, AssigneePicker, UserAvatar } from '../../components/task/TaskDrawerSections.jsx';
+import { deleteBlockReason } from '../../utils/backlog.js';
 
 // Helper function định dạng ngày theo chuẩn DD/MM/YYYY
 const formatDateDMY = (dateValue) => {
@@ -209,10 +210,14 @@ function TaskDrawer({
     const [activitiesError, setActivitiesError] = useState('');
     // fields the user is typing in — a realtime update must not overwrite them
     const dirtyFieldsRef = useRef(new Set());
+    // set by a checklist action: the new checklist is then pushed to the board card (progress bar)
+    const checklistTouched = useRef(false);
 
     const canEditAll = isManager;
     const canEditManagement = isManager || isLeader;
-    const canDeleteTask = isManager;
+    const taskColumnTitle = columns?.find((c) => String(c._id) === extractColumnId(task?.columnId))?.title;
+    const deleteBlocked = deleteBlockReason({ onBoard: Boolean(taskColumnTitle), title: taskColumnTitle || null });
+    const canDeleteTask = isManager && !deleteBlocked;
     const canAddChecklist = isManager || isLeader;
     const canDeleteChecklist = isManager || isLeader;
 
@@ -416,6 +421,7 @@ function TaskDrawer({
     // Checklist / comment actions return promises: the shared sections show progress and errors
     const handleAddChecklist = async (text) => {
         if (!canAddChecklist || !text.trim()) return;
+        checklistTouched.current = true;
         const response = await addChecklistItem(taskId, text.trim());
         const realTask = response?.data || response;
         if (realTask && realTask.checklist) {
@@ -424,7 +430,14 @@ function TaskDrawer({
         loadActivities();
     };
 
+    useEffect(() => {
+        if (!checklistTouched.current || !task || !onTaskUpdated) return;
+        checklistTouched.current = false;
+        onTaskUpdated({ ...task });
+    }, [task?.checklist]); // eslint-disable-line react-hooks/exhaustive-deps
+
     const handleToggleChecklist = async (item) => {
+        checklistTouched.current = true;
         const previousChecklist = task.checklist;
         setTask(prev => ({
             ...prev,
@@ -452,6 +465,7 @@ function TaskDrawer({
             name: item.text,
             // same optimistic remove + rollback as before; the dialog shows the API error and stays open
             onConfirm: async () => {
+                checklistTouched.current = true;
                 const previousChecklist = task.checklist;
                 setTask(prev => ({ ...prev, checklist: (prev.checklist || []).filter(i => String(i._id) !== String(item._id)) }));
 
@@ -638,6 +652,9 @@ function TaskDrawer({
 
                     <ActivitySection activities={activities} loadError={activitiesError} onRetry={loadActivities} />
 
+                    {isManager && deleteBlocked && (
+                        <p className="drawer-empty" role="note">{deleteBlocked}</p>
+                    )}
                     {canDeleteTask && (
                         <div className="drawer-danger">
                             <button type="button" className="btn btn-outline btn-sm drawer-delete-task" onClick={handleDeleteTask}>

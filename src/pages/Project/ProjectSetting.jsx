@@ -4,7 +4,6 @@ import ErrorState from '../../components/common/ErrorState.jsx';
 import { useConfirm, deleteConfirm, removeMemberConfirm } from '../../components/common/confirmContext.js';
 import { notify } from '../../utils/notify.js';
 import Modal from '../../components/common/Modal.jsx';
-import { buildFinancePayload, toNumberInput } from '../../utils/projectFinance.js';
 import { withFallback, failureMessage } from '../../utils/requestState.js';
 
 import {
@@ -14,7 +13,8 @@ import {
     Search,
     UserPlus,
     MoreHorizontal,
-    UserCog
+    UserCog,
+    X
     } from 'lucide-react';
 
 import {
@@ -29,7 +29,8 @@ import {
     fetchUsers
 } from '../../../api';
 import InviteCombobox from '../../components/project/InviteCombobox.jsx';
-import { looksLikeEmail, validateProjectDates } from '../../utils/userSuggest.js';
+import { addInvitee, removeInvitee, inviteAll } from '../../utils/inviteSelection.js';
+import { validateProjectDates } from '../../utils/userSuggest.js';
 import { API_BASE_URL, translateBackendMessage } from "../../config/apiConfig.js";
 
 import ProjectHeader from '../../components/project/ProjectHeader.jsx';
@@ -110,9 +111,7 @@ export default function ProjectSetting() {
         description: '',
         color: '#4f46e5',
         startDate: '',
-        dueDate: '',
-        budget: '',
-        costPerPoint: ''
+        dueDate: ''
     });
 
     const [projectMembers, setProjectMembers] = useState([]);
@@ -130,6 +129,9 @@ export default function ProjectSetting() {
     const [inviteUsersState, setInviteUsersState] = useState({ loading: false, error: "" });
     const [inviteError, setInviteError] = useState("");
     const [inviting, setInviting] = useState(false);
+    // people picked for one invite round (one request each) and the reason a request failed, by email
+    const [selectedInvitees, setSelectedInvitees] = useState([]);
+    const [inviteFailures, setInviteFailures] = useState({});
 
     const [tasks, setTasks] = useState([]);
     const confirm = useConfirm();
@@ -277,8 +279,6 @@ export default function ProjectSetting() {
                 color: realProject.color || '#4f46e5',
                 startDate: formattedStartDate,
                 dueDate: formattedDueDate,
-                budget: toNumberInput(realProject.budget),
-                costPerPoint: toNumberInput(realProject.costPerPoint)
             });
 
             setProjectMembers(realMembers);
@@ -360,40 +360,56 @@ export default function ProjectSetting() {
         setInviteEmail("");
         setInviteRole("Member");
         setInviteError("");
+        setSelectedInvitees([]);
+        setInviteFailures({});
+    };
+
+    const pickInvitee = (candidate) => {
+        const { selected, error } = addInvitee(selectedInvitees, candidate, projectMembers);
+        setSelectedInvitees(selected);
+        setInviteError(error);
+    };
+
+    const unpickInvitee = (email) => {
+        setSelectedInvitees((list) => removeInvitee(list, email));
+        setInviteFailures((f) => { const rest = { ...f }; delete rest[email]; return rest; });
     };
 
     const handleInvite = async (e) => {
         e?.preventDefault();
         if (inviting) return;
-        const email = inviteEmail.trim();
-        if (!looksLikeEmail(email)) {
-            setInviteError("Choose an account from the list or type a full email address.");
+        if (selectedInvitees.length === 0) {
+            setInviteError("Pick at least one account, or type a full email address and press Enter.");
             return;
         }
 
-        try {
-            setInviting(true);
-            setInviteError("");
-            await inviteMember({
-                email,
-                role: inviteRole,
-                projectId: projectId
-            });
+        setInviting(true);
+        setInviteError("");
+        setInviteFailures({});
+        // POST /member/invite takes one email: one request per person, in order
+        const { succeeded, failed } = await inviteAll(selectedInvitees, (email) =>
+            inviteMember({ email, role: inviteRole, projectId: projectId })
+        );
 
-            const refreshedMembers = await fetchMembersByProject(projectId).catch(() => null);
-            if (refreshedMembers) {
-                setProjectMembers(Array.isArray(refreshedMembers) ? refreshedMembers : (refreshedMembers?.data || []));
-            }
-
-            closeInviteModal();
-            notify({ type: 'success', title: 'Member added', message: `${email} joined the project as ${inviteRole}.` });
-        } catch (error) {
-            console.error("Inviting the member failed:", error);
-            // the modal stays open with what was typed: 404 unknown email, 400 already a member...
-            setInviteError(error?.message || "Couldn't add the member. Please try again.");
-        } finally {
-            setInviting(false);
+        // the list always comes back from the API, whatever the outcome
+        const refreshedMembers = await fetchMembersByProject(projectId).catch(() => null);
+        if (refreshedMembers) {
+            setProjectMembers(Array.isArray(refreshedMembers) ? refreshedMembers : (refreshedMembers?.data || []));
         }
+        setInviting(false);
+
+        if (failed.length === 0) {
+            closeInviteModal();
+            notify({ type: 'success', title: succeeded.length === 1 ? 'Member added' : `${succeeded.length} members added`, message: `${succeeded.join(", ")} joined the project as ${inviteRole}.` });
+            return;
+        }
+        // keep only the people who failed, each with its own reason
+        setSelectedInvitees((list) => list.filter((p) => failed.some((f) => f.email === p.email)));
+        setInviteFailures(Object.fromEntries(failed.map((f) => [f.email, f.message])));
+        if (succeeded.length > 0) {
+            notify({ type: 'success', title: `${succeeded.length} member${succeeded.length === 1 ? '' : 's'} added`, message: succeeded.join(", ") });
+        }
+        setInviteError(`${failed.length} invitation${failed.length === 1 ? '' : 's'} failed. Fix or remove them and try again.`);
     };
 
     const getInitials = (name) => {
@@ -449,13 +465,6 @@ export default function ProjectSetting() {
             return;
         }
 
-        // empty Budget / Cost per Point = keep the stored value (PUT ignores fields that are not sent)
-        const finance = buildFinancePayload(formData);
-        if (finance.error) {
-            notify({ type: 'error', title: finance.error });
-            return;
-        }
-
         try {
             setSaving(true);
 
@@ -464,8 +473,7 @@ export default function ProjectSetting() {
                 description: formData.description.trim(),
                 color: formData.color,
                 startDate: formData.startDate ? new Date(formData.startDate).toISOString() : null,
-                dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
-                ...finance.payload
+                dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null
             };
 
             const res = await updateProject(projectId, payload);
@@ -478,11 +486,6 @@ export default function ProjectSetting() {
                 endDate: payload.dueDate,
                 start_date: payload.startDate,
                 ...updatedProject
-            }));
-            setFormData(prev => ({
-                ...prev,
-                budget: toNumberInput(updatedProject.budget ?? finance.payload.budget),
-                costPerPoint: toNumberInput(updatedProject.costPerPoint ?? finance.payload.costPerPoint)
             }));
             notify({ type: 'success', title: 'Project settings saved' });
         } catch (err) {
@@ -693,40 +696,6 @@ export default function ProjectSetting() {
                                                     />
                                                 </div>
                                             </div>
-
-                                                    <div className="grid-2">
-                                                        <div className="field">
-                                                            <label className="field-label" htmlFor="settings-budget">Budget</label>
-                                                            <input id="settings-budget"
-                                                                className="input"
-                                                                type="number"
-                                                                min="0"
-                                                                step="any"
-                                                                inputMode="decimal"
-                                                                placeholder="0"
-                                                                value={formData.budget}
-                                                                onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
-                                                                disabled={!canManage}
-                                                                style={disabledInputStyle}
-                                                            />
-                                                        </div>
-                                                        <div className="field">
-                                                            <label className="field-label" htmlFor="settings-cost-per-point">Cost per Point</label>
-                                                            <input id="settings-cost-per-point"
-                                                                className="input"
-                                                                type="number"
-                                                                min="0"
-                                                                step="any"
-                                                                inputMode="decimal"
-                                                                placeholder="0"
-                                                                value={formData.costPerPoint}
-                                                                onChange={(e) => setFormData({ ...formData, costPerPoint: e.target.value })}
-                                                                disabled={!canManage}
-                                                                style={disabledInputStyle}
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                    <p className="field-hint">Numbers of 0 or more. Leave a field empty to keep its current value.</p>
 
                                             {canManage && (
                                                 <div style={{ paddingTop: 'var(--space-4)', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'flex-end' }}>
@@ -969,11 +938,12 @@ export default function ProjectSetting() {
                     <form className="modal-form" onSubmit={handleInvite} noValidate>
                         <div className="modal-body">
                             <div className="field">
-                                <label className="field-label" htmlFor="invite-email">Name or email *</label>
+                                <label className="field-label" htmlFor="invite-email">Add people (name or email)</label>
                                 <InviteCombobox
                                     id="invite-email"
                                     value={inviteEmail}
-                                    onChange={(value) => { setInviteEmail(value); setInviteError(""); }}
+                                    onChange={(value) => { setInviteEmail(value); if (value) setInviteError(""); }}
+                                    onPick={pickInvitee}
                                     users={inviteUsers}
                                     members={projectMembers}
                                     loadingUsers={inviteUsersState.loading}
@@ -983,6 +953,23 @@ export default function ProjectSetting() {
                                 />
                                 {inviteError && <p id="invite-error" className="field-error-text" role="alert">{inviteError}</p>}
                             </div>
+
+                            {selectedInvitees.length > 0 && (
+                                <ul className="invite-chips" aria-label="Selected people">
+                                    {selectedInvitees.map((person) => (
+                                        <li key={person.email} className={`invite-chip${inviteFailures[person.email] ? " is-failed" : ""}`}>
+                                            <span className="invite-chip-text">
+                                                <span className="invite-chip-name">{person.name || person.email}</span>
+                                                {person.name && <span className="invite-chip-meta">{person.email}</span>}
+                                                {inviteFailures[person.email] && <span className="invite-chip-error">{inviteFailures[person.email]}</span>}
+                                            </span>
+                                            <button type="button" className="icon-btn" aria-label={`Remove ${person.email}`} onClick={() => unpickInvitee(person.email)} disabled={inviting}>
+                                                <X className="icon icon-sm" aria-hidden="true" />
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
 
                             <div className="field">
                                 <label className="field-label" htmlFor="invite-role">Role</label>
@@ -1001,9 +988,9 @@ export default function ProjectSetting() {
                             <button type="button" className="btn btn-secondary" onClick={closeInviteModal}>
                                 Cancel
                             </button>
-                            <button type="submit" className="btn btn-primary" disabled={inviting}>
+                            <button type="submit" className="btn btn-primary" disabled={inviting || selectedInvitees.length === 0}>
                                 {inviting && <Loader2 className="icon icon-sm animate-spin" aria-hidden="true" />}
-                                {inviting ? "Adding…" : "Add Member"}
+                                {inviting ? "Adding…" : selectedInvitees.length > 1 ? `Add ${selectedInvitees.length} members` : "Add Member"}
                             </button>
                         </div>
                     </form>

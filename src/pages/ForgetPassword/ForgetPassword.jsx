@@ -1,7 +1,7 @@
 import { KanbanSquare } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { API_BASE_URL, translateBackendMessage } from "../../config/apiConfig.js";
+import { requestPasswordOtp } from "../../../api.jsx";
 
 function ForgetPassword(){
     const [email, setEmail] = useState("");
@@ -22,22 +22,11 @@ function ForgetPassword(){
         try {
             setLoading(true);
 
-            const res = await fetch(`${API_BASE_URL}/user/check-email`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ email: email })
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error(translateBackendMessage(data.message) || "Email verification failed.");
-            }
-
-            localStorage.setItem("resetPasswordEmail", email);            
-            navigate('/resetPassword'); 
+            // the backend generates the code and emails it; the answer is the same whether the account exists or not
+            const data = await requestPasswordOtp(email.trim());
+            sessionStorage.setItem("resetPasswordEmail", email.trim());
+            sessionStorage.setItem("resetPasswordResendAt", String(Date.now() + (Number(data?.resendAfterSeconds) || 60) * 1000));
+            navigate('/resetPassword');
 
         } catch (error) {
             console.error("Lỗi quên mật khẩu:", error);
@@ -68,7 +57,7 @@ function ForgetPassword(){
           </span>
                     <div>
                         <h1 style={{ fontSize: '20px', fontWeight: 600, margin: 0 }}>Forget Password</h1>
-                        <p style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>Enter your email to continue.</p>
+                        <p style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>Enter your email and we will send you a verification code.</p>
                     </div>
                 </div>
     </div>
@@ -95,6 +84,7 @@ function ForgetPassword(){
                     name="forgotEmail"
                     placeholder="Enter your registered email"
                     autoComplete="email"
+                    value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
                 />
@@ -112,7 +102,7 @@ function ForgetPassword(){
                                 className="btn btn-primary btn-full"
                                 disabled={loading}
                             >
-                                {loading ? "Checking..." : "Continue"}
+                                {loading ? "Sending code..." : "Send verification code"}
                             </button>
         </form>
     </div>

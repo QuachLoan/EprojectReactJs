@@ -1,6 +1,6 @@
 import { useId, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { suggestInvitees } from "../../utils/userSuggest.js";
+import { looksLikeEmail, suggestInvitees } from "../../utils/userSuggest.js";
 import { avatarToneClass, getInitials } from "../../utils/avatar.js";
 
 /**
@@ -12,10 +12,12 @@ import { avatarToneClass, getInitials } from "../../utils/avatar.js";
  * @param {Function} onChange       (email) => void
  * @param {Array}    users          accounts from GET /user (may be empty when the list failed)
  * @param {Array}    members        current project members (excluded from the suggestions)
+ * @param {Function} onPick         optional (user | { email }) => void. Multi-select mode: a pick (or Enter on a typed email)
+ *                                  is handed to the parent and the field is cleared instead of filled
  * @param {boolean}  loadingUsers
  * @param {string}   usersError     shown under the field — suggestions are a convenience, not required
  */
-function InviteCombobox({ id, value, onChange, users, members, loadingUsers, usersError, invalid, describedBy }) {
+function InviteCombobox({ id, value, onChange, onPick, users, members, loadingUsers, usersError, invalid, describedBy }) {
     const listId = useId();
     const [open, setOpen] = useState(false);
     const [active, setActive] = useState(-1);
@@ -23,7 +25,7 @@ function InviteCombobox({ id, value, onChange, users, members, loadingUsers, use
     const expanded = open && value.trim() !== "" && (suggestions.length > 0 || !loadingUsers);
 
     const pick = (user) => {
-        onChange(user.email);
+        if (onPick) { onPick(user); onChange(""); } else onChange(user.email);
         setOpen(false);
         setActive(-1);
     };
@@ -38,6 +40,10 @@ function InviteCombobox({ id, value, onChange, users, members, loadingUsers, use
         } else if (e.key === "Enter" && expanded && active >= 0 && suggestions[active]) {
             e.preventDefault();
             pick(suggestions[active]);
+        } else if (e.key === "Enter" && onPick) {
+            // multi-select: Enter never submits the form; a typed full email is added to the selection
+            e.preventDefault();
+            if (looksLikeEmail(value)) { onPick({ email: value.trim() }); onChange(""); }
         } else if (e.key === "Escape" && expanded) {
             setOpen(false);
             setActive(-1);
@@ -67,7 +73,7 @@ function InviteCombobox({ id, value, onChange, users, members, loadingUsers, use
                 // a click on an option happens before blur thanks to onMouseDown preventDefault
                 onBlur={() => setOpen(false)}
                 onKeyDown={onKeyDown}
-                required
+                required={!onPick}
             />
             {expanded && (
                 <ul id={listId} role="listbox" className="combobox-list" aria-label="Matching accounts">

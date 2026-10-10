@@ -15,15 +15,18 @@ import {
     fetchTasksByProject,
     fetchColumnsByProject,
     fetchMembersByProject,
+    fetchTaskById,
     createTask,
     moveTask,
     deleteTask
 } from '../../../api.jsx';
+import { taskStatus, deleteBlockReason, sortBacklogTasks } from '../../utils/backlog.js';
 import { API_BASE_URL } from "../../config/apiConfig.js";
 
 import ProjectHeader from '../../components/project/ProjectHeader.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import { useConfirm, deleteConfirm } from '../../components/common/confirmContext.js';
+import { notify } from '../../utils/notify.js';
 
 // Helper function format ngày dạng DD/MM/YYYY
 const formatDate = (dateString, fallback = 'Not set') => {
@@ -57,6 +60,8 @@ export default function ProjectList() {
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
     const [newTaskPoints, setNewTaskPoints] = useState(0);
+    // tasks being pushed right now (no second request for the same task)
+    const [pushingIds, setPushingIds] = useState(() => new Set());
     const [newTaskDesc, setNewTaskDesc] = useState('');
     const [newTaskWeek, setNewTaskWeek] = useState(1);
 
@@ -127,12 +132,12 @@ export default function ProjectList() {
         return today >= weekStartDate;
     };
 
-    const loadData = async () => {
+    const loadData = async (quiet = false) => {
         if (!projectId) return;
         const failures = [];
 
         try {
-            setLoading(true);
+            if (!quiet) setLoading(true);
             const [pData, colsData, tskList, membersData] = await Promise.all([
                 withFallback(fetchProjectById(projectId), {}, failures, 'project'),
                 withFallback(fetchColumnsByProject(projectId), [], failures, 'columns'),
@@ -149,43 +154,26 @@ export default function ProjectList() {
 
             realColumns.sort((a, b) => (a.position || 0) - (b.position || 0));
 
-            const validColumnIds = new Set(
-                realColumns.map(c => String(c._id || c.id)).filter(Boolean)
-            );
-
             const projectStart = realProject.startDate || realProject.start_date || realProject.createdAt;
             const todoColumn = realColumns[0];
             const todoColumnId = todoColumn ? (todoColumn._id || todoColumn.id) : null;
 
-            const backlogTasks = [];
-
-            // Duyệt qua tất cả task trong Backlog
-            for (const t of realTasks) {
-                const rawCol = t.columnId;
-                const cId = typeof rawCol === 'object' && rawCol !== null
-                    ? (rawCol._id || rawCol.id)
-                    : rawCol;
-
-                const isBacklog = !cId || !validColumnIds.has(String(cId));
-
-                if (isBacklog) {
-                    // Kiểm tra xem task đã đến hạn theo Week chưa
-                    if (todoColumnId && isTaskDueForBoard(t.week, projectStart)) {
-                        // Tự động push sang board (Cột đầu tiên)
-                        moveTask(t._id || t.id, {
-                            sourceColumnId: null,
-                            destColumnId: todoColumnId,
-                            destinationIndex: 0
-                        }).catch(err => console.error('Lỗi auto push task:', err));
-                    } else {
-                        backlogTasks.push(t);
-                    }
-                }
-            }
+            // The backlog keeps EVERY task. Tasks whose week has started and that are not on the board yet
+            // are pushed to the first column automatically (existing rule); they stay in the list.
+            const duePush = todoColumnId
+                ? realTasks.filter((t) => !taskStatus(t, realColumns).onBoard && isTaskDueForBoard(t.week, projectStart))
+                : [];
+            const pushedIds = new Set();
+            await Promise.allSettled(duePush.map((t) =>
+                moveTask(t._id || t.id, { sourceColumnId: null, destColumnId: todoColumnId, destinationIndex: 0 })
+                    .then(() => pushedIds.add(String(t._id || t.id)))
+                    .catch((err) => console.error('Lỗi auto push task:', err))
+            ));
+            const allTasks = realTasks.map((t) => (pushedIds.has(String(t._id || t.id)) ? { ...t, columnId: todoColumnId } : t));
 
             setProject(realProject);
             setColumns(realColumns);
-            setTasks(backlogTasks);
+            setTasks(allTasks);
             setProjectMembers(realMembers);
         } catch (err) {
             console.error('Error loading backlog tasks:', err);
@@ -270,10 +258,9 @@ export default function ProjectList() {
                         destColumnId: todoColumnId,
                         destinationIndex: 0
                     });
-                } else {
-                    // Chưa đến hạn -> Giữ ở Backlog
-                    setTasks(prevTasks => [createdTask, ...prevTasks]);
                 }
+                // the list comes back from the API (status included)
+                await loadData(true);
 
                 closeModal();
             }
@@ -289,20 +276,24 @@ export default function ProjectList() {
         const todoColumn = columns[0];
         if (!todoColumn) return;
 
-        const taskId = task._id || task.id;
+        const taskId = String(task._id || task.id);
+        if (pushingIds.has(taskId) || taskStatus(task, columns).onBoard) return;
         const todoColumnId = todoColumn._id || todoColumn.id;
 
+        setPushingIds((ids) => new Set(ids).add(taskId));
         try {
-            setTasks(prev => prev.filter(t => (t._id || t.id) !== taskId));
-
             await moveTask(taskId, {
                 sourceColumnId: null,
                 destColumnId: todoColumnId,
                 destinationIndex: 0
             });
+            // keep the row; its status now comes from the board (no optimistic removal)
+            await loadData(true);
         } catch (err) {
             console.error('Lỗi khi push task sang board:', err);
-            loadData();
+            await loadData(true);
+        } finally {
+            setPushingIds((ids) => { const next = new Set(ids); next.delete(taskId); return next; });
         }
     };
 
@@ -310,6 +301,19 @@ export default function ProjectList() {
     const handleDeleteTask = async (taskId) => {
         if (!isManager) return;
         const task = tasks.find(t => String(t._id || t.id) === String(taskId));
+        // the row may be stale (someone moved the task): check the stored task first; the backend enforces it too
+        try {
+            const [fresh, freshColumns] = await Promise.all([fetchTaskById(taskId), fetchColumnsByProject(projectId)]);
+            const reason = deleteBlockReason(taskStatus(fresh?.data || fresh, Array.isArray(freshColumns) ? freshColumns : (freshColumns?.data || columns)));
+            if (reason) {
+                notify({ type: 'error', title: "This task can't be deleted", message: reason });
+                await loadData(true);
+                return;
+            }
+        } catch (err) {
+            notify({ type: 'error', title: "Couldn't check the task status", message: err?.message });
+            return;
+        }
         await confirm(deleteConfirm({
             item: 'task',
             name: task?.title,
@@ -366,7 +370,7 @@ export default function ProjectList() {
                             )}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                                 <div>
-                                    <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#0f172a' }}>Pending Backlog Tasks</h2>
+                                    <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#0f172a' }}>Backlog</h2>
                                 </div>
                                 {isManager && (
                                     <button onClick={handleOpenCreateModal} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -381,17 +385,18 @@ export default function ProjectList() {
                                     <tr>
                                         <th style={{ padding: '12px 16px' }}>Title</th>
                                         <th style={{ padding: '12px 16px' }}>Priority</th>
-                                        <th style={{ padding: '12px 16px' }}>Points</th>
+                                        <th style={{ padding: '12px 16px' }}>Status</th>
                                         <th style={{ padding: '12px 16px' }}>Week</th>
                                         <th style={{ padding: '12px 16px', textAlign: 'right' }}>Actions</th>
                                     </tr>
                                     </thead>
                                     <tbody>
                                     {tasks.length > 0 ? (
-                                        tasks.map((task, index) => {
+                                        sortBacklogTasks(tasks).map((task, index) => {
                                             const taskId = task._id || task.id || `task-fallback-${index}`;
                                             const displayTitle = task.title || task.name || 'Untitled Task';
-                                            const taskPoints = task.points ?? task.point ?? 0;
+                                            const status = taskStatus(task, columns);
+                                            const blockReason = deleteBlockReason(status);
                                             const taskWeek = task.week || 1;
 
                                             return (
@@ -413,7 +418,7 @@ export default function ProjectList() {
 
                                                     <td style={{ padding: '12px 16px' }}>
                                                         <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 600, background: '#f1f5f9', color: '#475569' }}>
-                                                            {taskPoints} pts
+                                                            {status.onBoard ? status.title : 'Backlog'}
                                                         </span>
                                                     </td>
 
@@ -434,9 +439,10 @@ export default function ProjectList() {
 
                                                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                                                            {(isLeader) && (
+                                                            {(isLeader && !status.onBoard) && (
                                                                 <button
                                                                     onClick={() => handlePushToBoard(task)}
+                                                                    disabled={pushingIds.has(String(taskId))}
                                                                     className="btn btn-primary btn-sm"
                                                                     style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
                                                                 >
@@ -450,6 +456,7 @@ export default function ProjectList() {
                                                                     type="button"
                                                                     aria-label={`Delete task ${task.title || ''}`.trim()}
                                                                     onClick={() => handleDeleteTask(taskId)}
+                                                                    disabled={Boolean(blockReason)}
                                                                     className="btn btn-danger btn-sm"
                                                                     style={{
                                                                         display: 'inline-flex',
@@ -461,9 +468,10 @@ export default function ProjectList() {
                                                                         padding: '4px 8px',
                                                                         borderRadius: '4px',
                                                                         border: 'none',
-                                                                        cursor: 'pointer'
+                                                                        cursor: blockReason ? 'not-allowed' : 'pointer',
+                                                                        opacity: blockReason ? 0.5 : 1
                                                                     }}
-                                                                    title="Delete task"
+                                                                    title={blockReason || 'Delete task'}
                                                                 >
                                                                     <Trash2 className="w-3.5 h-3.5" />
                                                                     Delete
@@ -477,7 +485,7 @@ export default function ProjectList() {
                                     ) : (
                                         <tr>
                                             <td colSpan="5" style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-                                                No pending backlog tasks.
+                                                No tasks yet.
                                             </td>
                                         </tr>
                                     )}

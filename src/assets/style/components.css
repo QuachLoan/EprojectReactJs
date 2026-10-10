@@ -572,6 +572,9 @@ button.panel-row:hover { background-color: var(--color-surface-hover); }
   overflow: hidden;
   overflow-wrap: anywhere;
 }
+.task-card-checklist { display: flex; align-items: center; gap: var(--space-2); }
+.task-card-checklist .progress-bar { flex: 1; margin-top: 0; }
+.task-card-checklist-value { font-size: var(--text-xs); color: var(--color-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .task-card-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1877,6 +1880,13 @@ button.panel-row:hover { background-color: var(--color-surface-hover); }
 .combobox-option-text { display: flex; flex-direction: column; min-width: 0; }
 .combobox-option-name { font-size: var(--text-sm); font-weight: 600; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combobox-option-meta { font-size: var(--text-xs); color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invite-chips { list-style: none; display: flex; flex-direction: column; gap: var(--space-2); max-height: 220px; overflow-y: auto; }
+.invite-chip { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.invite-chip.is-failed { border-color: var(--color-danger); }
+.invite-chip-text { display: flex; flex-direction: column; min-width: 0; }
+.invite-chip-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invite-chip-meta { font-size: var(--text-xs); color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; }
+.invite-chip-error { font-size: var(--text-xs); color: var(--color-danger); }
 .combobox-empty { padding: var(--space-2); font-size: var(--text-sm); color: var(--color-text-muted); }
 .field-hint { display: flex; align-items: center; gap: var(--space-1); margin: 0; font-size: var(--text-xs); color: var(--color-text-muted); }
 .field-error-text { margin: 0; font-size: var(--text-xs); color: var(--color-danger); }
@@ -1937,18 +1947,6 @@ button.panel-row:hover { background-color: var(--color-surface-hover); }
 a.project-progress-name { color: var(--color-text); text-decoration: none; }
 a.project-progress-name:hover { color: var(--color-primary-600); text-decoration: underline; }
 
-.budget-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-4); }
-.budget-row { --tone: var(--color-text-subtle); --tone-bg: var(--color-surface-sunken); display: flex; flex-direction: column; gap: var(--space-2); }
-.budget-row.tone-ok { --tone: var(--color-success); --tone-bg: var(--color-success-bg); }
-.budget-row.tone-watch { --tone: var(--color-warning); --tone-bg: var(--color-warning-bg); }
-.budget-row.tone-over { --tone: var(--color-danger); --tone-bg: var(--color-danger-bg); }
-.budget-row .progress-bar { margin-top: 0; }
-.budget-row .progress-bar-fill { background-color: var(--tone); }
-.budget-row-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-width: 0; }
-.budget-badge { flex-shrink: 0; padding: 2px var(--space-2); border-radius: var(--radius-full); background-color: var(--tone-bg); color: var(--tone); font-size: var(--text-xs); font-weight: 600; white-space: nowrap; }
-.budget-row.tone-watch .budget-badge { color: var(--color-priority-medium-text); }
-.budget-row-link { flex-shrink: 0; font-size: var(--text-xs); font-weight: 500; color: var(--color-primary-600); }
-.budget-row-meta { margin: 0; font-size: var(--text-xs); color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 
 /* overflow-x:auto alone makes overflow-y compute to auto too: no stray inner vertical scrollbar inside the page scroll */
 .table-scroll { width: 100%; overflow-x: auto; overflow-y: hidden; }
@@ -2048,3 +2046,23 @@ a.project-progress-name:hover { color: var(--color-primary-600); text-decoration
 /* progress bars rendered as <span> (inside lists / grid rows) need a block fill for width to apply */
 span.progress-bar { display: block; }
 span.progress-bar-fill { display: block; }
+
+/* =========================
+   PROJECT TIMELINE LINE (components/project/MilestoneTimeline.jsx): one horizontal line, numbered markers
+   ========================================================= */
+.timeline-line-card { padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.timeline-line-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.timeline-line-title { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: 18px; font-weight: 600; }
+.timeline-line { position: relative; height: 40px; margin: 0 14px; }
+.timeline-line-track { position: absolute; left: 0; right: 0; top: 50%; height: 3px; transform: translateY(-50%); border-radius: var(--radius-full); background: var(--color-border-strong); }
+.timeline-line-end { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%; transform: translate(-50%, -50%); background: var(--color-primary-600); border: 3px solid var(--color-surface); box-shadow: 0 0 0 1px var(--color-primary-600); }
+.timeline-line-end.is-start { left: 0; }
+.timeline-line-end.is-finish { left: 100%; }
+.timeline-line-marker { position: absolute; top: 50%; transform: translate(-50%, -50%); min-width: 24px; height: 24px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-full); background: var(--color-surface); color: var(--color-primary-600); border: 2px solid var(--color-primary-600); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; z-index: 1; }
+.timeline-line-dates { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--text-sm); color: var(--color-text-muted); flex-wrap: wrap; }
+.timeline-line-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.timeline-line-item { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.timeline-line-badge { flex-shrink: 0; min-width: 24px; height: 24px; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-full); background: var(--color-primary-50); color: var(--color-primary-600); font-size: 12px; font-weight: 600; }
+.timeline-line-item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.timeline-line-item-name { font-weight: 500; overflow-wrap: anywhere; }
+.timeline-line-item-date { font-size: var(--text-xs); color: var(--color-text-muted); }

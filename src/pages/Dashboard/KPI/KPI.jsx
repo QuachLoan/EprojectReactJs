@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle2, FolderKanban, ListChecks, Loader2, Wallet } from 'lucide-react';
+import { CheckCircle2, FolderKanban, ListChecks, Loader2 } from 'lucide-react';
 import ErrorState from '../../../components/common/ErrorState.jsx';
 import { failureMessage } from '../../../utils/requestState.js';
 import { portfolioKpis } from '../../../utils/portfolioStats.js';
 import { fetchPortfolio } from '../../../../api.jsx';
 
 /**
- * Dashboard KPI row, in this order: Total Projects, On-Time Rate, Total Budget, Tasks Completed.
- *  - Total Projects / Total Budget: GET /project/portfolio (never GET /task/project/portfolio: that route is shadowed).
+ * Dashboard KPI row, in this order: Total Projects, On-Time Rate, Tasks Completed (Budget was removed from the frontend).
+ *  - Total Projects: GET /project/portfolio (never GET /task/project/portfolio: that route is shadowed).
  *  - On-Time Rate: the SAME value as the former "Plan adherence (this week)": completed points / planned points of the
  *    current week (weekly-expectancy), averaged over the projects that have a plan (utils/portfolioStats.js portfolioKpis).
  *    The backend onTimeRate field is not used. No measurable plan -> "—", never 0% or 100%.
@@ -64,7 +64,6 @@ function KPI({ shared }) {
     }
 
     const totalProjects = Number(portfolio?.totalProjects);
-    const totalBudget = Number(portfolio?.totalBudget);
     // null/missing stays "unknown": Number(null) would turn it into 0
     const sharedState = shared?.state;
     const kpis = sharedState && !sharedState.loading && !sharedState.error ? portfolioKpis(sharedState.rows) : null;
@@ -97,17 +96,6 @@ function KPI({ shared }) {
                     {kpis && onTimeRate === null && <p className="stat-card-note">No plan to measure yet</p>}
                 </div>
             </div>
-            {Number.isFinite(totalBudget) && (
-                <div className="card stat-card">
-                    <span className="stat-card-icon tone-warning" aria-hidden="true">
-                        <Wallet className="icon" />
-                    </span>
-                    <div>
-                        <p className="stat-card-label">Total Budget</p>
-                        <p className="stat-card-value">{totalBudget.toLocaleString("en-US")}</p>
-                    </div>
-                </div>
-            )}
             <div className="card stat-card">
                 <span className="stat-card-icon tone-primary" aria-hidden="true">
                     <ListChecks className="icon" />

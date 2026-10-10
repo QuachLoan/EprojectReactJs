@@ -51,7 +51,7 @@ export const fetchProjects = async () => {
     return handleResponse(res);
 };
 
-// Workspace statistics for the Dashboard KPI ({ totalProjects, totalBudget, onTimeRate })
+// Workspace statistics for the Dashboard KPI (the dashboard only uses totalProjects)
 export const fetchPortfolio = async () => {
     const res = await fetch(`${API_BASE_URL}/project/portfolio`, {
         headers: getAuthHeaders()
@@ -391,4 +391,38 @@ export const fetchTasksByWeek = async (projectId) => {
     const response = await fetch(`${API_BASE_URL}/project/${projectId}/tasks-by-week`);
     if (!response.ok) throw new Error('Failed to fetch tasks by week');
     return response.json();
+};
+
+// ==================== PASSWORD ====================
+
+// Public calls (no token): a 401/403 here must not log anybody out, so they do not use handleResponse
+const postPublic = async (path, body) => {
+    const res = await fetch(`${API_BASE_URL}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        const error = new Error(getApiErrorMessage(data, res.status));
+        error.status = res.status;
+        throw error;
+    }
+    return data;
+};
+
+// Step 1 of "forgot password": the backend generates the code and emails it ({ message, resendAfterSeconds })
+export const requestPasswordOtp = (email) => postPublic('/user/forgot-password/request', { email });
+
+// Step 2: code + new password
+export const verifyPasswordOtp = ({ email, otp, newPassword }) => postPublic('/user/forgot-password/verify', { email, otp, newPassword });
+
+// Logged-in change; a wrong current password answers 400 (not 401), so the session is kept
+export const changePassword = async ({ currentPassword, newPassword }) => {
+    const res = await fetch(`${API_BASE_URL}/user/change-password`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ currentPassword, newPassword })
+    });
+    return handleResponse(res);
 };

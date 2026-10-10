@@ -24,6 +24,7 @@ import {
     } from "lucide-react";
 
 import ProjectHeader from '../../components/project/ProjectHeader.jsx';
+import MilestoneTimeline from '../../components/project/MilestoneTimeline.jsx';
 
 // Domain Backend chứa thư mục uploads
 // uploads are served from the backend origin
@@ -263,6 +264,14 @@ export default function ProjectOverview() {
                             onRetry={() => setReloadKey((k) => k + 1)}
                         />
                     )}
+
+                    {/* Timeline: project start -> end with milestones (calendar notes) */}
+                    <MilestoneTimeline
+                        projectId={projectId}
+                        startDate={project?.startDate || project?.createdAt}
+                        endDate={project?.date || project?.dueDate || project?.endDate}
+                        canManage={isManager || currentUserRole === 'Leader'}
+                    />
 
                     {/* Section 1: Project Details Description */}
                     <div className="card" style={{ padding: '20px', background: '#ffffff', borderRadius: '8px', border: '1px solid #e5e7eb' }}>

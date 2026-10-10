@@ -21,7 +21,6 @@ import ErrorState from '../../components/common/ErrorState.jsx';
 import { failureMessage } from '../../utils/requestState.js';
 import { avatarToneClass } from "../../utils/avatar.js";
 import { notify } from "../../utils/notify.js";
-import { buildFinancePayload } from '../../utils/projectFinance.js';
 import Modal from '../../components/common/Modal.jsx';
 
 const COLOR_OPTIONS = [
@@ -111,8 +110,6 @@ export default function Projects() {
     const [projectDesc, setProjectDesc] = useState('');
     const [projectStartDate, setProjectStartDate] = useState(todayStr);
     const [projectDueDate, setProjectDueDate] = useState('');
-    // Budget / Cost per Point as typed (strings; empty = not sent)
-    const [projectFinance, setProjectFinance] = useState({ budget: '', costPerPoint: '' });
     const [selectedColor, setSelectedColor] = useState('#4f46e5');
     const [selectedMembers, setSelectedMembers] = useState([]);
 
@@ -154,7 +151,6 @@ export default function Projects() {
         setProjectDesc('');
         setProjectStartDate(currentToday);
         setProjectDueDate('');
-        setProjectFinance({ budget: '', costPerPoint: '' });
         setSelectedColor('#4f46e5');
         setSelectedMembers([]);
     };
@@ -329,12 +325,6 @@ export default function Projects() {
             return;
         }
 
-        const finance = buildFinancePayload(projectFinance);
-        if (finance.error) {
-            showToast('Error', finance.error, 'error');
-            return;
-        }
-
         setIsSubmittingProject(true);
         try {
             const validAssignees = selectedMembers.filter(
@@ -352,8 +342,7 @@ export default function Projects() {
                 userId: currentUserId,
                 startDate: projectStartDate || currentToday,
                 date: projectDueDate || currentToday,
-                assignees: validAssignees,
-                ...finance.payload
+                assignees: validAssignees
             };
 
             await createProject(payload);
@@ -737,36 +726,6 @@ export default function Projects() {
                                         />
                                     </div>
                                 </div>
-
-                                <div className="grid-2">
-                                    <div className="field">
-                                        <label className="field-label" htmlFor="new-project-budget">Budget</label>
-                                        <input id="new-project-budget"
-                                            className="input"
-                                            type="number"
-                                            min="0"
-                                            step="any"
-                                            inputMode="decimal"
-                                            placeholder="0"
-                                            value={projectFinance.budget}
-                                            onChange={(e) => setProjectFinance({ ...projectFinance, budget: e.target.value })}
-                                        />
-                                    </div>
-                                    <div className="field">
-                                        <label className="field-label" htmlFor="new-project-cost-per-point">Cost per Point</label>
-                                        <input id="new-project-cost-per-point"
-                                            className="input"
-                                            type="number"
-                                            min="0"
-                                            step="any"
-                                            inputMode="decimal"
-                                            placeholder="0"
-                                            value={projectFinance.costPerPoint}
-                                            onChange={(e) => setProjectFinance({ ...projectFinance, costPerPoint: e.target.value })}
-                                        />
-                                    </div>
-                                </div>
-                                <p className="field-hint">Optional. Numbers of 0 or more; leave empty to use 0.</p>
 
                                 <div className="field">
                                     <span className="field-label" id="new-project-color">Color</span>

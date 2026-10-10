@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LogOut } from "lucide-react";
+import { KeyRound, LogOut } from "lucide-react";
+import ChangePasswordModal from "./ChangePasswordModal.jsx";
 
 // Signed-in user as stored by the login page; null when missing or unreadable
 const readStoredUser = () => {
@@ -13,6 +14,7 @@ const readStoredUser = () => {
 
 function DropdownHeader() {
     const [isOpen, setIsOpen] = useState(false);
+    const [changingPassword, setChangingPassword] = useState(false);
     const menuRef = useRef(null);
     const navigate = useNavigate();
 
@@ -80,12 +82,17 @@ function DropdownHeader() {
                             <div className="dropdown-separator"></div>
                         </>
                     )}
+                    <button type="button" role="menuitem" className="dropdown-item" onClick={() => { setIsOpen(false); setChangingPassword(true); }}>
+                        <KeyRound className="icon icon-sm" />
+                        Change password
+                    </button>
                     <button type="button" role="menuitem" className="dropdown-item destructive" onClick={handleLogout}>
                         <LogOut className="icon icon-sm" />
                         Log out
                     </button>
                 </div>
             )}
+            {changingPassword && <ChangePasswordModal onClose={() => setChangingPassword(false)} />}
         </div>
     );
 }

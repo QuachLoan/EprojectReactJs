@@ -1,27 +1,22 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { Activity, FolderKanban, RotateCw, UsersRound, Wallet } from "lucide-react";
+import { Activity, FolderKanban, RotateCw, UsersRound } from "lucide-react";
 import ErrorState from "../../../components/common/ErrorState.jsx";
 import { failureMessage } from "../../../utils/requestState.js";
 import { avatarToneClass, getInitials } from "../../../utils/avatar.js";
-import { budgetUsage, teamWorkload, portfolioKpis } from "../../../utils/portfolioStats.js";
+import { teamWorkload, portfolioKpis } from "../../../utils/portfolioStats.js";
 import { ChartCard, LoadingBlock, EmptyBlock } from "../analytics/chartKit.jsx";
 
-const money = (value) => `$${Math.round(value).toLocaleString("en-US")}`;
-const TONE_LABEL = { ok: "On track", watch: "Watch", over: "Over budget" };
-
 /**
- * Portfolio sections on the dashboard (progress, budget burn, team workload). Data comes from usePortfolioData()
+ * Portfolio sections on the dashboard (project progress, team workload). Data comes from usePortfolioData()
  * (loaded once in Dashboard and shared with the KPI row). A project whose tasks failed to load is left out and reported.
  */
 function PortfolioOverview({ state, reload }) {
     const view = useMemo(() => {
         const { loaded, progress, failed } = portfolioKpis(state.rows);
-        const budgets = loaded.map((r, i) => budgetUsage(r.project, progress[i])).filter(Boolean);
         return {
             failed,
             progress: [...progress].sort((x, y) => (y.percent ?? -1) - (x.percent ?? -1)),
-            budgets,
             workload: teamWorkload(loaded.map((r) => r.tasks), loaded.map((r) => r.members)),
             membersFailed: loaded.filter((r) => !r.members).length,
         };
@@ -54,7 +49,7 @@ function PortfolioOverview({ state, reload }) {
                     <EmptyBlock
                         icon={<FolderKanban className="icon" />}
                         title="No projects yet"
-                        desc="Create a project to see its progress, budget and workload here."
+                        desc="Create a project to see its progress and workload here."
                         action={<Link className="btn btn-primary btn-sm" to="/project">Go to projects</Link>}
                         className="portfolio-empty"
                     />
@@ -94,40 +89,6 @@ function PortfolioOverview({ state, reload }) {
                                     <span className="project-progress-value">
                                         {p.percent === null ? "No tasks" : `${p.percent}% · ${p.completedPoints}/${p.points} pts`}
                                     </span>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </ChartCard>
-
-                <ChartCard id="portfolio-budget" title="Budget burn" subtitle="Completed points × cost per point, against the project budget" icon={<Wallet className="icon" />}>
-                    {view.budgets.length === 0 ? (
-                        <p className="chart-note">No project has a budget yet. Set one in the project settings.</p>
-                    ) : (
-                        <ul className="budget-list">
-                            {view.budgets.map((b) => (
-                                <li key={b.id} className={`budget-row tone-${b.tone}`}>
-                                    <div className="budget-row-head">
-                                        <span className="project-progress-name" title={b.name}>
-                                            <span className="project-color-dot" style={{ background: b.color || "var(--color-text-subtle)" }} aria-hidden="true" />
-                                            {b.name}
-                                        </span>
-                                        {b.percent === null ? (
-                                            <Link className="budget-row-link" to={`/projectsetting/${b.id}`}>Set cost per point</Link>
-                                        ) : (
-                                            <span className="budget-badge">{TONE_LABEL[b.tone]} · {b.percent}%</span>
-                                        )}
-                                    </div>
-                                    {b.percent !== null && (
-                                        <span className="progress-bar" role="progressbar" aria-label={`${b.name} budget used`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(b.percent, 100)}>
-                                            <span className="progress-bar-fill" style={{ width: `${Math.min(b.percent, 100)}%` }} />
-                                        </span>
-                                    )}
-                                    <p className="budget-row-meta">
-                                        {b.percent === null
-                                            ? `Budget ${money(b.budget)} · cost per point not set, so spending can't be calculated`
-                                            : `${money(b.spent)} of ${money(b.budget)} · ${b.remaining < 0 ? `${money(-b.remaining)} over` : `${money(b.remaining)} left`}${b.plannedCost > b.budget ? ` · all planned points cost ${money(b.plannedCost)}` : ""}`}
-                                    </p>
                                 </li>
                             ))}
                         </ul>

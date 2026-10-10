@@ -1,5 +1,6 @@
 import { CalendarDays, CircleAlert, CircleCheck, Clock, Gauge, ListChecks, X } from "lucide-react";
 import { avatarToneClass } from "../../../utils/avatar.js";
+import { checklistProgress } from "../../../utils/checklist.js";
 
 const MAX_AVATARS = 3;
 
@@ -35,6 +36,7 @@ function TaskCard({ task, dragRef, draggableProps, dragHandleProps, isDragging, 
     const description = (task.description || "").trim();
     const checklist = Array.isArray(task.checklist) ? task.checklist : [];
     const checklistDone = checklist.filter((item) => item.completed).length;
+    const progress = checklistProgress(checklist);
     const completed = task.status === "completed";
     // a finished task is not late: no deadline warning on it
     const signal = completed ? undefined : DEADLINE_SIGNAL[deadlineStatus];
@@ -107,6 +109,22 @@ function TaskCard({ task, dragRef, draggableProps, dragHandleProps, isDragging, 
                     </li>
                 )}
             </ul>
+
+            {progress && (
+                <div className="task-card-checklist">
+                    <span
+                        className="progress-bar"
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={progress.percent}
+                        aria-label={`Checklist progress: ${progress.done} of ${progress.total} items`}
+                    >
+                        <span className="progress-bar-fill" style={{ width: `${progress.percent}%` }} />
+                    </span>
+                    <span className="task-card-checklist-value">{progress.done}/{progress.total} · {progress.percent}%</span>
+                </div>
+            )}
 
             {(signal || assignees.length > 0 || onNotAccept) && (
                 <div className="task-card-footer">

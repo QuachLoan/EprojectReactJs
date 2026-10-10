@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { projectProgress, budgetUsage, budgetTone, teamWorkload, planAdherence, averageAdherence, portfolioKpis } from "./portfolioStats.js";
+import { projectProgress, teamWorkload, planAdherence, averageAdherence, portfolioKpis } from "./portfolioStats.js";
 
 const tasks = [
     { status: "completed", point: 5, columnId: { position: 3 } },
@@ -12,28 +12,6 @@ test("projectProgress: completion from task.status only", () => {
     const p = projectProgress({ _id: "p1", name: "Alpha" }, tasks);
     assert.deepEqual([p.total, p.completed, p.percent, p.points, p.completedPoints], [3, 1, 33, 10, 5]);
     assert.equal(projectProgress({ _id: "p2" }, []).percent, null);
-});
-
-test("budgetUsage: completed points x cost per point", () => {
-    const progress = projectProgress({ _id: "p1" }, tasks);
-    const usage = budgetUsage({ budget: 100, costPerPoint: 10 }, progress);
-    assert.deepEqual([usage.spent, usage.percent, usage.remaining, usage.tone, usage.plannedCost], [50, 50, 50, "ok", 100]);
-});
-
-test("budgetUsage: no cost per point = no figure (not an estimate)", () => {
-    const usage = budgetUsage({ budget: 100, costPerPoint: 0 }, projectProgress({}, tasks));
-    assert.equal(usage.spent, null);
-    assert.equal(usage.percent, null);
-    assert.equal(usage.tone, "none");
-});
-
-test("budgetUsage: project without budget is skipped", () => {
-    assert.equal(budgetUsage({ budget: 0, costPerPoint: 5 }, projectProgress({}, tasks)), null);
-    assert.equal(budgetUsage({}, projectProgress({}, tasks)), null);
-});
-
-test("budgetTone thresholds", () => {
-    assert.deepEqual([budgetTone(79), budgetTone(80), budgetTone(100), budgetTone(101)], ["ok", "watch", "watch", "over"]);
 });
 
 test("teamWorkload: per assignee across projects, sorted by active points", () => {
@@ -122,5 +100,5 @@ test("KPI.jsx uses portfolioKpis, not the backend onTimeRate nor a hard-coded ra
     const dash = await readFile(new URL("../pages/Dashboard/Dasboard.jsx", import.meta.url), "utf8");
     for (const removed of ["TodayTask", "UCMDeadlines", "RecentActivity", "TaskCompletion", "ProjectStatus", "OverViews/TeamWorkload"]) assert.doesNotMatch(dash, new RegExp("import[^\n]*" + removed), removed);
     const overview = await readFile(new URL("../pages/Dashboard/portfolio/PortfolioOverview.jsx", import.meta.url), "utf8");
-    for (const gone of ["Portfolio health", "Plan adherence", "Budget spent", "People in scope"]) assert.ok(!overview.includes(gone), gone);
+    for (const gone of ["Portfolio health", "Plan adherence", "Budget spent", "People in scope", "Budget burn", "budgetUsage"]) assert.ok(!overview.includes(gone), gone);
 });

@@ -3,6 +3,17 @@ import DropdownHeader from "./DropdownHeader/DropdownHeader";
 import { Menu, Bell } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { API_BASE_URL } from "../../../config/apiConfig.js";
+import { loadReadKeys, markRead, notificationKey, pruneReadKeys, unreadOf } from "../../../utils/notificationRead.js";
+
+// signed-in user id as stored by the login page (the read state is kept per user)
+const storedUserId = () => {
+    try {
+        const user = JSON.parse(localStorage.getItem("user") || "null");
+        return user?.id || user?._id || "";
+    } catch {
+        return "";
+    }
+};
 
 // Helper calculate due date based on project start date and week
 const calculateDueDateByWeek = (startDateStr, weekNum = 1) => {
@@ -34,6 +45,8 @@ function Header({ onOpenSidebar, menuButtonRef, sidebarOpen = false }) {
     const [expiringTasks, setExpiringTasks] = useState([]);
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef(null);
+    const userId = storedUserId();
+    const [readKeys, setReadKeys] = useState(() => loadReadKeys(userId));
 
     // Fetch expiring tasks list from API with Project mapping
     const fetchExpiringTasks = async () => {
@@ -102,9 +115,13 @@ function Header({ onOpenSidebar, menuButtonRef, sidebarOpen = false }) {
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                 // Expiring condition: 0 to 2 days left
-                return diffDays >= 0 && diffDays <= 2;
+                const expiring = diffDays >= 0 && diffDays <= 2;
+                if (expiring) task.notifKey = notificationKey(task._id || task.id, effectiveDueDate);
+                return expiring;
             });
 
+            // read keys of tasks that are no longer expiring are dropped
+            setReadKeys(pruneReadKeys(userId, filtered.map((t) => t.notifKey)));
             setExpiringTasks(filtered);
         } catch (err) {
             console.error("Error fetching expiring tasks notifications:", err);
@@ -145,7 +162,12 @@ function Header({ onOpenSidebar, menuButtonRef, sidebarOpen = false }) {
     const { pathname } = useLocation();
     const context = ROUTE_CONTEXT.find((c) => pathname.startsWith(c.prefix));
 
-    const count = expiringTasks.length;
+    const unread = unreadOf(expiringTasks, readKeys);
+    const count = unread.length;
+
+    // a clicked notification leaves the list; "View all" marks every current one as read
+    const markOneRead = (key) => setReadKeys(markRead(userId, [key]));
+    const markAllRead = () => setReadKeys(markRead(userId, expiringTasks.map((t) => t.notifKey)));
 
     return (
         <header className="header">
@@ -180,7 +202,7 @@ function Header({ onOpenSidebar, menuButtonRef, sidebarOpen = false }) {
                         type="button"
                         className="icon-btn notif-btn"
                         onClick={() => setIsOpen(!isOpen)}
-                        aria-label={count > 0 ? `Notifications, ${count} expiring soon` : "Notifications"}
+                        aria-label={count > 0 ? `Notifications, ${count} unread` : "Notifications"}
                         aria-haspopup="true"
                         aria-expanded={isOpen}
                     >
@@ -194,18 +216,18 @@ function Header({ onOpenSidebar, menuButtonRef, sidebarOpen = false }) {
                         <div className="notif-panel" role="region" aria-label="Notifications">
                             <div className="notif-panel-header">
                                 <strong className="notif-panel-title">Notifications</strong>
-                                <span className="notif-panel-meta">{count} expiring soon</span>
+                                <span className="notif-panel-meta">{count} unread</span>
                             </div>
 
                             <div className="notif-list">
-                                {expiringTasks.length === 0 ? (
-                                    <div className="notif-empty">No expiring tasks</div>
+                                {unread.length === 0 ? (
+                                    <div className="notif-empty">No new notifications</div>
                                 ) : (
-                                    expiringTasks.map((task) => (
+                                    unread.map((task) => (
                                         <Link
-                                            key={task._id}
+                                            key={task.notifKey}
                                             to="/myTasks"
-                                            onClick={() => setIsOpen(false)}
+                                            onClick={() => { markOneRead(task.notifKey); setIsOpen(false); }}
                                             className="notif-item"
                                         >
                                             <div className="notif-item-title">{task.title || task.name}</div>
@@ -215,7 +237,7 @@ function Header({ onOpenSidebar, menuButtonRef, sidebarOpen = false }) {
                                 )}
                             </div>
 
-                            <Link to="/myTasks" onClick={() => setIsOpen(false)} className="notif-footer">
+                            <Link to="/myTasks" onClick={() => { markAllRead(); setIsOpen(false); }} className="notif-footer">
                                 View all in My Tasks
                             </Link>
                         </div>
