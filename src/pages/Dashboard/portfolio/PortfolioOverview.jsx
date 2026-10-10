@@ -6,7 +6,7 @@ import { failureMessage } from "../../../utils/requestState.js";
 import { avatarToneClass, getInitials } from "../../../utils/avatar.js";
 import { parseWeeklyExpectancy } from "../../../utils/weeklyExpectancy.js";
 import { projectProgress, budgetUsage, teamWorkload, planAdherence, averageAdherence, pct } from "../../../utils/portfolioStats.js";
-import { fetchProjects, fetchTasksByProject, fetchWeeklyExpectancy } from "../../../../api.jsx";
+import { fetchProjects, fetchTasksByProject, fetchWeeklyExpectancy, fetchMembersByProject } from "../../../../api.jsx";
 import { ChartCard, ChartStats, LoadingBlock, EmptyBlock } from "../analytics/chartKit.jsx";
 
 const money = (value) => `$${Math.round(value).toLocaleString("en-US")}`;
@@ -14,7 +14,7 @@ const TONE_LABEL = { ok: "On track", watch: "Watch", over: "Over budget" };
 
 /**
  * Portfolio health on the dashboard: every project the user can see, side by side.
- * One load = GET /project, then per project GET /task/project/:id and GET /task/project/:id/weekly-expectancy.
+ * One load = GET /project, then per project GET /task/project/:id, GET /task/project/:id/weekly-expectancy and GET /member/project/:id.
  * A project whose tasks failed to load is left out of every figure and reported — never counted as 0.
  */
 function PortfolioOverview() {
@@ -29,11 +29,12 @@ function PortfolioOverview() {
                 const projects = Array.isArray(data) ? data : (data?.data || []);
                 const rows = await Promise.all(projects.map(async (project) => {
                     const id = project._id || project.id;
-                    const [tasks, weekly] = await Promise.allSettled([fetchTasksByProject(id), fetchWeeklyExpectancy(id)]);
+                    const [tasks, weekly, members] = await Promise.allSettled([fetchTasksByProject(id), fetchWeeklyExpectancy(id), fetchMembersByProject(id)]);
                     return {
                         project,
                         tasks: tasks.status === "fulfilled" && Array.isArray(tasks.value) ? tasks.value : null,
                         weekly: weekly.status === "fulfilled" ? parseWeeklyExpectancy(weekly.value) : null,
+                        members: members.status === "fulfilled" && Array.isArray(members.value) ? members.value : null,
                     };
                 }));
                 if (!cancelled) setState({ loading: false, error: null, rows });
@@ -66,7 +67,8 @@ function PortfolioOverview() {
             rated,
             spent: rated.reduce((s, b) => s + b.spent, 0),
             ratedBudget: rated.reduce((s, b) => s + b.budget, 0),
-            workload: teamWorkload(loaded.map((r) => r.tasks)),
+            workload: teamWorkload(loaded.map((r) => r.tasks), loaded.map((r) => r.members)),
+            membersFailed: loaded.filter((r) => !r.members).length,
             adherence,
             totalTasks,
             completedTasks,
@@ -137,7 +139,7 @@ function PortfolioOverview() {
                         value: view.adherence.average === null ? "—" : `${view.adherence.average}%`,
                     },
                     { label: "Budget spent", value: view.rated.length ? `${money(view.spent)} / ${money(view.ratedBudget)}` : "—" },
-                    { label: "People with tasks", value: view.workload.length },
+                    { label: "People in scope", value: view.workload.length },
                 ]}
             />
             <p className="chart-note portfolio-note">
@@ -204,15 +206,18 @@ function PortfolioOverview() {
                 </ChartCard>
             </div>
 
-            <ChartCard id="portfolio-workload" title="Team workload" subtitle="Tasks assigned per person across your projects" icon={<UsersRound className="icon" />}>
+            <ChartCard id="portfolio-workload" title="Team workload" subtitle="Members and their tasks across your projects" icon={<UsersRound className="icon" />}>
                 {view.workload.length === 0 ? (
-                    <p className="chart-note">No task is assigned to anyone yet.</p>
+                    <p className="chart-note">No member or assigned task yet.</p>
                 ) : (
+                    <>
+                    {view.membersFailed > 0 && <p className="chart-note">Members of {view.membersFailed} project(s) could not be loaded: the list may be incomplete.</p>}
                     <div className="table-scroll">
                         <table className="workload-table">
                             <thead>
                                 <tr>
                                     <th scope="col">Person</th>
+                                    <th scope="col">Role</th>
                                     <th scope="col" className="is-num">Active</th>
                                     <th scope="col" className="is-num">Active points</th>
                                     <th scope="col" className="is-num">Completed</th>
@@ -231,6 +236,7 @@ function PortfolioOverview() {
                                                 </span>
                                             </span>
                                         </td>
+                                        <td>{person.roles.length > 0 ? person.roles.join(", ") : "—"}</td>
                                         <td className="is-num">{person.active}</td>
                                         <td className="is-num">{person.activePoints}</td>
                                         <td className="is-num">{person.completed}</td>
@@ -240,6 +246,7 @@ function PortfolioOverview() {
                             </tbody>
                         </table>
                     </div>
+                    </>
                 )}
             </ChartCard>
         </section>
