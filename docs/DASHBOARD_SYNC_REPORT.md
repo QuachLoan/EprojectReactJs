@@ -34,3 +34,11 @@ Revert or delete branch `qa/dashboard-sync` in each repo.
 
 ## 12. Readiness
 Ready for team QA on real data. Confirm the On-Time formula with the team and re-check the scroll repro.
+
+## Round 2 (2026-10-10)
+Files: `Dasboard.jsx`, `KPI/KPI.jsx`, `portfolio/PortfolioOverview.jsx`, `portfolio/usePortfolioData.js` (new), `utils/portfolioStats.js` (+ tests), `assets/style/components.css`.
+
+- **Formula**: On-Time Rate = Plan adherence (this week), computed by `portfolioKpis().adherence.average`; tests assert equality with `averageAdherence(planAdherence(...))`, null stays null, `KPI.jsx` does not read the backend `onTimeRate` and has no hard-coded rate. Removed Dashboard widgets are asserted absent. Previous backend-based rate (week rule in `helper/onTimeRate.js`) stays on the backend, unused by the UI.
+- **Nested scroll**: the screenshot (two vertical scrollbars) could NOT be reproduced. In headless Chrome (mocked API) at 1366x768, 1280x800, 800x500 and 375x667 the only vertical scroller is `main.page-content`; the document does not scroll, no horizontal overflow. The cause in the photo is therefore UNVERIFIED (candidates already handled: `.table-scroll` implicit overflow-y; the browser window/zoom of the photo may add its own scrollbar). If it still shows, send the viewport size and browser zoom.
+- **KPI layout**: four cards in one row at 1366 and 1280 widths (equal height 104px via `.grid-stats .stat-card { min-height }`), 2x2 at 800, one column at 375.
+- **Tests**: `npm test` 73 pass / 0 fail (3 new); `vite build` OK; oxlint: no warnings in changed files. Browser check used a mocked API (scratch script, not in the repo): it confirms layout/order only, the mock has no weekly-expectancy data so On-Time shows "—" there. Backend not touched and not verified against MongoDB.

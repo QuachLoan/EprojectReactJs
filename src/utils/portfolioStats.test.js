@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { projectProgress, budgetUsage, budgetTone, teamWorkload, planAdherence, averageAdherence } from "./portfolioStats.js";
+import { projectProgress, budgetUsage, budgetTone, teamWorkload, planAdherence, averageAdherence, portfolioKpis } from "./portfolioStats.js";
 
 const tasks = [
     { status: "completed", point: 5, columnId: { position: 3 } },
@@ -92,4 +92,35 @@ test("planAdherence: not measurable gives null (never 100)", () => {
 test("averageAdherence ignores unmeasured projects", () => {
     assert.deepEqual(averageAdherence([60, null, 100]), { average: 80, measured: 2 });
     assert.deepEqual(averageAdherence([null]), { average: null, measured: 0 });
+});
+
+test("portfolioKpis: On-Time Rate is the same value as plan adherence (average of planAdherence per project)", () => {
+    const rows = [
+        { project: { _id: "a" }, tasks: [{ status: "completed", point: 1 }, { point: 1 }], weekly: parsed(2, [wk(1, 5, 4), wk(2, 10, 6)]) },
+        { project: { _id: "b" }, tasks: [{ point: 1 }], weekly: parsed(1, [wk(1, 4, 4)]) },
+        { project: { _id: "c" }, tasks: null, weekly: parsed(1, [wk(1, 4, 0)]) },
+    ];
+    const k = portfolioKpis(rows);
+    assert.equal(k.adherence.average, averageAdherence([planAdherence(rows[0].weekly), planAdherence(rows[1].weekly)]).average);
+    assert.equal(k.adherence.average, 80); // (60 + 100) / 2, the project whose tasks failed is left out
+    assert.deepEqual([k.totalTasks, k.completedTasks, k.completion, k.failed], [3, 1, 33, 1]);
+});
+
+test("portfolioKpis: nothing measurable stays null (never 0 or 100)", () => {
+    const k = portfolioKpis([{ project: {}, tasks: [], weekly: null }, { project: {}, tasks: [{ point: 2 }], weekly: { currentProjectWeek: null, maxProjectWeek: null, weeks: [] } }]);
+    assert.equal(k.adherence.average, null);
+    assert.equal(portfolioKpis([]).completion, null);
+    assert.equal(portfolioKpis([]).adherence.average, null);
+});
+
+test("KPI.jsx uses portfolioKpis, not the backend onTimeRate nor a hard-coded rate", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(new URL("../pages/Dashboard/KPI/KPI.jsx", import.meta.url), "utf8");
+    assert.match(src, /portfolioKpis/);
+    assert.doesNotMatch(src, /portfolio?.onTimeRate/);
+    assert.doesNotMatch(src, /37/);
+    const dash = await readFile(new URL("../pages/Dashboard/Dasboard.jsx", import.meta.url), "utf8");
+    for (const removed of ["TodayTask", "UCMDeadlines", "RecentActivity", "TaskCompletion", "ProjectStatus", "OverViews/TeamWorkload"]) assert.doesNotMatch(dash, new RegExp("import[^\n]*" + removed), removed);
+    const overview = await readFile(new URL("../pages/Dashboard/portfolio/PortfolioOverview.jsx", import.meta.url), "utf8");
+    for (const gone of ["Portfolio health", "Plan adherence", "Budget spent", "People in scope"]) assert.ok(!overview.includes(gone), gone);
 });

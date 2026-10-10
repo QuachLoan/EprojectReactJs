@@ -1,6 +1,7 @@
 import KPI from "./KPI/KPI";
 import ProjectAnalytics from "./analytics/ProjectAnalytics";
 import PortfolioOverview from "./portfolio/PortfolioOverview";
+import { usePortfolioData } from "./portfolio/usePortfolioData.js";
 
 // Name of the signed-in user as stored by the login page ("" when unknown — never a made-up name)
 const getStoredUserName = () => {
@@ -17,6 +18,8 @@ const getStoredUserName = () => {
 // (files kept in ./OverViews and ./ProjectProgress until real data exists).
 function Dashboard() {
     const userName = getStoredUserName();
+    // loaded once, shared by the KPI row and the portfolio sections
+    const portfolio = usePortfolioData();
     return (
         <main className="page-content">
             <div className="page-content-inner stack dashboard-page">
@@ -25,8 +28,8 @@ function Dashboard() {
                     <p className="page-subtitle">Here's what's happening across your workspace today.</p>
                 </div>
 
-                <KPI />
-                <PortfolioOverview />
+                <KPI shared={portfolio} />
+                <PortfolioOverview state={portfolio.state} reload={portfolio.reload} />
                 <ProjectAnalytics />
             </div>
         </main>

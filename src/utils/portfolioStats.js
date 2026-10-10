@@ -133,3 +133,17 @@ export function averageAdherence(values) {
     if (measured.length === 0) return { average: null, measured: 0 };
     return { average: Math.round(measured.reduce((s, v) => s + v, 0) / measured.length), measured: measured.length };
 }
+
+/**
+ * Dashboard KPI figures from the loaded rows (usePortfolioData). Projects whose tasks failed to load are left out
+ * and counted in `failed`. On-Time Rate and "Plan adherence (this week)" are the SAME value: adherence.average.
+ */
+export function portfolioKpis(rows) {
+    const list = rows || [];
+    const loaded = list.filter((r) => r.tasks);
+    const progress = loaded.map((r) => projectProgress(r.project, r.tasks));
+    const adherence = averageAdherence(loaded.map((r) => planAdherence(r.weekly)));
+    const totalTasks = progress.reduce((sum, p) => sum + p.total, 0);
+    const completedTasks = progress.reduce((sum, p) => sum + p.completed, 0);
+    return { loaded, progress, failed: list.length - loaded.length, adherence, totalTasks, completedTasks, completion: pct(completedTasks, totalTasks) };
+}

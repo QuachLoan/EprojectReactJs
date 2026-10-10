@@ -31,3 +31,15 @@ The production Dashboard path has no hard-coded users or numbers. `OverViews/Tea
 
 ## Rollback
 Each repo is on branch `qa/dashboard-sync`; revert the commit or delete the branch. No data or migration changes.
+
+## Round 2 (2026-10-10): KPI layout, On-Time = Plan adherence, nested scroll
+| Item | Status |
+|---|---|
+| Portfolio health title/description, Plan adherence, Budget spent, People in scope removed | DONE |
+| KPI order: Total Projects, On-Time Rate, Total Budget, Tasks Completed (one row on desktop) | DONE |
+| On-Time Rate = former "Plan adherence (this week)" (same function) | DONE |
+| Nested scroll | UNVERIFIED: not reproducible, see report |
+
+- On-Time Rate source: per project `GET /task/project/:id/weekly-expectancy` -> `planAdherence()` (latest real progress / planned points of the current week, capped at 100, rounded) -> `averageAdherence()` over projects that have a plan. `portfolioKpis()` in `utils/portfolioStats.js` is the single implementation. No plan -> "—". The backend `onTimeRate` field is no longer used by the frontend (backend untouched).
+- Data is loaded once in `Dashboard` (`portfolio/usePortfolioData.js`) and shared by `KPI` and `PortfolioOverview` (no double fetching).
+- Kept: Project progress, Budget burn, Team workload (+Role, members without tasks), Project analytics. A "Refresh" button remains above these sections. Removed charts not restored.

@@ -1,101 +1,46 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Activity, FolderKanban, RotateCw, UsersRound, Wallet } from "lucide-react";
 import ErrorState from "../../../components/common/ErrorState.jsx";
 import { failureMessage } from "../../../utils/requestState.js";
 import { avatarToneClass, getInitials } from "../../../utils/avatar.js";
-import { parseWeeklyExpectancy } from "../../../utils/weeklyExpectancy.js";
-import { projectProgress, budgetUsage, teamWorkload, planAdherence, averageAdherence, pct } from "../../../utils/portfolioStats.js";
-import { fetchProjects, fetchTasksByProject, fetchWeeklyExpectancy, fetchMembersByProject } from "../../../../api.jsx";
-import { ChartCard, ChartStats, LoadingBlock, EmptyBlock } from "../analytics/chartKit.jsx";
+import { budgetUsage, teamWorkload, portfolioKpis } from "../../../utils/portfolioStats.js";
+import { ChartCard, LoadingBlock, EmptyBlock } from "../analytics/chartKit.jsx";
 
 const money = (value) => `$${Math.round(value).toLocaleString("en-US")}`;
 const TONE_LABEL = { ok: "On track", watch: "Watch", over: "Over budget" };
 
 /**
- * Portfolio health on the dashboard: every project the user can see, side by side.
- * One load = GET /project, then per project GET /task/project/:id, GET /task/project/:id/weekly-expectancy and GET /member/project/:id.
- * A project whose tasks failed to load is left out of every figure and reported — never counted as 0.
+ * Portfolio sections on the dashboard (progress, budget burn, team workload). Data comes from usePortfolioData()
+ * (loaded once in Dashboard and shared with the KPI row). A project whose tasks failed to load is left out and reported.
  */
-function PortfolioOverview() {
-    const [state, setState] = useState({ loading: true, error: null, rows: [] });
-    const [reloadKey, setReloadKey] = useState(0);
-
-    useEffect(() => {
-        let cancelled = false;
-        const load = async () => {
-            try {
-                const data = await fetchProjects();
-                const projects = Array.isArray(data) ? data : (data?.data || []);
-                const rows = await Promise.all(projects.map(async (project) => {
-                    const id = project._id || project.id;
-                    const [tasks, weekly, members] = await Promise.allSettled([fetchTasksByProject(id), fetchWeeklyExpectancy(id), fetchMembersByProject(id)]);
-                    return {
-                        project,
-                        tasks: tasks.status === "fulfilled" && Array.isArray(tasks.value) ? tasks.value : null,
-                        weekly: weekly.status === "fulfilled" ? parseWeeklyExpectancy(weekly.value) : null,
-                        members: members.status === "fulfilled" && Array.isArray(members.value) ? members.value : null,
-                    };
-                }));
-                if (!cancelled) setState({ loading: false, error: null, rows });
-            } catch (err) {
-                console.error("Loading the portfolio overview failed:", err);
-                if (!cancelled) setState({ loading: false, error: err, rows: [] });
-            }
-        };
-        load();
-        return () => { cancelled = true; };
-    }, [reloadKey]);
-
-    const reload = () => {
-        setState((s) => ({ ...s, loading: true }));
-        setReloadKey((k) => k + 1);
-    };
-
+function PortfolioOverview({ state, reload }) {
     const view = useMemo(() => {
-        const loaded = state.rows.filter((r) => r.tasks);
-        const progress = loaded.map((r) => projectProgress(r.project, r.tasks));
+        const { loaded, progress, failed } = portfolioKpis(state.rows);
         const budgets = loaded.map((r, i) => budgetUsage(r.project, progress[i])).filter(Boolean);
-        const adherence = averageAdherence(loaded.map((r) => planAdherence(r.weekly)));
-        const totalTasks = progress.reduce((s, p) => s + p.total, 0);
-        const completedTasks = progress.reduce((s, p) => s + p.completed, 0);
-        const rated = budgets.filter((b) => b.spent !== null);
         return {
-            failed: state.rows.length - loaded.length,
-            progress: [...progress].sort((a, b) => (b.percent ?? -1) - (a.percent ?? -1)),
+            failed,
+            progress: [...progress].sort((x, y) => (y.percent ?? -1) - (x.percent ?? -1)),
             budgets,
-            rated,
-            spent: rated.reduce((s, b) => s + b.spent, 0),
-            ratedBudget: rated.reduce((s, b) => s + b.budget, 0),
             workload: teamWorkload(loaded.map((r) => r.tasks), loaded.map((r) => r.members)),
             membersFailed: loaded.filter((r) => !r.members).length,
-            adherence,
-            totalTasks,
-            completedTasks,
-            completion: pct(completedTasks, totalTasks),
         };
     }, [state.rows]);
 
-    const header = (
-        <div className="analytics-header">
-            <div>
-                <h2 className="section-title">Portfolio health</h2>
-                <p className="section-subtitle">Progress, budget and workload across your projects</p>
-            </div>
-            {!state.loading && !state.error && (
-                <button type="button" className="btn btn-ghost btn-sm" onClick={reload}>
-                    <RotateCw className="icon icon-sm" aria-hidden="true" /> Refresh
-                </button>
-            )}
+    const header = !state.loading && !state.error && (
+        <div className="analytics-header analytics-header--end">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={reload}>
+                <RotateCw className="icon icon-sm" aria-hidden="true" /> Refresh
+            </button>
         </div>
     );
 
     if (state.loading) {
-        return <section className="analytics" aria-label="Portfolio health">{header}<LoadingBlock text="Loading portfolio…" className="portfolio-loading" /></section>;
+        return <section className="analytics" aria-label="Portfolio details">{header}<LoadingBlock text="Loading portfolio…" className="portfolio-loading" /></section>;
     }
     if (state.error) {
         return (
-            <section className="analytics" aria-label="Portfolio health">
+            <section className="analytics" aria-label="Portfolio details">
                 {header}
                 <ErrorState title="Couldn't load the portfolio" message={failureMessage({ error: state.error })} onRetry={reload} />
             </section>
@@ -103,7 +48,7 @@ function PortfolioOverview() {
     }
     if (state.rows.length === 0) {
         return (
-            <section className="analytics" aria-label="Portfolio health">
+            <section className="analytics" aria-label="Portfolio details">
                 {header}
                 <div className="card">
                     <EmptyBlock
@@ -119,7 +64,7 @@ function PortfolioOverview() {
     }
 
     return (
-        <section className="analytics" aria-label="Portfolio health">
+        <section className="analytics" aria-label="Portfolio details">
             {header}
 
             {view.failed > 0 && (
@@ -130,22 +75,6 @@ function PortfolioOverview() {
                     onRetry={reload}
                 />
             )}
-
-            <ChartStats
-                items={[
-                    { label: "Tasks completed", value: view.completion === null ? "—" : `${view.completedTasks}/${view.totalTasks} · ${view.completion}%` },
-                    {
-                        label: "Plan adherence (this week)",
-                        value: view.adherence.average === null ? "—" : `${view.adherence.average}%`,
-                    },
-                    { label: "Budget spent", value: view.rated.length ? `${money(view.spent)} / ${money(view.ratedBudget)}` : "—" },
-                    { label: "People in scope", value: view.workload.length },
-                ]}
-            />
-            <p className="chart-note portfolio-note">
-                Plan adherence = completed points ÷ planned points for the current week, averaged over {view.adherence.measured} project{view.adherence.measured === 1 ? "" : "s"} with a plan
-                {view.adherence.measured === 0 ? " (none yet)" : ""}. Budget spent = completed points × cost per point.
-            </p>
 
             <div className="analytics-grid">
                 <ChartCard id="portfolio-progress" title="Project progress" subtitle="Completed tasks / all tasks (status from the board)" icon={<Activity className="icon" />}>
