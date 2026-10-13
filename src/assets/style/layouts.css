@@ -9,9 +9,19 @@
    APP SHELL
    Sidebar on the left, header + page content on the right.
    ========================================================= */
+html,
+body,
+#root {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden !important;
+}
+
 .app-shell {
   display: flex;
   height: 100vh;
+  height: 100dvh;
+  width: 100vw;
   overflow: hidden;
 }
 .app-main {
@@ -19,10 +29,13 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  height: 100%;
+  overflow: hidden;
 }
 .page-content {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: auto !important;
+  overflow-x: hidden;
   padding: var(--space-6);
 }
 /* mobile drawer open: the page behind must not scroll */

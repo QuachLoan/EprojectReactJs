@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useRealtimeRefetch } from "../../../hooks/useRealtimeRefetch.js";
 import { parseWeeklyExpectancy } from "../../../utils/weeklyExpectancy.js";
 import { fetchProjects, fetchTasksByProject, fetchWeeklyExpectancy, fetchMembersByProject } from "../../../../api.jsx";
 
@@ -36,6 +37,9 @@ export function usePortfolioData() {
         load();
         return () => { cancelled = true; };
     }, [reloadKey]);
+
+    // data changed elsewhere (tasks, assignees, members, projects): reload quietly, the numbers stay on screen
+    useRealtimeRefetch(() => setReloadKey((k) => k + 1), ["tasks", "projects", "members", "users"]);
 
     const reload = useCallback(() => {
         setState((s) => ({ ...s, loading: true }));

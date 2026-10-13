@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ErrorState from '../../components/common/ErrorState.jsx';
 import { useConfirm, deleteConfirm, removeMemberConfirm } from '../../components/common/confirmContext.js';
@@ -34,6 +34,7 @@ import { validateProjectDates } from '../../utils/userSuggest.js';
 import { API_BASE_URL, translateBackendMessage } from "../../config/apiConfig.js";
 
 import ProjectHeader from '../../components/project/ProjectHeader.jsx';
+import { useRealtimeRefetch } from '../../hooks/useRealtimeRefetch.js';
 
 // Hàm lấy ngày hiện tại dạng YYYY-MM-DD (dành cho HTML input[type="date"])
 const getTodayString = () => {
@@ -113,6 +114,9 @@ export default function ProjectSetting() {
         startDate: '',
         dueDate: ''
     });
+    const formDataRef = useRef(formData);
+    const formBaselineRef = useRef(null);
+    useEffect(() => { formDataRef.current = formData; }, [formData]);
 
     const [projectMembers, setProjectMembers] = useState([]);
     const [searchMember, setSearchMember] = useState("");
@@ -223,6 +227,9 @@ export default function ProjectSetting() {
         }
     }, [projectId]);
 
+    // project / members / tasks changed by someone else: reload quietly (form edits in progress are kept)
+    useRealtimeRefetch(() => (projectId ? loadData(true) : undefined), ['tasks', 'projects', 'members', 'columns', 'users'], projectId);
+
     useEffect(() => {
         if (!openInviteModal) return;
         let cancelled = false;
@@ -248,10 +255,10 @@ export default function ProjectSetting() {
         dueDate: formatDateForInput(project?.date || project?.dueDate || project?.endDate),
     };
 
-    const loadData = async () => {
+    const loadData = async (quiet = false) => {
         const failures = [];
         try {
-            setLoading(true);
+            if (!quiet) setLoading(true);
 
             const [projectData, memList, tskList, colList] = await Promise.all([
                 withFallback(fetchProjectById(projectId), null, failures, 'project'),
@@ -273,13 +280,19 @@ export default function ProjectSetting() {
 
             setProject(realProject);
 
-            setFormData({
+            const loadedForm = {
                 name: realProject.name || '',
                 description: realProject.description || realProject.desc || '',
                 color: realProject.color || '#4f46e5',
                 startDate: formattedStartDate,
                 dueDate: formattedDueDate,
-            });
+            };
+            // a realtime reload must not overwrite what the user is typing: only an untouched form is refreshed
+            const untouched = !formBaselineRef.current || JSON.stringify(formDataRef.current) === JSON.stringify(formBaselineRef.current);
+            if (!quiet || untouched) {
+                setFormData(loadedForm);
+                formBaselineRef.current = loadedForm;
+            }
 
             setProjectMembers(realMembers);
             setTasks(realTasks);
@@ -849,7 +862,12 @@ export default function ProjectSetting() {
                                                             </div>
 
                                                             <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
-                                                                {(canManage || memberCurrentRole === "Manager") && (
+                                                                {/*
+      Điều kiện hiển thị nút 3 chấm:
+      1. Người dùng có quyền quản lý (canManage) hoặc là Manager hiện tại.
+      2. Nếu thành viên trong hàng hiện tại chính là người dùng đăng nhập VÀ người đó là Manager -> Ẩn nút 3 chấm (không cho tự sửa/xóa chính mình).
+    */}
+                                                                {((canManage || memberCurrentRole === "Manager") && !(extractUserId(m) === String(currentUserId) && isManager)) && (
                                                                     <>
                                                                         <button
                                                                             type="button"
@@ -878,15 +896,81 @@ export default function ProjectSetting() {
                                                                                     minWidth: '170px'
                                                                                 }}
                                                                             >
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => handleUpdateRole(m._id, role, role === "Leader" ? "Member" : "Leader")}
-                                                                                    className="dropdown-item"
-                                                                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                                                                                >
-                                                                                    <UserCog size={16} /> Change Role
-                                                                                </button>
+                                                                                {/* Thành viên hiện tại đang là Member */}
+                                                                                {role === "Member" && (
+                                                                                    <>
+                                                                                        {(isAdmin || isManager) && (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => handleUpdateRole(m._id, role, "Leader")}
+                                                                                                className="dropdown-item"
+                                                                                                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                            >
+                                                                                                <UserCog size={16} /> Set as Leader
+                                                                                            </button>
+                                                                                        )}
+                                                                                        {isAdmin && (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => handleUpdateRole(m._id, role, "Manager")}
+                                                                                                className="dropdown-item"
+                                                                                                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                            >
+                                                                                                <UserCog size={16} /> Set as Manager
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </>
+                                                                                )}
 
+                                                                                {/* Thành viên hiện tại đang là Leader */}
+                                                                                {role === "Leader" && (
+                                                                                    <>
+                                                                                        {(isAdmin || isManager) && (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => handleUpdateRole(m._id, role, "Member")}
+                                                                                                className="dropdown-item"
+                                                                                                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                            >
+                                                                                                <UserCog size={16} /> Set as Member
+                                                                                            </button>
+                                                                                        )}
+                                                                                        {isAdmin && (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => handleUpdateRole(m._id, role, "Manager")}
+                                                                                                className="dropdown-item"
+                                                                                                style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                            >
+                                                                                                <UserCog size={16} /> Set as Manager
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </>
+                                                                                )}
+
+                                                                                {/* Thành viên hiện tại đang là Manager */}
+                                                                                {role === "Manager" && isAdmin && (
+                                                                                    <>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => handleUpdateRole(m._id, role, "Member")}
+                                                                                            className="dropdown-item"
+                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                        >
+                                                                                            <UserCog size={16} /> Set as Member
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => handleUpdateRole(m._id, role, "Leader")}
+                                                                                            className="dropdown-item"
+                                                                                            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '8px 14px', fontSize: '13px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+                                                                                        >
+                                                                                            <UserCog size={16} /> Set as Leader
+                                                                                        </button>
+                                                                                    </>
+                                                                                )}
+
+                                                                                {/* Nút Xóa Thành Viên */}
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={() => handleDeleteMember(m)}

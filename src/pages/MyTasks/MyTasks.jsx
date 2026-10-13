@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
+import { useRealtimeRefetch } from "../../hooks/useRealtimeRefetch.js";
+import { useSearchParams, useLocation } from "react-router-dom";
 import {
     fetchTaskById,
     updateTask,
@@ -38,7 +40,6 @@ const calculateDueDateByWeek = (startDateStr, weekNum = 1) => {
     return dueDate;
 };
 
-// Tính số ngày còn lại theo startDate của Project và week của Task
 const getRemainingDaysLabel = (startDateStr, weekNum = 1) => {
     if (!startDateStr) return "Not set";
     const startDate = new Date(startDateStr);
@@ -123,7 +124,7 @@ const getCurrentUserId = () => {
     }
 };
 
-// --- COMPONENT TASK DRAWER (My Tasks) — data + permissions here, presentation in components/task/* ---
+// --- TASK DRAWER COMPONENT ---
 function TaskDrawer({
                         taskId,
                         isDrawerOpen,
@@ -153,6 +154,7 @@ function TaskDrawer({
     const loadActivities = () => fetchTaskActivities(taskId)
         .then((data) => { setActivities(Array.isArray(data) ? data : (data?.data || [])); setActivitiesError(''); })
         .catch((err) => setActivitiesError(failureMessage({ error: err })));
+
     const loadComments = () => fetchTaskComments(taskId)
         .then((data) => { setComments(Array.isArray(data) ? data : (data?.data || [])); setCommentsError(''); })
         .catch((err) => setCommentsError(failureMessage({ error: err })));
@@ -242,6 +244,7 @@ function TaskDrawer({
                 setLoadError(failureMessage({ error: err }));
             })
             .finally(() => { if (!cancelled) setLoading(false); });
+
         return () => { cancelled = true; };
     }, [taskId, isDrawerOpen, currentUserId, reloadKey]);
 
@@ -313,8 +316,6 @@ function TaskDrawer({
         }
     };
 
-    // Changing the column is a move (PUT /task/:id/move): only that endpoint sets status / completedAt /
-    // completedDate and the column order. The task goes to the end of the destination column.
     const handleColumnChange = async (destColumnId) => {
         if (!task || isSaving) return;
         const sourceColumnId = extractColumnId(task.columnId);
@@ -380,7 +381,6 @@ function TaskDrawer({
 
     const handleDeleteTask = async () => {
         if (!canDelete) return;
-        // the dialog stays open (loading) until the request finishes and shows the API error if it fails
         await confirm(deleteConfirm({
             item: "task",
             onConfirm: async () => {
@@ -397,7 +397,6 @@ function TaskDrawer({
         }));
     };
 
-    // Checklist / comment actions return promises: the shared sections show progress and errors
     const handleAddChecklist = async (text) => {
         if (!canManageChecklist || !text.trim()) return;
         const response = await addChecklistItem(taskId, text.trim());
@@ -442,7 +441,6 @@ function TaskDrawer({
                 setTask(prev => ({ ...prev, checklist: (prev.checklist || []).filter(i => String(i._id) !== String(item._id)) }));
 
                 try {
-                    // see the BACKEND MISMATCH note on deleteChecklist in api.jsx — the item id is passed on purpose
                     await deleteChecklist(item._id);
                 } catch (error) {
                     console.error("Deleting the checklist item failed:", error);
@@ -649,6 +647,8 @@ const formatShortDate = (value) => {
 
 // --- MAIN MY TASKS COMPONENT ---
 function MyTasks() {
+    const [searchParams, setSearchParams] = useSearchParams();
+    const location = useLocation(); // Bắt vị trí URL khi có sự thay đổi điều hướng từ Notifier
     const [activeTab, setActiveTab] = useState("all");
     const [tasks, setTasks] = useState([]);
     const [projectMap, setProjectMap] = useState({});
@@ -659,16 +659,28 @@ function MyTasks() {
     const [selectedTaskId, setSelectedTaskId] = useState(null);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-    // Tính toán số task Expiring và phát event cập nhật cho Nav
+    // Lắng nghe triệt để sự thay đổi của query URL (kể cả khi điều hướng lại sang /mytasks)
+    useEffect(() => {
+        const queryParams = new URLSearchParams(location.search);
+        const taskIdFromUrl = queryParams.get("taskId");
+
+        if (taskIdFromUrl) {
+            setSelectedTaskId(taskIdFromUrl);
+            setIsDrawerOpen(true);
+            setActiveTab("all"); // Reset tab về All để không bị ẩn task trong danh sách
+        } else {
+            setIsDrawerOpen(false);
+            setSelectedTaskId(null);
+        }
+    }, [location.search]);
+
     const notifyNavToUpdate = useCallback((currentTasks = tasks, pMap = projectMap) => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
         const expiringCount = currentTasks.filter((task) => {
-            // 1. Kiểm tra trạng thái xem có thuộc Done / Completed không
             if (isTaskCompleted(task)) return false;
 
-            // 2. Xác định ngày hết hạn (dueDate hoặc tính theo tuần dự án)
             const projId = typeof task.projectId === 'object' ? (task.projectId?._id || task.projectId?.id) : task.projectId;
             const projStartDate = (typeof task.projectId === 'object' && task.projectId?.startDate)
                 ? task.projectId?.startDate
@@ -683,14 +695,12 @@ function MyTasks() {
             const diffTime = dueDate.getTime() - today.getTime();
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-            // Task ở mục Expiring: Còn từ 0 đến 2 ngày nữa hết hạn (bao gồm cả "Due today")
             return diffDays >= 0 && diffDays <= 2;
         }).length;
 
         window.dispatchEvent(new CustomEvent("myTasksUpdated", { detail: { count: expiringCount } }));
     }, [tasks, projectMap]);
 
-    // Bắn event update mỗi khi danh sách tasks hoặc projectMap có thay đổi
     useEffect(() => {
         notifyNavToUpdate(tasks, projectMap);
     }, [tasks, projectMap, notifyNavToUpdate]);
@@ -698,16 +708,27 @@ function MyTasks() {
     const handleOpenDrawer = (taskId) => {
         setSelectedTaskId(taskId);
         setIsDrawerOpen(true);
+        setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.set("taskId", taskId);
+            return next;
+        });
     };
 
     const handleCloseDrawer = () => {
         setIsDrawerOpen(false);
         setSelectedTaskId(null);
+        setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete("taskId");
+            return next;
+        });
     };
 
-    const loadMyTasks = async () => {
+    // quiet = realtime refresh: no spinner, and a failed refresh keeps the tasks already on screen
+    const loadMyTasks = async (quiet = false) => {
         try {
-            setLoading(true);
+            if (!quiet) setLoading(true);
             setError(null);
 
             const data = await fetchMyTasks();
@@ -720,7 +741,6 @@ function MyTasks() {
                     .filter(Boolean)
             ));
 
-            // project details only add names / start dates: a failed one is skipped, as before
             const projFetchPromises = uniqueProjIds.map(async (pId) => {
                 try {
                     const pData = await fetchProjectById(pId);
@@ -742,7 +762,7 @@ function MyTasks() {
         } catch (err) {
             console.error("Lỗi lấy My Tasks:", err);
             setError(err);
-            setTasks([]);
+            if (!quiet) setTasks([]);
         } finally {
             setLoading(false);
         }
@@ -752,8 +772,9 @@ function MyTasks() {
         loadMyTasks();
     }, []);
 
-    // The drawer works with plain ids; the list keeps the populated objects from GET /task/my-task
-    // (column title, project name/color, assignee names) and only replaces them when they really changed.
+    // tasks assigned to me / their projects changed by someone else
+    useRealtimeRefetch(() => loadMyTasks(true), ["tasks", "projects", "members", "users"]);
+
     const handleTaskUpdatedFromDrawer = (updatedTask) => {
         setTasks((prevTasks) =>
             prevTasks.map((t) => {
@@ -778,20 +799,16 @@ function MyTasks() {
         setTasks((prevTasks) => prevTasks.filter((t) => String(t._id) !== String(deletedTaskId)));
     };
 
-    // Filter danh sách theo Tab
     const filteredTasks = useMemo(() => {
         return tasks.filter((task) => {
             const title = (task.title || task.name || "").toLowerCase();
             const matchesSearch = !searchQuery || title.includes(searchQuery.toLowerCase());
             if (!matchesSearch) return false;
 
-            // Insights summarises every task matching the search
             if (activeTab === "all" || activeTab === "insights") return true;
 
-            // completion is the backend's task.status (set by PUT /task/:id/move), not the column name
             const isDone = isTaskCompleted(task);
 
-            // Tab Completed: Lọc các task có status dạng Done/Completed
             if (activeTab === "completed") {
                 return isDone;
             }
@@ -815,7 +832,6 @@ function MyTasks() {
 
             if (activeTab === "upcoming") return dueDate > today;
 
-            // Tab Expiring: Lọc các task chưa xong và sắp hết hạn trong 0..2 ngày
             if (activeTab === "expiring") {
                 if (isDone) return false;
                 return diffDays >= 0 && diffDays <= 2;
@@ -827,7 +843,6 @@ function MyTasks() {
         });
     }, [tasks, activeTab, searchQuery, projectMap]);
 
-    // same due date as the list: task.dueDate, otherwise the end of its project week
     const getTaskDueDate = useCallback((task) => {
         const projId = typeof task.projectId === 'object' ? (task.projectId?._id || task.projectId?.id) : task.projectId;
         const projStartDate = (typeof task.projectId === 'object' && task.projectId?.startDate)
@@ -1002,7 +1017,7 @@ function MyTasks() {
                         <ErrorState
                             title="Couldn't load your tasks"
                             message={failureMessage({ error })}
-                            onRetry={loadMyTasks}
+                            onRetry={() => loadMyTasks()}
                         />
                     )}
 

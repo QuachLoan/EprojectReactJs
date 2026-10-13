@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-// Import socket instance từ file socket.js của bạn
-import {socket} from './../../utils/socket.js';
+import { socket, isForProject } from './../../utils/socket.js';
 import {
     fetchProjectById,
     fetchTasksByProject,
@@ -26,12 +25,8 @@ import ErrorState from '../../components/common/ErrorState.jsx';
 import { useConfirm, deleteConfirm } from '../../components/common/confirmContext.js';
 import Modal from '../../components/common/Modal.jsx';
 import { withFallback, failureMessage } from '../../utils/requestState.js';
-import {
-    Plus,
-    Loader2,
-    Check,
-    CalendarClock
-} from "lucide-react";
+import { useRealtimeRefetch } from '../../hooks/useRealtimeRefetch.js';
+import { Plus, Loader2, CalendarClock } from "lucide-react";
 
 import ProjectHeader from '../../components/project/ProjectHeader.jsx';
 import { applyMoveToColumns, buildMovePayload, getDestinationIndex, mergeMovedTask, idOf } from '../../utils/taskMove.js';
@@ -55,7 +50,40 @@ const formatDateDMY = (dateValue) => {
     return `${day}/${month}/${year}`;
 };
 
-// Hàm hỗ trợ lấy 2 chữ cái đầu viết hoa
+// Helper chuẩn hóa giá trị estimate time
+const extractEstimateTime = (task, fallback = 0) => {
+    if (!task) return fallback;
+    const val = task.estimateTime ?? task.estimate_time ?? task.point ?? task.points;
+    if (val === undefined || val === null || val === '') return fallback;
+    const num = Number(val);
+    return isNaN(num) ? fallback : num;
+};
+
+// Hàm tính ngày bắt đầu và kết thúc của Week `weekNum` (7 ngày/tuần)
+const getWeekDateRange = (projectStartDate, projectEndDate, weekNum) => {
+    if (!projectStartDate) return '';
+    const start = new Date(projectStartDate);
+    if (isNaN(start.getTime())) return '';
+
+    const weekStart = new Date(start);
+    weekStart.setDate(start.getDate() + (Number(weekNum) - 1) * 7);
+
+    let weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
+    if (projectEndDate) {
+        const projEnd = new Date(projectEndDate);
+        if (!isNaN(projEnd.getTime()) && weekEnd > projEnd) {
+            weekEnd = projEnd;
+        }
+    }
+
+    const formatShort = (d) =>
+        `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+    return `${formatShort(weekStart)} - ${formatShort(weekEnd)}`;
+};
+
 const getInitials = (name) => {
     if (!name) return '??';
     const words = String(name).trim().split(/\s+/);
@@ -65,7 +93,6 @@ const getInitials = (name) => {
     return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 };
 
-// Helper trích xuất User ID từ record Member
 const extractUserId = (member) => {
     if (!member) return '';
     if (typeof member.userId === 'object') {
@@ -75,9 +102,7 @@ const extractUserId = (member) => {
     return String(member._id || member.id || '');
 };
 
-const getMemberUserId = (member) => {
-    return extractUserId(member);
-};
+const getMemberUserId = (member) => extractUserId(member);
 
 const getMemberDisplayName = (member) => {
     if (!member) return 'User';
@@ -127,9 +152,43 @@ const extractColumnId = (columnId) => {
     return String(columnId);
 };
 
-// Hàm tính toán Week thực tế và trả về trạng thái On Track / Expiring / Overdue
-const calculateTaskWeekAndStatus = (task, project) => {
-    let currentWeek = Number(task?.week) || 1;
+const calculateCurrentProjectWeek = (project, totalWeeks) => {
+    const start = project?.startDate || project?.createdDate || project?.createdAt;
+    if (!start) return 1;
+
+    let startYear, startMonth, startDateNum;
+    if (typeof start === "string") {
+        const parts = start.split("T")[0].split("-");
+        if (parts.length === 3) {
+            startYear = parseInt(parts[0], 10);
+            startMonth = parseInt(parts[1], 10) - 1;
+            startDateNum = parseInt(parts[2], 10);
+        }
+    }
+
+    let startDateObj;
+    if (startYear !== undefined && !isNaN(startYear)) {
+        startDateObj = new Date(startYear, startMonth, startDateNum);
+    } else {
+        startDateObj = new Date(start);
+    }
+
+    if (isNaN(startDateObj.getTime())) return 1;
+
+    const today = new Date();
+    const startMidnight = new Date(startDateObj.getFullYear(), startDateObj.getMonth(), startDateObj.getDate()).getTime();
+    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+
+    const diffDays = Math.round((todayMidnight - startMidnight) / (1000 * 3600 * 24));
+    if (diffDays < 0) return 1;
+
+    const calculatedWeek = Math.floor(diffDays / 7) + 1;
+    return Math.min(Math.max(calculatedWeek, 1), totalWeeks || 1);
+};
+
+// Tính trạng thái task: Expiring, Overdue, On Track
+const calculateTaskWeekAndStatus = (task, project, isDoneColumn = false) => {
+    const currentWeek = Number(task?.week) || 1;
 
     const projStart = project?.startDate || project?.createdDate || project?.createdAt;
     const projEnd = project?.date || project?.dueDate || project?.endDate;
@@ -138,41 +197,40 @@ const calculateTaskWeekAndStatus = (task, project) => {
         return { displayWeek: currentWeek, status: 'On Track' };
     }
 
-    const startDate = new Date(projStart);
-    startDate.setHours(0, 0, 0, 0);
-
-    const endDate = projEnd ? new Date(projEnd) : null;
-    if (endDate) endDate.setHours(0, 0, 0, 0);
+    // Nếu task nằm trong cột Done
+    if (isDoneColumn) {
+        return { displayWeek: currentWeek, status: 'On Track' };
+    }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    if (endDate && today > endDate) {
-        return { displayWeek: currentWeek, status: 'Overdue' };
+    const start = new Date(projStart);
+    start.setHours(0, 0, 0, 0);
+    if (isNaN(start.getTime())) {
+        return { displayWeek: currentWeek, status: 'On Track' };
     }
 
-    const diffTime = today.getTime() - startDate.getTime();
-    const diffDays = Math.floor(diffTime / (1000 * 3600 * 24));
-
-    if (diffDays >= 0) {
-        const calculatedWeek = Math.floor(diffDays / 7) + 1;
-        currentWeek = Math.max(currentWeek, calculatedWeek);
-    }
-
-    const weekStart = new Date(startDate);
-    weekStart.setDate(weekStart.getDate() + (currentWeek - 1) * 7);
+    const weekStart = new Date(start);
+    weekStart.setDate(start.getDate() + (currentWeek - 1) * 7);
 
     let weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6);
+    weekEnd.setDate(weekStart.getDate() + 6);
 
-    if (endDate && weekEnd > endDate) {
-        weekEnd = new Date(endDate);
+    if (projEnd) {
+        const projEndObj = new Date(projEnd);
+        projEndObj.setHours(0, 0, 0, 0);
+        if (!isNaN(projEndObj.getTime()) && weekEnd > projEndObj) {
+            weekEnd = projEndObj;
+        }
     }
 
-    const expiringThreshold = new Date(weekEnd);
-    expiringThreshold.setDate(expiringThreshold.getDate() - 1);
+    const expiringStartDate = new Date(weekEnd);
+    expiringStartDate.setDate(weekEnd.getDate() - 1);
 
-    if (today >= expiringThreshold && today <= weekEnd) {
+    if (today > weekEnd) {
+        return { displayWeek: currentWeek, status: 'Overdue' };
+    } else if (today >= expiringStartDate) {
         return { displayWeek: currentWeek, status: 'Expiring' };
     }
 
@@ -180,7 +238,7 @@ const calculateTaskWeekAndStatus = (task, project) => {
 };
 
 // ==========================================
-// COMPONENT TASK DRAWER (Board) — data + permissions here, presentation in components/task/*
+// COMPONENT TASK DRAWER (Board)
 // ==========================================
 function TaskDrawer({
                         taskId,
@@ -189,6 +247,7 @@ function TaskDrawer({
                         columns = [],
                         projectMembers = [],
                         maxWeeks = 1,
+                        project = null,
                         onTaskUpdated,
                         onTaskDeleted,
                         onMoveTask,
@@ -208,10 +267,7 @@ function TaskDrawer({
     const [commentsError, setCommentsError] = useState('');
     const [activities, setActivities] = useState([]);
     const [activitiesError, setActivitiesError] = useState('');
-    // fields the user is typing in — a realtime update must not overwrite them
     const dirtyFieldsRef = useRef(new Set());
-    // set by a checklist action: the new checklist is then pushed to the board card (progress bar)
-    const checklistTouched = useRef(false);
 
     const canEditAll = isManager;
     const canEditManagement = isManager || isLeader;
@@ -221,26 +277,46 @@ function TaskDrawer({
     const canAddChecklist = isManager || isLeader;
     const canDeleteChecklist = isManager || isLeader;
 
-    const normalizeTask = (realTask) => ({
-        ...realTask,
-        name: realTask.name || realTask.title || '',
-        columnId: extractColumnId(realTask.columnId),
-        assignees: Array.isArray(realTask.assignees)
-            ? realTask.assignees.map(a => typeof a === 'object' ? String(a._id || a.id) : String(a))
-            : [],
-        points: realTask.points ?? realTask.point ?? 0,
-        week: realTask.week ?? 1
-    });
+    const normalizeTask = (realTask) => {
+        const est = extractEstimateTime(realTask, 0);
+        return {
+            ...realTask,
+            name: realTask.name || realTask.title || '',
+            columnId: extractColumnId(realTask.columnId),
+            assignees: Array.isArray(realTask.assignees)
+                ? realTask.assignees.map(a => typeof a === 'object' ? String(a._id || a.id) : String(a))
+                : [],
+            estimateTime: est,
+            estimate_time: est,
+            point: est,
+            points: est,
+            week: realTask.week ?? 1
+        };
+    };
 
-    const loadActivities = () => fetchTaskActivities(taskId)
-        .then((data) => { setActivities(Array.isArray(data) ? data : (data?.data || [])); setActivitiesError(''); })
-        .catch((err) => setActivitiesError(failureMessage({ error: err })));
-    const loadComments = () => fetchTaskComments(taskId)
-        .then((data) => { setComments(Array.isArray(data) ? data : (data?.data || [])); setCommentsError(''); })
-        .catch((err) => setCommentsError(failureMessage({ error: err })));
+    const safeNotifyParent = (updatedTask) => {
+        if (!onTaskUpdated) return;
+        Promise.resolve().then(() => {
+            onTaskUpdated(updatedTask);
+        });
+    };
+
+    const loadActivities = () => {
+        if (!taskId || taskId === 'null' || taskId === 'undefined') return;
+        fetchTaskActivities(taskId)
+            .then((data) => { setActivities(Array.isArray(data) ? data : (data?.data || [])); setActivitiesError(''); })
+            .catch((err) => setActivitiesError(failureMessage({ error: err })));
+    };
+
+    const loadComments = () => {
+        if (!taskId || taskId === 'null' || taskId === 'undefined') return;
+        fetchTaskComments(taskId)
+            .then((data) => { setComments(Array.isArray(data) ? data : (data?.data || [])); setCommentsError(''); })
+            .catch((err) => setCommentsError(failureMessage({ error: err })));
+    };
 
     useEffect(() => {
-        if (!isDrawerOpen || !taskId) return;
+        if (!isDrawerOpen || !taskId || taskId === 'null' || taskId === 'undefined') return;
         let cancelled = false;
         setLoading(true);
         setLoadError('');
@@ -267,10 +343,8 @@ function TaskDrawer({
             })
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [taskId, isDrawerOpen, reloadKey]);
 
-    // Realtime: the board forwards socket events for the open task (one set of listeners, owned by the board)
     useEffect(() => {
         if (!syncEvent || !task) return;
         if (syncEvent.type === 'task') {
@@ -282,10 +356,9 @@ function TaskDrawer({
                 return next;
             });
         } else if (syncEvent.type === 'comment') {
-            setComments(prev => prev.some(c => String(c._id) === String(syncEvent.data._id)) ? prev : [...prev, syncEvent.data]);
+            loadComments();
         }
         loadActivities();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [syncEvent]);
 
     const handleUpdateTaskField = async (updatedFields) => {
@@ -295,10 +368,12 @@ function TaskDrawer({
             updatedFields.columnId = extractColumnId(updatedFields.columnId);
         }
 
-        if (updatedFields.points !== undefined || updatedFields.point !== undefined) {
-            const val = Number(updatedFields.points ?? updatedFields.point) || 0;
-            updatedFields.points = val;
+        if (updatedFields.estimateTime !== undefined || updatedFields.estimate_time !== undefined || updatedFields.point !== undefined || updatedFields.points !== undefined) {
+            const val = extractEstimateTime(updatedFields, extractEstimateTime(task, 0));
+            updatedFields.estimateTime = val;
+            updatedFields.estimate_time = val;
             updatedFields.point = val;
+            updatedFields.points = val;
         }
 
         if (updatedFields.week !== undefined) {
@@ -310,7 +385,6 @@ function TaskDrawer({
 
         setTask(updatedTaskLocal);
         setSaveError('');
-        if (onTaskUpdated) onTaskUpdated(updatedTaskLocal);
 
         try {
             setIsSaving(true);
@@ -318,30 +392,31 @@ function TaskDrawer({
             const returnedTask = updatedData?.data || updatedData;
             Object.keys(updatedFields).forEach((f) => dirtyFieldsRef.current.delete(f));
 
-            if (returnedTask) {
-                const finalTask = {
-                    ...updatedTaskLocal,
-                    ...normalizeTask(returnedTask),
-                    columnId: extractColumnId(returnedTask.columnId) || updatedTaskLocal.columnId,
-                    points: returnedTask.points ?? returnedTask.point ?? updatedTaskLocal.points,
-                    week: returnedTask.week ?? updatedTaskLocal.week
-                };
-                setTask(finalTask);
-                if (onTaskUpdated) onTaskUpdated(finalTask);
-            }
+            const finalEst = extractEstimateTime(returnedTask, extractEstimateTime(updatedTaskLocal, 0));
+            const finalTask = {
+                ...updatedTaskLocal,
+                ...(returnedTask ? normalizeTask(returnedTask) : {}),
+                estimateTime: finalEst,
+                estimate_time: finalEst,
+                point: finalEst,
+                points: finalEst,
+                columnId: extractColumnId(returnedTask?.columnId) || updatedTaskLocal.columnId,
+                week: returnedTask?.week ?? updatedTaskLocal.week
+            };
+
+            setTask(finalTask);
+            safeNotifyParent(finalTask);
             loadActivities();
         } catch (error) {
             console.error("Lỗi khi cập nhật task, đang hoàn tác:", error);
             setTask(previousTask);
             setSaveError(`Couldn't save changes — ${error.message}`);
-            if (onTaskUpdated) onTaskUpdated(previousTask);
+            safeNotifyParent(previousTask);
         } finally {
             setIsSaving(false);
         }
     };
 
-    // Changing the column is a move (PUT /task/:id/move), not a field update: only the move endpoint sets
-    // status / completedAt / completedDate and the column order. The board performs it (it owns the order).
     const handleColumnChange = async (destColumnId) => {
         if (!task || isSaving || !onMoveTask) return;
         const sourceColumnId = extractColumnId(task.columnId);
@@ -350,7 +425,9 @@ function TaskDrawer({
         setIsSaving(true);
         try {
             const moved = await onMoveTask(taskId, sourceColumnId, destColumnId);
-            setTask(prev => prev ? normalizeTask({ ...prev, ...moved, assignees: prev.assignees }) : prev);
+            Promise.resolve().then(() => {
+                setTask(prev => prev ? normalizeTask({ ...prev, ...moved, assignees: prev.assignees }) : prev);
+            });
             loadActivities();
         } catch (error) {
             setSaveError(`Couldn't move the task — ${error.message}`);
@@ -361,16 +438,15 @@ function TaskDrawer({
 
     const handleInputChange = (field, value) => {
         const updatedFields = { [field]: value };
-        if (field === 'points' || field === 'point') {
-            updatedFields.points = value;
-            updatedFields.point = value;
+        if (field === 'estimateTime' || field === 'estimate_time') {
+            const val = value === '' ? '' : Number(value);
+            updatedFields.estimateTime = val;
+            updatedFields.estimate_time = val;
+            updatedFields.point = val;
+            updatedFields.points = val;
         }
         Object.keys(updatedFields).forEach((f) => dirtyFieldsRef.current.add(f));
-        setTask(prev => {
-            const nextState = { ...prev, ...updatedFields };
-            if (onTaskUpdated) onTaskUpdated(nextState);
-            return nextState;
-        });
+        setTask(prev => ({ ...prev, ...updatedFields }));
     };
 
     const handleToggleAssignee = (member) => {
@@ -401,7 +477,7 @@ function TaskDrawer({
 
     const handleDeleteTask = async () => {
         if (!canDeleteTask) return;
-        // the dialog stays open (loading) until the request finishes and shows the API error if it fails
+
         await confirm(deleteConfirm({
             item: "task",
             onConfirm: async () => {
@@ -418,36 +494,30 @@ function TaskDrawer({
         }));
     };
 
-    // Checklist / comment actions return promises: the shared sections show progress and errors
     const handleAddChecklist = async (text) => {
         if (!canAddChecklist || !text.trim()) return;
-        checklistTouched.current = true;
         const response = await addChecklistItem(taskId, text.trim());
         const realTask = response?.data || response;
         if (realTask && realTask.checklist) {
-            setTask(prev => ({ ...prev, checklist: realTask.checklist }));
+            const nextTask = { ...task, checklist: realTask.checklist };
+            setTask(nextTask);
+            safeNotifyParent(nextTask);
         }
         loadActivities();
     };
 
-    useEffect(() => {
-        if (!checklistTouched.current || !task || !onTaskUpdated) return;
-        checklistTouched.current = false;
-        onTaskUpdated({ ...task });
-    }, [task?.checklist]); // eslint-disable-line react-hooks/exhaustive-deps
-
     const handleToggleChecklist = async (item) => {
-        checklistTouched.current = true;
         const previousChecklist = task.checklist;
-        setTask(prev => ({
-            ...prev,
-            checklist: (prev.checklist || []).map(i => String(i._id) === String(item._id) ? { ...i, completed: !item.completed } : i)
-        }));
+        const updatedChecklist = (task.checklist || []).map(i => String(i._id) === String(item._id) ? { ...i, completed: !item.completed } : i);
+        setTask(prev => ({ ...prev, checklist: updatedChecklist }));
+
         try {
             const response = await toggleChecklistItem(taskId, item._id, item.completed);
             const realTask = response?.data || response;
             if (realTask && realTask.checklist) {
-                setTask(prev => ({ ...prev, checklist: realTask.checklist }));
+                const nextTask = { ...task, checklist: realTask.checklist };
+                setTask(nextTask);
+                safeNotifyParent(nextTask);
             }
             loadActivities();
         } catch (error) {
@@ -463,14 +533,13 @@ function TaskDrawer({
         await confirm(deleteConfirm({
             item: "checklist",
             name: item.text,
-            // same optimistic remove + rollback as before; the dialog shows the API error and stays open
             onConfirm: async () => {
-                checklistTouched.current = true;
                 const previousChecklist = task.checklist;
-                setTask(prev => ({ ...prev, checklist: (prev.checklist || []).filter(i => String(i._id) !== String(item._id)) }));
+                const nextTask = { ...task, checklist: (task.checklist || []).filter(i => String(i._id) !== String(item._id)) };
+                setTask(nextTask);
+                safeNotifyParent(nextTask);
 
                 try {
-                    // see the BACKEND MISMATCH note on deleteChecklist in api.jsx — the item id is passed on purpose
                     await deleteChecklist(item._id);
                 } catch (error) {
                     console.error("Deleting the checklist item failed:", error);
@@ -579,15 +648,15 @@ function TaskDrawer({
                                 </select>
                             </label>
                             <label className="drawer-field">
-                                <span className="drawer-field-label">Points</span>
+                                <span className="drawer-field-label">Estimate Time</span>
                                 <input
                                     className="input"
                                     type="number"
                                     min="0"
-                                    value={task.points ?? task.point ?? 0}
+                                    value={task.estimateTime ?? task.estimate_time ?? ''}
                                     disabled={!canEditAll}
-                                    onChange={(e) => handleInputChange('points', e.target.value)}
-                                    onBlur={(e) => handleUpdateTaskField({ points: Number(e.target.value) || 0, point: Number(e.target.value) || 0 })}
+                                    onChange={(e) => handleInputChange('estimateTime', e.target.value)}
+                                    onBlur={(e) => canEditAll && handleUpdateTaskField({ estimateTime: Number(e.target.value) || 0 })}
                                 />
                             </label>
                             <label className="drawer-field">
@@ -598,9 +667,16 @@ function TaskDrawer({
                                     disabled={!canEditAll}
                                     onChange={(e) => handleUpdateTaskField({ week: Number(e.target.value) })}
                                 >
-                                    {Array.from({ length: maxWeeks }, (_, i) => i + 1).map(w => (
-                                        <option key={w} value={w}>Week {w}</option>
-                                    ))}
+                                    {Array.from({ length: maxWeeks }, (_, i) => i + 1).map(w => {
+                                        const projStart = project?.startDate || project?.createdDate || project?.createdAt;
+                                        const projEnd = project?.date || project?.dueDate || project?.endDate;
+                                        const dateRange = getWeekDateRange(projStart, projEnd, w);
+                                        return (
+                                            <option key={w} value={w}>
+                                                {dateRange ? `Week ${w} (${dateRange})` : `Week ${w}`}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                             </label>
                             <div className="drawer-field drawer-field--wide">
@@ -681,17 +757,21 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [columns, setColumns] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
-    // Requests that failed in the last load (empty = everything loaded)
     const [loadFailures, setLoadFailures] = useState([]);
 
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedWeek, setSelectedWeek] = useState('all');
+    const [selectedWeek, setSelectedWeek] = useState('1');
+
+    // State lọc theo Status Tag ('all', 'On Track', 'Expiring', 'Overdue')
+    const [selectedStatusTag, setSelectedStatusTag] = useState('all');
+
+    // State lọc theo Priority ('all', 'Low', 'Medium', 'High', 'Urgent')
+    const [selectedPriority, setSelectedPriority] = useState('all');
 
     const [activeModal, setActiveModal] = useState(null);
     const [isColumnFixed, setIsColumnFixed] = useState(false);
 
     const [selectedTaskId, setSelectedTaskId] = useState(null);
-    // socket events for the task open in the drawer (forwarded so the drawer needs no listeners of its own)
     const [drawerSync, setDrawerSync] = useState(null);
     const selectedTaskIdRef = useRef(null);
     useEffect(() => { selectedTaskIdRef.current = selectedTaskId; }, [selectedTaskId]);
@@ -701,11 +781,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
     const [newTaskName, setNewTaskName] = useState('');
     const [newTaskColumnId, setNewTaskColumnId] = useState('');
     const [newTaskPriority, setNewTaskPriority] = useState('Medium');
-    const [newTaskPoints, setNewTaskPoints] = useState(0);
+    const [newTaskEstimateTime, setNewTaskEstimateTime] = useState('');
     const [newTaskWeek, setNewTaskWeek] = useState(1);
     const [newTaskDesc, setNewTaskDesc] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    // last failed drag / move (the board was already rolled back)
     const [moveError, setMoveError] = useState('');
 
     const getCurrentUser = () => {
@@ -755,16 +834,15 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
     const canCreateTask = isManager || isLeader;
 
-    // Members wait for the project start day before moving tasks (UI rule — the backend does not check it)
     const moveLocked = isMoveLockedForRole({ isManager, isLeader }, project);
     const projectStartLabel = formatDayDMY(getProjectStart(project));
 
-    const fetchBoardData = async () => {
+    const fetchBoardData = async (quiet = false) => {
         if (!activeProjectId) return;
         const failures = [];
 
         try {
-            setLoading(true);
+            if (!quiet) setLoading(true);
 
             const [projectData, columnsData, tasksData, membersData] = await Promise.all([
                 withFallback(fetchProjectById(activeProjectId), null, failures, 'project'),
@@ -775,12 +853,23 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
             const realProject = projectData?.data || projectData || {};
             const realColumns = Array.isArray(columnsData) ? columnsData : (columnsData?.data || []);
-            const realTasks = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
+            const rawTasks = Array.isArray(tasksData) ? tasksData : (tasksData?.data || []);
             const realMembers = Array.isArray(membersData)
                 ? membersData
                 : (membersData?.data || membersData?.members || []);
 
             realColumns.sort((a, b) => (a.position || 0) - (b.position || 0));
+
+            const realTasks = rawTasks.map(t => {
+                const est = extractEstimateTime(t, 0);
+                return {
+                    ...t,
+                    estimateTime: est,
+                    estimate_time: est,
+                    point: est,
+                    points: est
+                };
+            });
 
             setProject(realProject);
             setColumns(realColumns);
@@ -799,18 +888,13 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         fetchBoardData();
     }, [activeProjectId]);
 
-    // ==========================================
-    // TÍCH HỢP SOCKET.IO (DÙNG SOCKET.JS)
-    // ==========================================
+    useRealtimeRefetch(() => fetchBoardData(true), ['projects', 'members', 'columns', 'users'], activeProjectId);
+
     useEffect(() => {
         if (!activeProjectId) return;
 
-        // Tham gia room của project
-        socket.emit('join_project', activeProjectId);
-
-        // Sự kiện 1: Khi có Task mới
         const handleTaskCreated = (newTask) => {
-            if (!newTask) return;
+            if (!newTask || !isForProject(newTask, activeProjectId)) return;
             const taskData = newTask.data || newTask;
             const taskId = String(taskData._id || taskData.id);
 
@@ -818,36 +902,43 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 const exists = prevTasks.some(t => String(t._id || t.id) === taskId);
                 if (exists) return prevTasks;
 
+                const est = extractEstimateTime(taskData, 0);
+
                 const formattedTask = {
                     ...taskData,
                     _id: taskId,
                     columnId: extractColumnId(taskData.columnId),
-                    points: taskData.points ?? taskData.point ?? 0,
+                    estimateTime: est,
+                    estimate_time: est,
+                    point: est,
+                    points: est,
                     week: taskData.week ?? 1
                 };
                 return [...prevTasks, formattedTask];
             });
-            // POST /task appends the task to its column order
             if (taskData.columnId) {
                 setColumns(prev => applyMoveToColumns(prev, taskId, null, taskData.columnId, Number.MAX_SAFE_INTEGER, true));
             }
         };
 
-        // Sự kiện 2: Khi có Task được cập nhật
         const handleTaskUpdated = (updatedTask) => {
-            if (!updatedTask) return;
+            if (!updatedTask || !isForProject(updatedTask, activeProjectId)) return;
             const taskData = updatedTask.data || updatedTask;
             const taskId = String(taskData._id || taskData.id);
 
             setTasks(prevTasks =>
                 prevTasks.map(t => {
                     if (String(t._id || t.id) === taskId) {
+                        const est = extractEstimateTime(taskData, extractEstimateTime(t, 0));
                         return {
                             ...t,
                             ...taskData,
                             _id: taskId,
                             columnId: extractColumnId(taskData.columnId || t.columnId),
-                            points: taskData.points ?? taskData.point ?? t.points,
+                            estimateTime: est,
+                            estimate_time: est,
+                            point: est,
+                            points: est,
                             week: taskData.week ?? t.week
                         };
                     }
@@ -857,12 +948,8 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             if (String(selectedTaskIdRef.current) === taskId) setDrawerSync({ type: 'task', data: taskData, at: Date.now() });
         };
 
-        // Sự kiện 3: Khi Kéo Thả / Di chuyển Task
-        // payload { taskId, sourceColumnId, destColumnId, destinationIndex, task } — `task` is not populated,
-        // so only the move fields are taken from it (status / completedAt / completedDate); the same order
-        // change as the backend is applied (idempotent for this tab's own move)
         const handleTaskMoved = (data) => {
-            if (!data) return;
+            if (!data || !isForProject(data, activeProjectId)) return;
             const taskId = String(data.taskId || data._id || data.id);
             const targetColumnId = extractColumnId(data.destColumnId || data.columnId);
 
@@ -877,30 +964,25 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             }
         };
 
-        // Sự kiện 5: Comment mới (chỉ drawer của task đang mở cần)
         const handleCommentAdded = (comment) => {
             if (!comment || String(comment.taskId) !== String(selectedTaskIdRef.current)) return;
             setDrawerSync({ type: 'comment', data: comment, at: Date.now() });
         };
 
-        // Sự kiện 4: Khi Task bị xóa
         const handleTaskDeleted = (deletedData) => {
-            if (!deletedData) return;
+            if (!deletedData || !isForProject(deletedData, activeProjectId)) return;
             const deletedId = String(deletedData.taskId || deletedData._id || deletedData.id || deletedData);
 
             setTasks(prevTasks => prevTasks.filter(t => String(t._id || t.id) !== deletedId));
         };
 
-        // Đăng ký listener từ socket instance
         socket.on('task_created', handleTaskCreated);
         socket.on('task_updated', handleTaskUpdated);
         socket.on('task_moved', handleTaskMoved);
         socket.on('task_deleted', handleTaskDeleted);
         socket.on('comment_added', handleCommentAdded);
 
-        // Hủy đăng ký listener và rời room khi unmount
         return () => {
-            socket.emit('leave_project', activeProjectId);
             socket.off('task_created', handleTaskCreated);
             socket.off('task_updated', handleTaskUpdated);
             socket.off('task_moved', handleTaskMoved);
@@ -928,18 +1010,43 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         return Math.ceil(diffDays / 7);
     }, [project]);
 
+    useEffect(() => {
+        if (project) {
+            const currentWeek = calculateCurrentProjectWeek(project, totalProjectWeeks);
+            setSelectedWeek(String(currentWeek));
+        }
+    }, [project, totalProjectWeeks]);
+
+    // Hàm lọc Task đa điều kiện (Search + Week + Status + Priority)
     const filteredTasks = useMemo(() => {
         return tasks.filter((task) => {
+            // 1. Search Query
             const query = searchQuery.toLowerCase().trim();
             const title = (task.title || task.name || '').toLowerCase();
             const matchesQuery = !query || title.includes(query);
 
-            const { displayWeek } = calculateTaskWeekAndStatus(task, project);
-            const matchesWeek = selectedWeek === 'all' || displayWeek === Number(selectedWeek);
+            // 2. Week Filter
+            const taskWeek = Number(task.week) || 1;
+            const matchesWeek = selectedWeek === 'all' || taskWeek === Number(selectedWeek);
 
-            return matchesQuery && matchesWeek;
+            // 3. Status Tag Filter
+            let matchesStatus = true;
+            if (selectedStatusTag !== 'all') {
+                const isDoneColumn = columns.some(c =>
+                    String(c._id) === extractColumnId(task.columnId) &&
+                    (c.name || c.title || '').toLowerCase().includes('done')
+                );
+                const { status: taskStatus } = calculateTaskWeekAndStatus(task, project, isDoneColumn);
+                matchesStatus = taskStatus === selectedStatusTag;
+            }
+
+            // 4. Priority Filter
+            const taskPriority = task.priority || 'Medium';
+            const matchesPriority = selectedPriority === 'all' || taskPriority.toLowerCase() === selectedPriority.toLowerCase();
+
+            return matchesQuery && matchesWeek && matchesStatus && matchesPriority;
         });
-    }, [tasks, searchQuery, selectedWeek, project]);
+    }, [tasks, searchQuery, selectedWeek, selectedStatusTag, selectedPriority, columns, project]);
 
     const getSortedTasksForColumn = (column) => {
         const columnTaskMap = new Map();
@@ -972,7 +1079,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setNewTaskName('');
         setNewTaskDesc('');
         setNewTaskPriority('Medium');
-        setNewTaskPoints(0);
+        setNewTaskEstimateTime('');
         setNewTaskWeek(1);
     };
 
@@ -993,10 +1100,21 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
     const handleTaskUpdatedFromDrawer = (updatedTask) => {
         setTasks(prevTasks =>
-            prevTasks.map(t => String(t._id || t.id) === String(updatedTask._id || updatedTask.id)
-                ? { ...t, ...updatedTask, columnId: extractColumnId(updatedTask.columnId) }
-                : t
-            )
+            prevTasks.map(t => {
+                if (String(t._id || t.id) === String(updatedTask._id || updatedTask.id)) {
+                    const est = extractEstimateTime(updatedTask, extractEstimateTime(t, 0));
+                    return {
+                        ...t,
+                        ...updatedTask,
+                        columnId: extractColumnId(updatedTask.columnId),
+                        estimateTime: est,
+                        estimate_time: est,
+                        point: est,
+                        points: est
+                    };
+                }
+                return t;
+            })
         );
     };
 
@@ -1004,11 +1122,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         setTasks(prevTasks => prevTasks.filter(t => String(t._id || t.id) !== String(deletedTaskId)));
     };
 
-    /**
-     * Move a task to another column / position: optimistic (column + order), PUT /task/:id/move, then the
-     * backend's status / completedAt / completedDate from response.task; everything rolls back if it fails.
-     * Resolves with the merged task, rejects with the API error.
-     */
     const performMove = async (taskId, sourceColumnId, destColumnId, destinationIndex) => {
         if (moveLocked) {
             throw new Error(`members can move tasks once the project starts on ${projectStartLabel}`);
@@ -1044,8 +1157,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             return;
         }
 
-        // destination.index counts the cards shown (search / week filters may hide some): place the task
-        // right before the card it was dropped above, in the column's full order
         const destColumn = columns.find(c => String(c._id) === String(destination.droppableId));
         const shown = getSortedTasksForColumn(destColumn || {}).filter(t => String(t._id || t.id) !== String(draggableId));
         const before = shown[destination.index];
@@ -1064,13 +1175,11 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         }
     };
 
-    // Drawer "Column" field: append to the end of the destination column
     const handleMoveFromDrawer = (taskId, sourceColumnId, destColumnId) => {
         const destColumn = columns.find(c => String(c._id) === String(destColumnId));
         return performMove(taskId, sourceColumnId, destColumnId, getDestinationIndex(destColumn, taskId));
     };
 
-    // "Not accept" on a Done card sends it back to the top of Review (the move endpoint resets completion)
     const handleLeaderDecisionOnTask = async (e, task, currentColumnId) => {
         e.stopPropagation();
 
@@ -1104,7 +1213,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
         try {
             setIsSubmitting(true);
-            const pointValue = Number(newTaskPoints) || 0;
+            const estimateTimeValue = newTaskEstimateTime === '' ? 0 : Number(newTaskEstimateTime) || 0;
             const weekValue = Number(newTaskWeek) || 1;
 
             const payload = {
@@ -1114,8 +1223,10 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 columnId: newTaskColumnId,
                 projectId: activeProjectId,
                 priority: newTaskPriority,
-                point: pointValue,
-                points: pointValue,
+                estimateTime: estimateTimeValue,
+                estimate_time: estimateTimeValue,
+                point: estimateTimeValue,
+                points: estimateTimeValue,
                 week: weekValue,
                 assignees: [],
                 members: []
@@ -1124,14 +1235,18 @@ export default function ProjectBoard({ projectId: propProjectId }) {
             const response = await createTask(payload);
             const createdTask = response?.data || response;
 
+            const finalEst = extractEstimateTime(createdTask, estimateTimeValue);
+
             const formattedNewTask = {
                 ...createdTask,
                 _id: String(createdTask._id || createdTask.id),
                 title: createdTask.title || newTaskTitle,
                 columnId: extractColumnId(createdTask.columnId || newTaskColumnId),
                 priority: createdTask.priority || newTaskPriority,
-                points: createdTask.points ?? createdTask.point ?? pointValue,
-                point: createdTask.point ?? createdTask.points ?? pointValue,
+                estimateTime: finalEst,
+                estimate_time: finalEst,
+                point: finalEst,
+                points: finalEst,
                 week: createdTask.week ?? weekValue,
                 assignees: createdTask.assignees || [],
                 startDate: createdTask.startDate || new Date().toISOString()
@@ -1142,7 +1257,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 if (exists) return prevTasks;
                 return [...prevTasks, formattedNewTask];
             });
-            // POST /task appends the new task to its column order
             setColumns(prev => applyMoveToColumns(prev, formattedNewTask._id, null, formattedNewTask.columnId, Number.MAX_SAFE_INTEGER, true));
 
             closeModal();
@@ -1162,7 +1276,6 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         );
     }
 
-    // Board cannot be shown without the project, its columns and its tasks — show the error, not an empty board
     const coreFailure = loadFailures.find((f) => f.label !== 'members');
     const membersFailed = loadFailures.some((f) => f.label === 'members');
     if (coreFailure) {
@@ -1177,160 +1290,169 @@ export default function ProjectBoard({ projectId: propProjectId }) {
         );
     }
 
-    // project context for the toolbar (counts of the loaded tasks; completion = backend task.status)
     const boardSummary = {
         tasks: tasks.length,
-        points: tasks.reduce((sum, t) => sum + (Number(t.points ?? t.point) || 0), 0),
+        points: tasks.reduce((sum, t) => sum + extractEstimateTime(t, 0), 0),
         completed: tasks.filter(t => t.status === 'completed').length,
     };
 
     const formattedStartDate = formatDateDMY(project?.startDate || project?.createdDate || project?.createdAt);
     const formattedDueDate = formatDateDMY(project?.date || project?.dueDate || project?.endDate);
 
+    const projStart = project?.startDate || project?.createdDate || project?.createdAt;
+    const projEnd = project?.date || project?.dueDate || project?.endDate;
+
     return (
         <>
+            <ProjectHeader
+                projectId={activeProjectId}
+                project={project}
+                memberCount={projectMembers.length}
+                taskCount={tasks.length}
+                startDate={formattedStartDate}
+                endDate={formattedDueDate}
+            />
 
-                <ProjectHeader
-                    projectId={activeProjectId}
-                    project={project}
-                    memberCount={projectMembers.length}
-                    taskCount={tasks.length}
-                    startDate={formattedStartDate}
-                    endDate={formattedDueDate}
+            <main className="page-content page-content--board">
+                {membersFailed && (
+                    <ErrorState
+                        variant="inline"
+                        title="Project members could not be loaded."
+                        message="Assignee names may be missing."
+                        onRetry={fetchBoardData}
+                    />
+                )}
+                {moveError && (
+                    <ErrorState
+                        variant="inline"
+                        title={moveError}
+                        message="The board was restored to its previous state."
+                        onRetry={fetchBoardData}
+                    />
+                )}
+
+                {/* Toolbar hiển thị bộ lọc đồng bộ: Search, Week, Status Tag, và Priority */}
+                <BoardToolbar
+                    summary={boardSummary}
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    selectedWeek={selectedWeek}
+                    onWeekChange={setSelectedWeek}
+                    selectedStatusTag={selectedStatusTag}
+                    onStatusTagChange={setSelectedStatusTag}
+                    selectedPriority={selectedPriority}
+                    onPriorityChange={setSelectedPriority}
+                    totalWeeks={totalProjectWeeks}
+                    projectStartDate={projStart}
+                    projectEndDate={projEnd}
+                    canCreateTask={canCreateTask}
+                    onCreateTask={() => handleOpenCreateModal('', false)}
                 />
 
-                <main className="page-content page-content--board">
-                    {membersFailed && (
-                        <ErrorState
-                            variant="inline"
-                            title="Project members could not be loaded."
-                            message="Assignee names may be missing."
-                            onRetry={fetchBoardData}
-                        />
-                    )}
-                    {moveError && (
-                        <ErrorState
-                            variant="inline"
-                            title={moveError}
-                            message="The board was restored to its previous state."
-                            onRetry={fetchBoardData}
-                        />
-                    )}
-                    <BoardToolbar
-                        summary={boardSummary}
-                        searchQuery={searchQuery}
-                        onSearchChange={setSearchQuery}
-                        selectedWeek={selectedWeek}
-                        onWeekChange={setSelectedWeek}
-                        totalWeeks={totalProjectWeeks}
-                        canCreateTask={canCreateTask}
-                        onCreateTask={() => handleOpenCreateModal('', false)}
-                    />
-                    {moveLocked && (
-                        <p className="board-notice" role="status">
-                            <CalendarClock className="icon icon-sm" aria-hidden="true" />
-                            This project starts on {projectStartLabel}. Members can move their tasks from that day.
-                        </p>
-                    )}
+                {moveLocked && (
+                    <p className="board-notice" role="status">
+                        <CalendarClock className="icon icon-sm" aria-hidden="true" />
+                        This project starts on {projectStartLabel}. Members can move their tasks from that day.
+                    </p>
+                )}
 
-                    <DragDropContext onDragEnd={handleOnDragEnd}>
-                        <div className="board scroll-x" id="kanbanBoard">
-                            {columns.map((column) => {
-                                const columnTasks = getSortedTasksForColumn(column);
-                                const isDoneColumn = (column.name || column.title || '').toLowerCase().includes('done');
-                                const columnPoints = columnTasks.reduce((sum, t) => sum + (Number(t.points ?? t.point) || 0), 0);
+                <DragDropContext onDragEnd={handleOnDragEnd}>
+                    <div className="board scroll-x" id="kanbanBoard">
+                        {columns.map((column) => {
+                            const columnTasks = getSortedTasksForColumn(column);
+                            const isDoneColumn = (column.name || column.title || '').toLowerCase().includes('done');
+                            const columnPoints = columnTasks.reduce((sum, t) => sum + extractEstimateTime(t, 0), 0);
 
-                                return (
-                                    <div className={`board-column kind-${getColumnStatus(column.name || column.title).kind}`} key={column._id}>
-                                        <BoardColumnHeader
-                                            title={column.name || column.title}
-                                            count={columnTasks.length}
-                                            points={columnPoints}
-                                            canCreateTask={canCreateTask}
-                                            onAddTask={() => handleOpenCreateModal(column._id, true)}
-                                        />
+                            return (
+                                <div className={`board-column kind-${getColumnStatus(column.name || column.title).kind}`} key={column._id}>
+                                    <BoardColumnHeader
+                                        title={column.name || column.title}
+                                        count={columnTasks.length}
+                                        points={columnPoints}
+                                        canCreateTask={canCreateTask}
+                                        onAddTask={() => handleOpenCreateModal(column._id, true)}
+                                    />
 
-                                        <Droppable droppableId={String(column._id)}>
-                                            {(provided, snapshot) => (
-                                                <div
-                                                    className={`board-column-body${snapshot.isDraggingOver ? ' is-drop-target' : ''}`}
-                                                    ref={provided.innerRef}
-                                                    {...provided.droppableProps}
-                                                >
-                                                    {columnTasks.length === 0 ? (
-                                                        // hidden while a card hovers this column so the drop placeholder isn't pushed down
-                                                        !snapshot.isDraggingOver && (
-                                                            <p className="board-column-empty">
-                                                                {searchQuery.trim() || selectedWeek !== 'all' ? 'No tasks match the filters' : 'No tasks yet'}
-                                                            </p>
-                                                        )
-                                                    ) : (
-                                                        columnTasks.map((task, index) => {
-                                                            const assignees = Array.isArray(task.assignees) ? task.assignees : [];
-                                                            const taskPoints = task.points ?? task.point ?? 0;
-                                                            const showNotAcceptBtn = (isDoneColumn && isLeader) || (isDoneColumn && isManager);
-
-                                                            const isTaskAssignee = assignees.some(a => {
-                                                                const assigneeId = typeof a === 'object' ? String(a._id || a.id) : String(a);
-                                                                return currentUserId && assigneeId === String(currentUserId);
-                                                            });
-                                                            const canDragThisTask = isManager || isLeader || (isTaskAssignee && !moveLocked);
-
-                                                            const { displayWeek, status } = calculateTaskWeekAndStatus(task, project);
-                                                            const assigneeList = assignees.map((assignee, aIdx) => {
-                                                                const name = getMemberDisplayName(getUserInfo(assignee, projectMembers));
-                                                                const id = typeof assignee === 'object' ? (assignee._id || assignee.id || aIdx) : assignee;
-                                                                return { id: String(id), name, initials: getInitials(name) };
-                                                            });
-
-                                                            return (
-                                                                <Draggable
-                                                                    key={String(task._id || task.id)}
-                                                                    draggableId={String(task._id || task.id)}
-                                                                    index={index}
-                                                                    isDragDisabled={!canDragThisTask}
-                                                                >
-                                                                    {(provided, snapshot) => (
-                                                                        <TaskCard
-                                                                            task={task}
-                                                                            dragRef={provided.innerRef}
-                                                                            draggableProps={provided.draggableProps}
-                                                                            dragHandleProps={provided.dragHandleProps}
-                                                                            isDragging={snapshot.isDragging}
-                                                                            canDrag={canDragThisTask}
-                                                                            week={displayWeek}
-                                                                            points={taskPoints}
-                                                                            deadlineStatus={status}
-                                                                            assignees={assigneeList}
-                                                                            onOpen={() => handleOpenTaskDrawer(task._id || task.id)}
-                                                                            onNotAccept={showNotAcceptBtn ? (e) => handleLeaderDecisionOnTask(e, task, column._id) : undefined}
-                                                                        />
-                                                                    )}
-                                                                </Draggable>
-                                                            );
-                                                        })
-                                                    )}
-                                                    {provided.placeholder}
-                                                </div>
-                                            )}
-                                        </Droppable>
-
-                                        {canCreateTask && (
-                                            <button
-                                                type="button"
-                                                className="add-task-btn"
-                                                onClick={() => handleOpenCreateModal(column._id, true)}
+                                    <Droppable droppableId={String(column._id)}>
+                                        {(provided, snapshot) => (
+                                            <div
+                                                className={`board-column-body${snapshot.isDraggingOver ? ' is-drop-target' : ''}`}
+                                                ref={provided.innerRef}
+                                                {...provided.droppableProps}
                                             >
-                                                <Plus className="icon icon-sm" aria-hidden="true" />
-                                                Add task
-                                            </button>
+                                                {columnTasks.length === 0 ? (
+                                                    !snapshot.isDraggingOver && (
+                                                        <p className="board-column-empty">
+                                                            {searchQuery.trim() || selectedWeek !== 'all' || selectedStatusTag !== 'all' || selectedPriority !== 'all' ? 'No tasks match the filters' : 'No tasks yet'}
+                                                        </p>
+                                                    )
+                                                ) : (
+                                                    columnTasks.map((task, index) => {
+                                                        const assignees = Array.isArray(task.assignees) ? task.assignees : [];
+                                                        const taskPoints = extractEstimateTime(task, 0);
+                                                        const showNotAcceptBtn = (isDoneColumn && isLeader) || (isDoneColumn && isManager);
+
+                                                        const isTaskAssignee = assignees.some(a => {
+                                                            const assigneeId = typeof a === 'object' ? String(a._id || a.id) : String(a);
+                                                            return currentUserId && assigneeId === String(currentUserId);
+                                                        });
+                                                        const canDragThisTask = isManager || isLeader || (isTaskAssignee && !moveLocked);
+
+                                                        const { displayWeek, status } = calculateTaskWeekAndStatus(task, project, isDoneColumn);
+                                                        const assigneeList = assignees.map((assignee, aIdx) => {
+                                                            const name = getMemberDisplayName(getUserInfo(assignee, projectMembers));
+                                                            const id = typeof assignee === 'object' ? (assignee._id || assignee.id || aIdx) : assignee;
+                                                            return { id: String(id), name, initials: getInitials(name) };
+                                                        });
+
+                                                        return (
+                                                            <Draggable
+                                                                key={String(task._id || task.id)}
+                                                                draggableId={String(task._id || task.id)}
+                                                                index={index}
+                                                                isDragDisabled={!canDragThisTask}
+                                                            >
+                                                                {(provided, snapshot) => (
+                                                                    <TaskCard
+                                                                        task={task}
+                                                                        dragRef={provided.innerRef}
+                                                                        draggableProps={provided.draggableProps}
+                                                                        dragHandleProps={provided.dragHandleProps}
+                                                                        isDragging={snapshot.isDragging}
+                                                                        canDrag={canDragThisTask}
+                                                                        week={displayWeek}
+                                                                        points={taskPoints}
+                                                                        deadlineStatus={status}
+                                                                        assignees={assigneeList}
+                                                                        onOpen={() => handleOpenTaskDrawer(task._id || task.id)}
+                                                                        onNotAccept={showNotAcceptBtn ? (e) => handleLeaderDecisionOnTask(e, task, column._id) : undefined}
+                                                                    />
+                                                                )}
+                                                            </Draggable>
+                                                        );
+                                                    })
+                                                )}
+                                                {provided.placeholder}
+                                            </div>
                                         )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </DragDropContext>
-                </main>
+                                    </Droppable>
+
+                                    {canCreateTask && (
+                                        <button
+                                            type="button"
+                                            className="add-task-btn"
+                                            onClick={() => handleOpenCreateModal(column._id, true)}
+                                        >
+                                            <Plus className="icon icon-sm" aria-hidden="true" />
+                                            Add task
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </DragDropContext>
+            </main>
 
             <TaskDrawer
                 taskId={selectedTaskId}
@@ -1339,6 +1461,7 @@ export default function ProjectBoard({ projectId: propProjectId }) {
                 columns={columns}
                 projectMembers={projectMembers}
                 maxWeeks={totalProjectWeeks}
+                project={project}
                 onTaskUpdated={handleTaskUpdatedFromDrawer}
                 onTaskDeleted={handleTaskDeletedFromDrawer}
                 onMoveTask={handleMoveFromDrawer}
@@ -1349,96 +1472,101 @@ export default function ProjectBoard({ projectId: propProjectId }) {
 
             {canCreateTask && activeModal === 'quickCreateTaskModal' && (
                 <Modal title="Add Task" onClose={closeModal}>
-                        <form className="modal-form" onSubmit={handleCreateTask}>
-                            <div className="modal-body">
-                                <div className="form-group">
-                                    <label className="form-label" htmlFor="board-task-title">Title *</label>
-                                    <input id="board-task-title"
-                                        className="input"
-                                        placeholder="e.g: My task title"
-                                        value={newTaskTitle}
-                                        onChange={(e) => setNewTaskTitle(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label" htmlFor="board-task-column">Column *</label>
-                                    <select id="board-task-column"
+                    <form className="modal-form" onSubmit={handleCreateTask}>
+                        <div className="modal-body">
+                            <div className="form-group">
+                                <label className="form-label" htmlFor="board-task-title">Title *</label>
+                                <input id="board-task-title"
+                                       className="input"
+                                       placeholder="e.g: My task title"
+                                       value={newTaskTitle}
+                                       onChange={(e) => setNewTaskTitle(e.target.value)}
+                                       required
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label className="form-label" htmlFor="board-task-column">Column *</label>
+                                <select id="board-task-column"
                                         className="select"
                                         value={newTaskColumnId}
                                         onChange={(e) => setNewTaskColumnId(e.target.value)}
                                         disabled={isColumnFixed}
                                         required
-                                    >
-                                        {columns.map((col) => (
-                                            <option key={col._id} value={col._id}>{col.name || col.title}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                                >
+                                    {columns.map((col) => (
+                                        <option key={col._id} value={col._id}>{col.name || col.title}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                                <div className="form-group">
-                                    <label className="form-label" htmlFor="board-task-points">Points</label>
-                                    <input id="board-task-points"
-                                        type="number"
-                                        min="0"
-                                        className="input"
-                                        placeholder="0"
-                                        value={newTaskPoints}
-                                        onChange={(e) => setNewTaskPoints(e.target.value === '' ? '' : Number(e.target.value))}
-                                    />
-                                </div>
+                            <div className="form-group">
+                                <label className="form-label" htmlFor="board-task-estimate-time">Estimate Time</label>
+                                <input id="board-task-estimate-time"
+                                       type="number"
+                                       min="0"
+                                       className="input"
+                                       placeholder="0"
+                                       value={newTaskEstimateTime}
+                                       onChange={(e) => setNewTaskEstimateTime(e.target.value)}
+                                />
+                            </div>
 
-                                <div className="form-group">
-                                    <label className="form-label" htmlFor="board-task-week">Week</label>
-                                    <select id="board-task-week"
+                            <div className="form-group">
+                                <label className="form-label" htmlFor="board-task-week">Week</label>
+                                <select id="board-task-week"
                                         className="select"
                                         value={newTaskWeek}
                                         onChange={(e) => setNewTaskWeek(Number(e.target.value))}
-                                    >
-                                        {Array.from({ length: totalProjectWeeks }, (_, i) => i + 1).map(w => (
-                                            <option key={w} value={w}>Week {w}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                                >
+                                    {Array.from({ length: totalProjectWeeks }, (_, i) => i + 1).map(w => {
+                                        const dateRange = getWeekDateRange(projStart, projEnd, w);
+                                        return (
+                                            <option key={w} value={w}>
+                                                {dateRange ? `Week ${w} (${dateRange})` : `Week ${w}`}
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+                            </div>
 
-                                <div className="form-group">
-                                    <label className="form-label" htmlFor="board-task-priority">Priority</label>
-                                    <select id="board-task-priority"
+                            <div className="form-group">
+                                <label className="form-label" htmlFor="board-task-priority">Priority</label>
+                                <select id="board-task-priority"
                                         className="select"
                                         value={newTaskPriority}
                                         onChange={(e) => setNewTaskPriority(e.target.value)}
-                                    >
-                                        <option value="Low">Low</option>
-                                        <option value="Medium">Medium</option>
-                                        <option value="High">High</option>
-                                        <option value="Urgent">Urgent</option>
-                                    </select>
-                                </div>
-
-                                <div className="form-group">
-                                    <label className="form-label" htmlFor="board-task-description">Description</label>
-                                    <textarea id="board-task-description"
-                                        className="textarea"
-                                        value={newTaskDesc}
-                                        onChange={(e) => setNewTaskDesc(e.target.value)}
-                                    />
-                                </div>
+                                >
+                                    <option value="Low">Low</option>
+                                    <option value="Medium">Medium</option>
+                                    <option value="High">High</option>
+                                    <option value="Urgent">Urgent</option>
+                                </select>
                             </div>
 
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
-                                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                                    {isSubmitting ? (
-                                        <>
-                                            <Loader2 className="animate-spin" size={16} aria-hidden="true" />
-                                            <span>Adding...</span>
-                                        </>
-                                    ) : (
-                                        'Add'
-                                    )}
-                                </button>
+                            <div className="form-group">
+                                <label className="form-label" htmlFor="board-task-description">Description</label>
+                                <textarea id="board-task-description"
+                                          className="textarea"
+                                          value={newTaskDesc}
+                                          onChange={(e) => setNewTaskDesc(e.target.value)}
+                                />
                             </div>
-                        </form>
+                        </div>
+
+                        <div className="modal-footer">
+                            <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
+                            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                                {isSubmitting ? (
+                                    <>
+                                        <Loader2 className="animate-spin" size={16} aria-hidden="true" />
+                                        <span>Adding...</span>
+                                    </>
+                                ) : (
+                                    'Add'
+                                )}
+                            </button>
+                        </div>
+                    </form>
                 </Modal>
             )}
         </>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useRealtimeRefetch } from "../../hooks/useRealtimeRefetch.js";
 import { useNavigate } from "react-router-dom";
 import { updateUserStatus } from "../../../api";
 import { API_BASE_URL } from "../../config/apiConfig.js";
@@ -30,17 +31,30 @@ function AdminUsers() {
     });
 
     useEffect(() => {
-        fetch(`${API_BASE_URL}/user`)
+        // 1. Lấy token từ localStorage (hoặcContext/State tùy theo ứng dụng của bạn)
+        const token = localStorage.getItem("token"); // Hoặc "accessToken"
+
+        fetch(`${API_BASE_URL}/user`, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+                // 2. Thêm header Authorization
+                "Authorization": `Bearer ${token}`
+            }
+        })
             .then((res) => {
                 if (!res.ok) throw new Error(`Error ${res.status}: the user list could not be loaded.`);
                 return res.json();
             })
-            .then((data) => setUsers(data))
+            .then((data) => { setUsers(data); setLoadError(null); })
             .catch((err) => {
-                console.error(" Fetch error:", err);
+                console.error("Fetch error:", err);
                 setLoadError(err);
             });
     }, [reloadKey]);
+
+    // accounts created / updated / locked / deleted elsewhere
+    useRealtimeRefetch(() => setReloadKey((k) => k + 1), ["users"]);
 
     const retryLoad = () => {
         setLoadError(null);

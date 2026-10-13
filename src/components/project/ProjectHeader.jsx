@@ -16,11 +16,9 @@ import {
 // Project sub-pages, in tab order. Settings is reached through the gear button.
 const PROJECT_TABS = [
     { path: "/projectoverview", label: "Overview", Icon: Info },
-    { path: "/projectchart", label: "Chart", Icon: BarChart2 },
-    { path: "/projectboard", label: "Board", Icon: LayoutGrid },
     { path: "/projectlist", label: "Backlog", Icon: List },
+    { path: "/projectboard", label: "Board", Icon: LayoutGrid },
     { path: "/projectcalendar", label: "Calendar", Icon: Calendar },
-    { path: "/projecttimeline", label: "Timeline", Icon: ChartGantt },
 ];
 
 /**

@@ -13,8 +13,8 @@ function BoardColumnHeader({ title, count, points, canCreateTask, onAddTask }) {
             <h2 className="board-column-title" title={title}>{title}</h2>
             <span className="board-column-count" aria-label={`${count} ${count === 1 ? "task" : "tasks"}`}>{count}</span>
             {typeof points === "number" && (
-                <span className="board-column-points" title="Story points in this column" aria-label={`${points} story points`}>
-                    {points} pts
+                <span className="board-column-points" title="Estimate time in this column" aria-label={`${points} estimate time`}>
+                    {points} est
                 </span>
             )}
             {canCreateTask && (

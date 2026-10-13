@@ -6,6 +6,7 @@ import { useConfirm, deleteConfirm } from "../common/confirmContext.js";
 import { notify } from "../../utils/notify.js";
 import { buildMilestoneLine, milestoneDateError } from "../../utils/milestoneLine.js";
 import { fetchNotesByProject, createNote, deleteNote } from "../../../api.jsx";
+import { useRealtimeRefetch } from "../../hooks/useRealtimeRefetch.js";
 
 const formatDay = (key) => {
     const [y, m, d] = key.split("-");
@@ -48,6 +49,9 @@ function MilestoneTimeline({ projectId, startDate, endDate, canManage }) {
             .catch((error) => { if (!cancelled) { console.error("Loading the milestones failed:", error); setState({ loading: false, error, notes: [] }); } });
         return () => { cancelled = true; };
     }, [projectId, reloadKey]);
+
+    // milestones (notes) created / deleted by someone else
+    useRealtimeRefetch(() => setReloadKey((k) => k + 1), ["notes"], projectId);
 
     const line = useMemo(() => buildMilestoneLine(startDate, endDate, state.notes), [startDate, endDate, state.notes]);
 

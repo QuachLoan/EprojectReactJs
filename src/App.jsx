@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
-import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
-import { socket } from './utils/socket' // Đảm bảo đúng đường dẫn file socket.js của bạn
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { socket, syncSocketConnection, SOCKET_RESYNC_EVENT } from './utils/socket'
 
 import './App.css'
 import MainLayout from './Layouts/MainLayout'
@@ -31,6 +31,18 @@ function GanttRedirect() {
 
 function App() {
     const navigate = useNavigate();
+    const location = useLocation();
+
+    useEffect(() => {
+        // Lấy theme từ localStorage (mặc định là 'light' nếu chưa có)
+        const savedTheme = localStorage.getItem("theme") || "light";
+        document.documentElement.setAttribute("data-theme", savedTheme);
+    }, []);
+
+    // one shared socket: (re)connect after login, drop it after logout
+    useEffect(() => {
+        syncSocketConnection();
+    }, [location.pathname]);
 
     useEffect(() => {
         // Lắng nghe tín hiệu ban từ Socket
@@ -52,10 +64,20 @@ function App() {
             }
         };
 
+        // Lắng nghe sự kiện cập nhật chung từ room duy nhất của App (ví dụ: thông báo, dữ liệu thay đổi)
+        const handleGlobalUpdate = () => {
+            // Bắn event nội bộ để các component khác (như Header) tự động refetch lại dữ liệu
+            window.dispatchEvent(new Event("myTasksUpdated"));
+        };
+
         socket.on("user_banned", handleUserBanned);
+        socket.on("app_global_update", handleGlobalUpdate);
+        window.addEventListener(SOCKET_RESYNC_EVENT, handleGlobalUpdate); // after a reconnect: refetch header/nav data
 
         return () => {
+            window.removeEventListener(SOCKET_RESYNC_EVENT, handleGlobalUpdate);
             socket.off("user_banned", handleUserBanned);
+            socket.off("app_global_update", handleGlobalUpdate);
         };
     }, [navigate]);
 

@@ -27,6 +27,7 @@ import {
 import { API_BASE_URL } from "../../config/apiConfig.js";
 
 import ProjectHeader from '../../components/project/ProjectHeader.jsx';
+import { useRealtimeRefetch } from '../../hooks/useRealtimeRefetch.js';
 
 // English month names list
 const MONTH_NAMES = [
@@ -165,11 +166,11 @@ export default function ProjectCalendar() {
     // PHÂN QUYỀN QUẢN LÝ NOTE: Chỉ Admin, Manager, Leader mới có quyền tạo/xóa note
     const canManageNote = isAdmin || isLeader || isManager;
 
-    const loadData = async () => {
+    const loadData = async (quiet = false) => {
         if (!projectId) return;
         const failures = [];
         try {
-            setLoading(true);
+            if (!quiet) setLoading(true);
             const [pData, tskList, membersData, notesData] = await Promise.all([
                 withFallback(fetchProjectById(projectId), {}, failures, 'project'),
                 withFallback(fetchTasksByProject(projectId), [], failures, 'tasks'),
@@ -200,6 +201,9 @@ export default function ProjectCalendar() {
     useEffect(() => {
         loadData();
     }, [projectId]);
+
+    // tasks / project dates / members / notes changed by someone else: reload quietly
+    useRealtimeRefetch(() => loadData(true), ['tasks', 'projects', 'members', 'notes', 'columns', 'users'], projectId);
 
     const resetTaskForm = () => {
         setNewTaskTitle('');

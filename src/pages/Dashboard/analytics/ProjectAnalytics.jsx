@@ -3,9 +3,9 @@ import { Link } from "react-router-dom";
 import { ChevronDown, FolderKanban } from "lucide-react";
 import ErrorState from "../../../components/common/ErrorState.jsx";
 import { failureMessage } from "../../../utils/requestState.js";
-import { socket } from "../../../utils/socket.js";
+import { socket, isForProject, SOCKET_RESYNC_EVENT } from "../../../utils/socket.js";
+import { useRealtimeRefetch } from "../../../hooks/useRealtimeRefetch.js";
 import { fetchProjects } from "../../../../api.jsx";
-import EpicBurndown from "../EpicBurndown/EpicBurndown.jsx";
 import WeeklyExpectancy from "../WeeklyExpectancy/WeeklyExpectancy.jsx";
 import { LoadingBlock, EmptyBlock } from "./chartKit.jsx";
 
@@ -60,20 +60,24 @@ function ProjectAnalytics() {
         return () => { cancelled = true; };
     }, [projectsKey]);
 
+    // project list / dates changed elsewhere: reload the picker and both charts
+    useRealtimeRefetch(() => { setProjectsKey((k) => k + 1); setRefreshToken((k) => k + 1); }, ["projects"]);
+
     // live refresh: one room subscription for both charts
     useEffect(() => {
         if (!selectedId) return;
-        const refresh = () => {
+        const refresh = (payload) => {
+            if (payload && !isForProject(payload, selectedId)) return;
             clearTimeout(refreshTimer.current);
             // one refetch for a burst of events (a move emits several)
             refreshTimer.current = setTimeout(() => setRefreshToken((k) => k + 1), 400);
         };
-        socket.emit("join_project", selectedId);
         TASK_EVENTS.forEach((event) => socket.on(event, refresh));
+        window.addEventListener(SOCKET_RESYNC_EVENT, refresh);
         return () => {
             clearTimeout(refreshTimer.current);
-            socket.emit("leave_project", selectedId);
             TASK_EVENTS.forEach((event) => socket.off(event, refresh));
+            window.removeEventListener(SOCKET_RESYNC_EVENT, refresh);
         };
     }, [selectedId]);
 
@@ -115,12 +119,6 @@ function ProjectAnalytics() {
     } else {
         content = (
             <div className="analytics-grid">
-                <EpicBurndown
-                    projectId={selectedId}
-                    projectName={selectedProject?.name}
-                    refreshToken={refreshToken}
-                    onReloadProjects={reloadProjects}
-                />
                 <WeeklyExpectancy
                     projectId={selectedId}
                     projectName={selectedProject?.name}

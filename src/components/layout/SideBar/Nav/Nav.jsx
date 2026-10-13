@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { API_BASE_URL } from "../../../../config/apiConfig.js";
+import { useRealtimeRefetch } from "../../../../hooks/useRealtimeRefetch.js";
 
 function Nav() {
     const [currentUserRole, setCurrentUserRole] = useState("");
@@ -72,11 +73,11 @@ function Nav() {
         }
     };
 
-    useEffect(() => {
+    const loadCurrentUser = () => {
         const token = localStorage.getItem("token");
-        if (!token) return;
+        if (!token) return Promise.resolve();
 
-        fetch(`${API_BASE_URL}/user/currentUser`, {
+        return fetch(`${API_BASE_URL}/user/currentUser`, {
             headers: { Authorization: `Bearer ${token}` }
         })
             .then((res) => res.json())
@@ -85,7 +86,16 @@ function Nav() {
                 setMembers(data.memberRole);
             })
             .catch((err) => console.error("Fetch error:", err));
+    };
 
+    // my role / membership changed by someone else (menu items depend on it)
+    useRealtimeRefetch(loadCurrentUser, ["members", "users"]);
+
+    useEffect(() => {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+
+        loadCurrentUser();
         checkExpiringTasks();
 
         // Đăng ký event listener để update số đếm mỗi khi MyTasks thay đổi

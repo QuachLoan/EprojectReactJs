@@ -3,6 +3,7 @@ import { CheckCircle2, FolderKanban, ListChecks, Loader2 } from 'lucide-react';
 import ErrorState from '../../../components/common/ErrorState.jsx';
 import { failureMessage } from '../../../utils/requestState.js';
 import { portfolioKpis } from '../../../utils/portfolioStats.js';
+import { useRealtimeRefetch } from '../../../hooks/useRealtimeRefetch.js';
 import { fetchPortfolio } from '../../../../api.jsx';
 
 /**
@@ -27,6 +28,7 @@ function KPI({ shared }) {
             .then((data) => {
                 if (cancelled) return;
                 setPortfolio(data || null);
+                setLoadError(null);
                 setLoading(false);
             })
             .catch((err) => {
@@ -37,6 +39,9 @@ function KPI({ shared }) {
             });
         return () => { cancelled = true; };
     }, [reloadKey]);
+
+    // projects / tasks changed elsewhere: reload quietly (no spinner, the numbers stay on screen)
+    useRealtimeRefetch(() => setReloadKey((k) => k + 1), ['tasks', 'projects']);
 
     const retryLoad = () => {
         setLoadError(null);

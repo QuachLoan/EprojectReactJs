@@ -13,15 +13,22 @@ const getStoredUserName = () => {
     }
 };
 
-// Only widgets backed by a real API are rendered. TodayTask, UCMDeadlines, RecentActivity, TaskCompletion,
-// TeamWorkload and ProjectStatus contain static sample data and have no endpoint — they stay hidden
-// (files kept in ./OverViews and ./ProjectProgress until real data exists).
 function Dashboard() {
     const userName = getStoredUserName();
     // loaded once, shared by the KPI row and the portfolio sections
     const portfolio = usePortfolioData();
+
     return (
-        <main className="page-content">
+        /* Giữ thanh cuộn chỉ hoạt động ở bên trong Dashboard */
+        <main
+            className="page-content"
+            style={{
+                height: "100%",
+                maxHeight: "100vh",
+                overflowY: "auto",
+                overflowX: "hidden"
+            }}
+        >
             <div className="page-content-inner stack dashboard-page">
                 <div>
                     <h1>{userName ? `Welcome back, ${userName}` : "Welcome back"}</h1>
@@ -35,4 +42,5 @@ function Dashboard() {
         </main>
     );
 }
+
 export default Dashboard;

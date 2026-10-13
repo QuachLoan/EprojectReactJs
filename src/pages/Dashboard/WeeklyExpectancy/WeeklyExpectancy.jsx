@@ -15,11 +15,56 @@ const SERIES = [
 ];
 
 /**
- * Plan vs. Real Progress (cumulative burn-UP) from GET /task/project/:projectId/weekly-expectancy.
- * Separate from the Epic Burndown on purpose: other contract, other week count (= maxProjectWeek, no "Start"),
- * other completion rule (task in the Done column). Values are drawn as returned; realProgress null = gap.
+ * Tính toán số tuần dự án theo ngày bắt đầu (StartDate)
  */
-function WeeklyExpectancy({ projectId, projectName, refreshToken = 0 }) {
+function calculateCurrentProjectWeek(startDateInput, fallbackWeek) {
+    if (!startDateInput) return fallbackWeek;
+
+    let startObj = null;
+
+    if (startDateInput instanceof Date) {
+        startObj = startDateInput;
+    } else if (typeof startDateInput === "string") {
+        const cleanStr = startDateInput.trim();
+
+        if (cleanStr.includes("-")) {
+            const parts = cleanStr.split("T")[0].split("-");
+            if (parts.length === 3) {
+                startObj = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            }
+        } else if (cleanStr.includes("/")) {
+            const parts = cleanStr.split("/");
+            if (parts.length >= 2) {
+                const day = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1;
+                const year = parts[2] ? parseInt(parts[2], 10) : new Date().getFullYear();
+                startObj = new Date(year, month, day);
+            }
+        }
+
+        if (!startObj || isNaN(startObj.getTime())) {
+            startObj = new Date(cleanStr);
+        }
+    }
+
+    if (!startObj || isNaN(startObj.getTime())) return fallbackWeek;
+
+    const now = new Date();
+
+    const startMidnight = new Date(startObj.getFullYear(), startObj.getMonth(), startObj.getDate()).getTime();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+    // Tính chênh lệch ngày (Ví dụ: 04/10 -> 11/10 = 7 ngày = Week 2)
+    const diffDays = Math.round((todayMidnight - startMidnight) / (1000 * 3600 * 24));
+    if (diffDays < 0) return 1;
+
+    return Math.floor(diffDays / 7) + 1;
+}
+
+/**
+ * Plan vs. Real Progress (cumulative burn-UP) từ GET /task/project/:projectId/weekly-expectancy.
+ */
+function WeeklyExpectancy({ projectId, projectName, projectStartDate, refreshToken = 0 }) {
     const [result, setResult] = useState(null);
     const [retryKey, setRetryKey] = useState(0);
     const reloadKey = `${refreshToken}:${retryKey}`;
@@ -49,7 +94,17 @@ function WeeklyExpectancy({ projectId, projectName, refreshToken = 0 }) {
     const data = current?.data || null;
     const error = loading ? null : current.error;
     const invalidResponse = !loading && current.invalid;
-    const summary = summarizeWeeklyExpectancy(data);
+
+    // Lấy ngày bắt đầu dự án
+    const startDate = projectStartDate || data?.projectStartDate || data?.startDate;
+
+    // Tính tuần dự án thực tế dựa vào StartDate
+    const calculatedWeek = calculateCurrentProjectWeek(startDate, data?.currentProjectWeek);
+    const displayWeek = calculatedWeek ?? data?.currentProjectWeek ?? 1;
+
+    // Override lại currentProjectWeek trong data
+    const adjustedData = data ? { ...data, currentProjectWeek: displayWeek } : null;
+    const summary = summarizeWeeklyExpectancy(adjustedData);
 
     let body;
     if (error) {
@@ -101,11 +156,17 @@ function WeeklyExpectancy({ projectId, projectName, refreshToken = 0 }) {
             />
         );
     } else {
-        const nowInChart = summary?.nowEntry;
+        // Tìm mốc tuần hiện tại ("Now") để vẽ ReferenceLine
+        const nowInChart = summary?.nowEntry || data.weeks.find((w) => {
+            if (w.weekNumber !== undefined) return Number(w.weekNumber) === Number(displayWeek);
+            const numInWeek = parseInt(String(w.week).replace(/\D/g, ""), 10);
+            return numInWeek === Number(displayWeek);
+        });
+
         body = (
             <>
                 <ChartStats items={[
-                    { label: "Project week", value: `Week ${data.currentProjectWeek}` },
+                    { label: "Project week", value: `Week ${displayWeek}` },
                     summary?.planEntry && { label: "Planned to date", value: `${summary.planEntry.expectancy} pts` },
                     summary?.latestReal && { label: "Done to date", value: `${summary.latestReal.realProgress} pts` },
                 ]} />
@@ -149,7 +210,6 @@ function WeeklyExpectancy({ projectId, projectName, refreshToken = 0 }) {
                                 dot={{ r: 3, fill: CHART_COLORS.plan, strokeWidth: 0 }}
                                 isAnimationActive={false}
                             />
-                            {/* connectNulls off: weeks that have not happened (realProgress null) are a gap */}
                             <Line
                                 type="linear"
                                 dataKey="realProgress"
@@ -168,22 +228,21 @@ function WeeklyExpectancy({ projectId, projectName, refreshToken = 0 }) {
                 <table className="sr-only expectancy-table">
                     <caption>Plan vs. real progress of {projectName || "the selected project"}</caption>
                     <thead>
-                        <tr><th scope="col">Week</th><th scope="col">Plan</th><th scope="col">Real progress</th></tr>
+                    <tr><th scope="col">Week</th><th scope="col">Plan</th><th scope="col">Real progress</th></tr>
                     </thead>
                     <tbody>
-                        {data.weeks.map((w) => (
-                            <tr key={w.weekNumber} data-real={w.realProgress === null ? "null" : w.realProgress}>
-                                <th scope="row">{w.week}</th>
-                                <td>{w.expectancy}</td>
-                                <td>{w.realProgress === null ? "No data yet" : w.realProgress}</td>
-                            </tr>
-                        ))}
+                    {data.weeks.map((w) => (
+                        <tr key={w.weekNumber} data-real={w.realProgress === null ? "null" : w.realProgress}>
+                            <th scope="row">{w.week}</th>
+                            <td>{w.expectancy}</td>
+                            <td>{w.realProgress === null ? "No data yet" : w.realProgress}</td>
+                        </tr>
+                    ))}
                     </tbody>
                 </table>
                 <p className="chart-note">
                     Cumulative points planned by task week vs. points finished in the Done column.
-                    Weeks count from the first task's creation date (the burndown counts from the project start date).
-                    {summary?.pastPlan && ` The project is in week ${data.currentProjectWeek}, after the last planned week (${data.maxProjectWeek}).`}
+                    {summary?.pastPlan && ` The project is in week ${displayWeek}, after the last planned week (${data.maxProjectWeek}).`}
                 </p>
             </>
         );

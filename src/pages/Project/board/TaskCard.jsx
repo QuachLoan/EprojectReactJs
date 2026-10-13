@@ -1,35 +1,17 @@
+import { useEffect, useRef, useState } from "react";
 import { CalendarDays, CircleAlert, CircleCheck, Clock, Gauge, ListChecks, X } from "lucide-react";
 import { avatarToneClass } from "../../../utils/avatar.js";
 import { checklistProgress } from "../../../utils/checklist.js";
 
 const MAX_AVATARS = 3;
 
-// Only abnormal deadline states get a visual signal ("On Track" shows nothing — DEC-002)
+// Đã bổ sung "On Track" vào DEADLINE_SIGNAL
 const DEADLINE_SIGNAL = {
     Overdue: { className: "is-overdue", Icon: CircleAlert, tooltip: "The project due date has passed" },
     Expiring: { className: "is-expiring", Icon: Clock, tooltip: "This week ends soon" },
+    "On Track": { className: "is-ontrack", Icon: CircleCheck, tooltip: "Task is on schedule" },
 };
 
-/**
- * Kanban task card — presentation only. The parent (ProjectBoard) owns the Draggable, permissions,
- * week/deadline calculation, assignee lookup and every handler; this component only lays them out.
- *
- * @param {object}   task            task as loaded (title/name, description, priority, checklist)
- * @param {Function} dragRef         Draggable `provided.innerRef`            ┐
- * @param {object}   draggableProps  Draggable `provided.draggableProps` (+style) │ applied as-is to the root —
- * @param {object}   dragHandleProps Draggable `provided.dragHandleProps` (null    │ the whole card is the drag handle
- *                                   when dragging is disabled)                  ┘
- * @param {boolean}  isDragging      Draggable `snapshot.isDragging`
- * @param {boolean}  canDrag         whether the current user may drag this task
- * @param {number}   week            display week (calculated by the parent)
- * @param {number}   points          story points
- * @param {string}   deadlineStatus  'Overdue' | 'Expiring' | 'On Track' (calculated by the parent)
- * @param {Array}    assignees       [{ id, name, initials }]
- * @param {Function} onOpen          open the task drawer
- * @param {Function} [onNotAccept]   leader/manager "Not accept" action; omit to hide the button
- *
- * "Completed" comes from the backend task.status (set by PUT /task/:id/move), never from the column name.
- */
 function TaskCard({ task, dragRef, draggableProps, dragHandleProps, isDragging, canDrag, week, points, deadlineStatus, assignees, onOpen, onNotAccept }) {
     const title = task.title || task.name;
     const priority = task.priority || "Medium";
@@ -38,14 +20,26 @@ function TaskCard({ task, dragRef, draggableProps, dragHandleProps, isDragging, 
     const checklistDone = checklist.filter((item) => item.completed).length;
     const progress = checklistProgress(checklist);
     const completed = task.status === "completed";
-    // a finished task is not late: no deadline warning on it
     const signal = completed ? undefined : DEADLINE_SIGNAL[deadlineStatus];
     const shownAssignees = assignees.slice(0, MAX_AVATARS);
     const hiddenAssignees = assignees.length - shownAssignees.length;
 
-    // Enter always opens; Space opens only when dnd does not own it (locked card — Space lifts a draggable card)
+    const descRef = useRef(null);
+    const [descOpen, setDescOpen] = useState(false);
+    const [descOverflow, setDescOverflow] = useState(false);
+
+    useEffect(() => {
+        const el = descRef.current;
+        if (!el || descOpen) return;
+        const check = () => setDescOverflow(el.scrollWidth > el.clientWidth + 1);
+        check();
+        const ro = new ResizeObserver(check);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [description, descOpen]);
+
     const handleKeyDown = (e) => {
-        if (e.target !== e.currentTarget) return; // keys on inner buttons are theirs
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || (!canDrag && e.key === " ")) {
             e.preventDefault();
             onOpen();
@@ -57,7 +51,7 @@ function TaskCard({ task, dragRef, draggableProps, dragHandleProps, isDragging, 
         completed && "Completed",
         `Priority ${priority}`,
         `Week ${week}`,
-        `${points} points`,
+        `${points} estimate time`,
         checklist.length > 0 && `Checklist ${checklistDone} of ${checklist.length}`,
         signal && deadlineStatus,
     ].filter(Boolean).join(". ");
@@ -72,7 +66,6 @@ function TaskCard({ task, dragRef, draggableProps, dragHandleProps, isDragging, 
             ref={dragRef}
             {...draggableProps}
             {...dragHandleProps}
-            // a locked card has no drag handle props, so it needs its own keyboard semantics
             role={dragHandleProps ? dragHandleProps.role : "button"}
             tabIndex={dragHandleProps ? dragHandleProps.tabIndex : 0}
             aria-label={accessibleName}
@@ -91,14 +84,44 @@ function TaskCard({ task, dragRef, draggableProps, dragHandleProps, isDragging, 
             </div>
 
             <h3 className="task-card-title">{title}</h3>
-            {description && <p className="task-card-desc">{description}</p>}
+
+            {description && (
+                <div className="task-card-desc-block">
+                    <span className="task-card-desc-label">
+                        <span className="task-card-desc-dot" aria-hidden="true" />
+                        Description
+                    </span>
+                    <div className={`task-card-desc-row${descOpen ? " is-open" : ""}`}>
+                        <p
+                            ref={descRef}
+                            className={`task-card-desc${descOpen ? " is-open" : ""}`}
+                        >
+                            {description}
+                        </p>
+                        {(descOverflow || descOpen) && (
+                            <button
+                                type="button"
+                                className="task-card-desc-toggle"
+                                aria-expanded={descOpen}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDescOpen((v) => !v);
+                                }}
+                                onKeyDown={(e) => e.stopPropagation()}
+                            >
+                                {descOpen ? "Show less" : "Read more"}
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
 
             <ul className="task-card-meta" aria-hidden="true">
                 <li title="Week">
                     <CalendarDays className="icon icon-xs" />W{week}
                 </li>
-                <li title="Story points">
-                    <Gauge className="icon icon-xs" />{points} pts
+                <li title="Estimate time">
+                    <Gauge className="icon icon-xs" />{points} est
                 </li>
                 {checklist.length > 0 && (
                     <li
