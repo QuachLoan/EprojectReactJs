@@ -33,7 +33,7 @@ function SideBar({ collapsed = false, onToggleCollapsed, isMobile = false, mobil
                         <path d="M16 7v9"></path>
                     </svg>
                 </span>
-                <span className="sidebar-brand-name">TeamFlow</span>
+                <span className="sidebar-brand-name">Nang cao</span>
                 <button
                     ref={closeButtonRef}
                     type="button"
