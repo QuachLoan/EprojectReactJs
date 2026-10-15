@@ -1089,11 +1089,7 @@ function MyTasks() {
                                         </span>
 
                                         <span className="task-list-assignee-cell">
-                                            <span className="avatar avatar-sm">
-                                                {getInitials(
-                                                    task.assignees?.[0]?.username || task.assignees?.[0]?.name || "Me"
-                                                )}
-                                            </span>
+
                                         </span>
 
                                         <span className="task-list-due-cell">
