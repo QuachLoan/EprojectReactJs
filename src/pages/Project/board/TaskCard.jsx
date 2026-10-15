@@ -85,34 +85,34 @@ function TaskCard({ task, dragRef, draggableProps, dragHandleProps, isDragging, 
 
             <h3 className="task-card-title">{title}</h3>
 
-            {description && (
+           {description && (
                 <div className="task-card-desc-block">
                     <span className="task-card-desc-label">
                         <span className="task-card-desc-dot" aria-hidden="true" />
                         Description
                     </span>
-                    <div className={`task-card-desc-row${descOpen ? " is-open" : ""}`}>
-                        <p
-                            ref={descRef}
-                            className={`task-card-desc${descOpen ? " is-open" : ""}`}
+
+                    <p
+                        ref={descRef}
+                        className={`task-card-desc${descOpen ? " is-open" : ""}`}
+                    >
+                        {description}
+                    </p>
+
+                    {(descOverflow || descOpen) && (
+                        <button
+                            type="button"
+                            className="task-card-desc-toggle"
+                            aria-expanded={descOpen}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setDescOpen((v) => !v);
+                            }}
+                            onKeyDown={(e) => e.stopPropagation()}
                         >
-                            {description}
-                        </p>
-                        {(descOverflow || descOpen) && (
-                            <button
-                                type="button"
-                                className="task-card-desc-toggle"
-                                aria-expanded={descOpen}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setDescOpen((v) => !v);
-                                }}
-                                onKeyDown={(e) => e.stopPropagation()}
-                            >
-                                {descOpen ? "Show less" : "Read more"}
-                            </button>
-                        )}
-                    </div>
+                            {descOpen ? "Show less" : "Read more"}
+                        </button>
+                    )}
                 </div>
             )}
 

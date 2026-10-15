@@ -1024,24 +1024,55 @@ svg {
    STYLES CHO PROGRESS BAR & %
    =================================================== */
 
-.project-progress-percent {
-    font-weight: 700;
-    color: var(--progress-percent-color);
-    transition: color 0.3s ease;
+.task-card-desc-block {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    min-width: 0;
 }
 
-.project-progress-track {
+/* Thu gọn: 1 dòng + ... */
+.task-card .task-card-desc {
+    margin: 0;
     width: 100%;
-    height: 10px;
-    background-color: var(--progress-track-bg);
-    border-radius: 999px;
+    min-width: 0;
+    display: block;
+    white-space: nowrap;
     overflow: hidden;
-    margin-top: 8px;
-    transition: background-color 0.3s ease;
+    text-overflow: ellipsis;
 }
 
-.project-progress-fill {
-    height: 100%;
-    border-radius: 999px;
-    transition: width 0.4s ease-in-out, background-color 0.3s ease;
+/* Mở: hiện toàn bộ, bỏ mọi height / line-clamp cũ */
+.task-card .task-card-desc.is-open {
+    display: block !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    height: auto !important;
+    max-height: none !important;
+    -webkit-line-clamp: unset !important;
+    line-clamp: unset !important;
+    overflow-wrap: anywhere;
+}
+
+/* Nút luôn nằm dưới văn bản, theo luồng bình thường */
+.task-card .task-card-desc-toggle {
+    position: static !important;
+    inset: auto !important;
+    transform: none !important;
+    align-self: flex-start;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none !important;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--primary, #4f46e5);
+    cursor: pointer;
+}
+
+.task-card .task-card-desc-toggle:hover {
+    text-decoration: underline;
 }
