@@ -32,7 +32,6 @@ function Dashboard() {
             <div className="page-content-inner stack dashboard-page">
                 <div>
                     <h1>{userName ? `Welcome back, ${userName}` : "Welcome back"}</h1>
-                    <p className="page-subtitle">Here's what's happening across your workspace today.</p>
                 </div>
 
                 <KPI shared={portfolio} />

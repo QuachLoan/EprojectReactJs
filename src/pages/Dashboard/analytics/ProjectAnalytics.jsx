@@ -132,8 +132,6 @@ function ProjectAnalytics() {
         <section className="analytics" aria-labelledby="analytics-title">
             <div className="analytics-header">
                 <div>
-                    <h2 id="analytics-title" className="section-title">Project analytics</h2>
-                    <p className="section-subtitle">Story points of one project, updated live when its tasks change.</p>
                 </div>
                 {!projectsLoading && !projectsError && projects.length > 0 && (
                     <div className="select-wrap analytics-project">

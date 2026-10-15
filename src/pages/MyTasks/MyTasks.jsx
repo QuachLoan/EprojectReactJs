@@ -26,44 +26,124 @@ import TaskDrawerFrame from "../../components/task/TaskDrawerFrame.jsx";
 import { DrawerSection, ChecklistSection, CommentsSection, ActivitySection, AssigneePicker, UserAvatar } from "../../components/task/TaskDrawerSections.jsx";
 import MyTaskInsights from "./Insights/MyTaskInsights.jsx";
 
-// --- HELPER FUNCTIONS ---
-const calculateDueDateByWeek = (startDateStr, weekNum = 1) => {
-    if (!startDateStr) return null;
-    const baseDate = new Date(startDateStr);
-    if (isNaN(baseDate.getTime())) return null;
+// --- HELPER FUNCTIONS (ĐỒNG BỘ VỚI PROJECTBOARD.JSX) ---
 
-    const currentWeek = Math.max(1, Number(weekNum) || 1);
-    const daysToAdd = (currentWeek * 7) - 1;
+// Hàm tính ngày bắt đầu và kết thúc của Week `weekNum` (7 ngày/tuần) giống ProjectBoard
+const getWeekDateRange = (projectStartDate, projectEndDate, weekNum) => {
+    if (!projectStartDate) return '';
+    const start = new Date(projectStartDate);
+    if (isNaN(start.getTime())) return '';
 
-    const dueDate = new Date(baseDate);
-    dueDate.setDate(dueDate.getDate() + daysToAdd);
-    return dueDate;
+    const weekStart = new Date(start);
+    weekStart.setDate(start.getDate() + (Number(weekNum) - 1) * 7);
+
+    let weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
+    if (projectEndDate) {
+        const projEnd = new Date(projectEndDate);
+        if (!isNaN(projEnd.getTime()) && weekEnd > projEnd) {
+            weekEnd = projEnd;
+        }
+    }
+
+    const formatShort = (d) =>
+        `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+    return `${formatShort(weekStart)} - ${formatShort(weekEnd)}`;
 };
 
-const getRemainingDaysLabel = (startDateStr, weekNum = 1) => {
-    if (!startDateStr) return "Not set";
-    const startDate = new Date(startDateStr);
-    if (isNaN(startDate.getTime())) return "Not set";
+// Tính ngày kết thúc thực tế của tuần (weekEnd)
+const calculateDueDateByWeek = (startDateStr, endDateStr, weekNum = 1) => {
+    if (!startDateStr) return null;
+    const start = new Date(startDateStr);
+    if (isNaN(start.getTime())) return null;
 
     const currentWeek = Math.max(1, Number(weekNum) || 1);
-    const daysToAdd = (currentWeek * 7) - 1;
 
-    const dueDate = new Date(startDate);
-    dueDate.setDate(dueDate.getDate() + daysToAdd);
+    const weekStart = new Date(start);
+    weekStart.setDate(start.getDate() + (currentWeek - 1) * 7);
+
+    let weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
+    if (endDateStr) {
+        const projEnd = new Date(endDateStr);
+        if (!isNaN(projEnd.getTime()) && weekEnd > projEnd) {
+            weekEnd = projEnd;
+        }
+    }
+
+    return weekEnd;
+};
+
+// Tính trạng thái task: 'Overdue', 'Expiring', 'On Track' đúng như ProjectBoard.jsx
+const calculateTaskWeekAndStatus = (task, projectStartDate, projectEndDate, isDoneColumn = false) => {
+    const currentWeek = Number(task?.week) || 1;
+
+    if (!projectStartDate) {
+        return { displayWeek: currentWeek, status: 'On Track' };
+    }
+
+    if (isDoneColumn) {
+        return { displayWeek: currentWeek, status: 'On Track' };
+    }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    dueDate.setHours(0, 0, 0, 0);
 
-    const diffTime = dueDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const start = new Date(projectStartDate);
+    start.setHours(0, 0, 0, 0);
+    if (isNaN(start.getTime())) {
+        return { displayWeek: currentWeek, status: 'On Track' };
+    }
+
+    const weekStart = new Date(start);
+    weekStart.setDate(start.getDate() + (currentWeek - 1) * 7);
+
+    let weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
+    if (projectEndDate) {
+        const projEndObj = new Date(projectEndDate);
+        projEndObj.setHours(0, 0, 0, 0);
+        if (!isNaN(projEndObj.getTime()) && weekEnd > projEndObj) {
+            weekEnd = projEndObj;
+        }
+    }
+
+    const expiringStartDate = new Date(weekEnd);
+    expiringStartDate.setDate(weekEnd.getDate() - 1);
+
+    if (today > weekEnd) {
+        return { displayWeek: currentWeek, status: 'Overdue' };
+    } else if (today >= expiringStartDate) {
+        return { displayWeek: currentWeek, status: 'Expiring' };
+    }
+
+    return { displayWeek: currentWeek, status: 'On Track' };
+};
+
+const getRemainingDaysLabel = (startDateStr, endDateStr, weekNum = 1) => {
+    if (!startDateStr) return "Not set";
+    const dueDate = calculateDueDateByWeek(startDateStr, endDateStr, weekNum);
+    if (!dueDate) return "Not set";
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const targetDue = new Date(dueDate);
+    targetDue.setHours(0, 0, 0, 0);
+
+    const diffTime = targetDue.getTime() - today.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
     if (diffDays < 0) {
         return `${Math.abs(diffDays)} days overdue`;
     } else if (diffDays === 0) {
         return "Due today";
     } else {
-        return `${diffDays + 1} days left`;
+        return `${diffDays} days left`;
     }
 };
 
@@ -134,6 +214,8 @@ function TaskDrawer({
                     }) {
     const [task, setTask] = useState(null);
     const [projectStartDate, setProjectStartDate] = useState(null);
+    const [projectEndDate, setProjectEndDate] = useState(null);
+    const [totalProjectWeeks, setTotalProjectWeeks] = useState(1);
     const [columns, setColumns] = useState([]);
     const [projectMembers, setProjectMembers] = useState([]);
     const [currentUserRole, setCurrentUserRole] = useState("Member");
@@ -178,20 +260,39 @@ function TaskDrawer({
                     : realTask.projectId;
 
                 let pStartDate = typeof realTask.projectId === 'object' ? realTask.projectId?.startDate : null;
+                let pEndDate = typeof realTask.projectId === 'object' ? (realTask.projectId?.date || realTask.projectId?.dueDate || realTask.projectId?.endDate) : null;
 
-                if (projId && !pStartDate) {
+                if (projId && (!pStartDate || !pEndDate)) {
                     try {
                         const pData = await fetchProjectById(projId);
                         const realProj = pData?.data || pData;
                         pStartDate = realProj?.startDate;
+                        pEndDate = realProj?.date || realProj?.dueDate || realProj?.endDate;
                     } catch (e) {
-                        console.error("Không thể lấy startDate của Project:", e);
+                        console.error("Không thể lấy startDate/endDate của Project:", e);
                     }
                 }
                 if (cancelled) return;
 
                 setProjectStartDate(pStartDate);
-                const calculatedDue = calculateDueDateByWeek(pStartDate, realTask.week ?? 1);
+                setProjectEndDate(pEndDate);
+
+                // Tính tổng số tuần của Project
+                if (pStartDate && pEndDate) {
+                    const sObj = new Date(pStartDate);
+                    const eObj = new Date(pEndDate);
+                    const diffTime = eObj.getTime() - sObj.getTime();
+                    const diffDays = Math.floor(diffTime / (1000 * 3600 * 24)) + 1;
+                    if (diffDays > 0) {
+                        setTotalProjectWeeks(Math.ceil(diffDays / 7));
+                    } else {
+                        setTotalProjectWeeks(1);
+                    }
+                } else {
+                    setTotalProjectWeeks(Math.max(1, realTask.week ?? 1));
+                }
+
+                const calculatedDue = calculateDueDateByWeek(pStartDate, pEndDate, realTask.week ?? 1);
 
                 setTask({
                     ...realTask,
@@ -274,7 +375,7 @@ function TaskDrawer({
 
         if (updatedFields.week !== undefined) {
             const newWeek = Number(updatedFields.week) || 1;
-            const newDue = calculateDueDateByWeek(projectStartDate, newWeek);
+            const newDue = calculateDueDateByWeek(projectStartDate, projectEndDate, newWeek);
             if (newDue) {
                 updatedFields.dueDate = newDue;
             }
@@ -507,7 +608,7 @@ function TaskDrawer({
                         />
                         <div className="drawer-subline">
                             {columnLabel && <span className="drawer-chip">{columnLabel}</span>}
-                            {task.dueDate && <span className="drawer-chip">Due {formatShortDate(task.dueDate)} · {getRemainingDaysLabel(projectStartDate, task.week)}</span>}
+                            {task.dueDate && <span className="drawer-chip">Due {formatShortDate(task.dueDate)} · {getRemainingDaysLabel(projectStartDate, projectEndDate, task.week)}</span>}
                             {assigneeMembers.length > 0 && (
                                 <span className="avatar-group">
                                     {assigneeMembers.map(m => (
@@ -567,15 +668,21 @@ function TaskDrawer({
                             </label>
                             <label className="drawer-field">
                                 <span className="drawer-field-label">Week</span>
-                                <input
-                                    className="input"
-                                    type="number"
-                                    min="1"
+                                <select
+                                    className="select"
                                     disabled={!canEditAll}
                                     value={task.week || 1}
-                                    onChange={(e) => handleInputChange('week', e.target.value)}
-                                    onBlur={(e) => canEditAll && handleUpdateTaskField({ week: Number(e.target.value) || 1 })}
-                                />
+                                    onChange={(e) => handleUpdateTaskField({ week: Number(e.target.value) || 1 })}
+                                >
+                                    {Array.from({ length: totalProjectWeeks }, (_, i) => i + 1).map((w) => {
+                                        const dateRange = getWeekDateRange(projectStartDate, projectEndDate, w);
+                                        return (
+                                            <option key={w} value={w}>
+                                                {dateRange ? `Week ${w} (${dateRange})` : `Week ${w}`}
+                                            </option>
+                                        );
+                                    })}
+                                </select>
                             </label>
                             <div className="drawer-field drawer-field--wide">
                                 <span className="drawer-field-label">
@@ -648,7 +755,7 @@ const formatShortDate = (value) => {
 // --- MAIN MY TASKS COMPONENT ---
 function MyTasks() {
     const [searchParams, setSearchParams] = useSearchParams();
-    const location = useLocation(); // Bắt vị trí URL khi có sự thay đổi điều hướng từ Notifier
+    const location = useLocation();
     const [activeTab, setActiveTab] = useState("all");
     const [tasks, setTasks] = useState([]);
     const [projectMap, setProjectMap] = useState({});
@@ -659,7 +766,6 @@ function MyTasks() {
     const [selectedTaskId, setSelectedTaskId] = useState(null);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-    // Lắng nghe triệt để sự thay đổi của query URL (kể cả khi điều hướng lại sang /mytasks)
     useEffect(() => {
         const queryParams = new URLSearchParams(location.search);
         const taskIdFromUrl = queryParams.get("taskId");
@@ -667,7 +773,7 @@ function MyTasks() {
         if (taskIdFromUrl) {
             setSelectedTaskId(taskIdFromUrl);
             setIsDrawerOpen(true);
-            setActiveTab("all"); // Reset tab về All để không bị ẩn task trong danh sách
+            setActiveTab("all");
         } else {
             setIsDrawerOpen(false);
             setSelectedTaskId(null);
@@ -675,9 +781,6 @@ function MyTasks() {
     }, [location.search]);
 
     const notifyNavToUpdate = useCallback((currentTasks = tasks, pMap = projectMap) => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
         const expiringCount = currentTasks.filter((task) => {
             if (isTaskCompleted(task)) return false;
 
@@ -685,17 +788,14 @@ function MyTasks() {
             const projStartDate = (typeof task.projectId === 'object' && task.projectId?.startDate)
                 ? task.projectId?.startDate
                 : pMap[projId]?.startDate;
+            const projEndDate = (typeof task.projectId === 'object' && (task.projectId?.date || task.projectId?.dueDate || task.projectId?.endDate))
+                ? (task.projectId?.date || task.projectId?.dueDate || task.projectId?.endDate)
+                : (pMap[projId]?.date || pMap[projId]?.dueDate || pMap[projId]?.endDate);
 
-            const effectiveDueDate = task.dueDate || calculateDueDateByWeek(projStartDate, task.week || 1);
-            if (!effectiveDueDate) return false;
+            const isDone = isTaskCompleted(task);
+            const { status } = calculateTaskWeekAndStatus(task, projStartDate, projEndDate, isDone);
 
-            const dueDate = new Date(effectiveDueDate);
-            dueDate.setHours(0, 0, 0, 0);
-
-            const diffTime = dueDate.getTime() - today.getTime();
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-            return diffDays >= 0 && diffDays <= 2;
+            return status === 'Expiring';
         }).length;
 
         window.dispatchEvent(new CustomEvent("myTasksUpdated", { detail: { count: expiringCount } }));
@@ -725,7 +825,6 @@ function MyTasks() {
         });
     };
 
-    // quiet = realtime refresh: no spinner, and a failed refresh keeps the tasks already on screen
     const loadMyTasks = async (quiet = false) => {
         try {
             if (!quiet) setLoading(true);
@@ -772,7 +871,6 @@ function MyTasks() {
         loadMyTasks();
     }, []);
 
-    // tasks assigned to me / their projects changed by someone else
     useRealtimeRefetch(() => loadMyTasks(true), ["tasks", "projects", "members", "users"]);
 
     const handleTaskUpdatedFromDrawer = (updatedTask) => {
@@ -817,27 +915,23 @@ function MyTasks() {
             const projStartDate = (typeof task.projectId === 'object' && task.projectId?.startDate)
                 ? task.projectId?.startDate
                 : projectMap[projId]?.startDate;
+            const projEndDate = (typeof task.projectId === 'object' && (task.projectId?.date || task.projectId?.dueDate || task.projectId?.endDate))
+                ? (task.projectId?.date || task.projectId?.dueDate || task.projectId?.endDate)
+                : (projectMap[projId]?.date || projectMap[projId]?.dueDate || projectMap[projId]?.endDate);
 
-            const effectiveDueDate = task.dueDate || calculateDueDateByWeek(projStartDate, task.week || 1);
-            if (!effectiveDueDate) return false;
+            const { status } = calculateTaskWeekAndStatus(task, projStartDate, projEndDate, isDone);
 
-            const today = new Date();
-            const dueDate = new Date(effectiveDueDate);
-
-            today.setHours(0, 0, 0, 0);
-            dueDate.setHours(0, 0, 0, 0);
-
-            const diffTime = dueDate.getTime() - today.getTime();
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-            if (activeTab === "upcoming") return dueDate > today;
-
-            if (activeTab === "expiring") {
-                if (isDone) return false;
-                return diffDays >= 0 && diffDays <= 2;
+            if (activeTab === "upcoming") {
+                return status === 'On Track';
             }
 
-            if (activeTab === "overdue") return dueDate < today;
+            if (activeTab === "expiring") {
+                return status === 'Expiring';
+            }
+
+            if (activeTab === "overdue") {
+                return status === 'Overdue';
+            }
 
             return true;
         });
@@ -848,7 +942,10 @@ function MyTasks() {
         const projStartDate = (typeof task.projectId === 'object' && task.projectId?.startDate)
             ? task.projectId?.startDate
             : projectMap[projId]?.startDate;
-        return task.dueDate || calculateDueDateByWeek(projStartDate, task.week || 1);
+        const projEndDate = (typeof task.projectId === 'object' && (task.projectId?.date || task.projectId?.dueDate || task.projectId?.endDate))
+            ? (task.projectId?.date || task.projectId?.dueDate || task.projectId?.endDate)
+            : (projectMap[projId]?.date || projectMap[projId]?.dueDate || projectMap[projId]?.endDate);
+        return task.dueDate || calculateDueDateByWeek(projStartDate, projEndDate, task.week || 1);
     }, [projectMap]);
 
     const showInsights = activeTab === "insights";
@@ -859,7 +956,6 @@ function MyTasks() {
                 <div className="page-content-inner stack my-tasks-page">
                     <div>
                         <h1>My Tasks</h1>
-                        <p className="page-subtitle">Everything assigned to you across all projects.</p>
                     </div>
 
                     <div className="filter-bar my-tasks-filter">
@@ -944,9 +1040,12 @@ function MyTasks() {
                                 const projStartDate = (typeof task.projectId === 'object' && task.projectId?.startDate)
                                     ? task.projectId?.startDate
                                     : projectMap[projId]?.startDate;
+                                const projEndDate = (typeof task.projectId === 'object' && (task.projectId?.date || task.projectId?.dueDate || task.projectId?.endDate))
+                                    ? (task.projectId?.date || task.projectId?.dueDate || task.projectId?.endDate)
+                                    : (projectMap[projId]?.date || projectMap[projId]?.dueDate || projectMap[projId]?.endDate);
 
                                 const weekNum = task.week || 1;
-                                const remainingText = getRemainingDaysLabel(projStartDate, weekNum);
+                                const remainingText = getRemainingDaysLabel(projStartDate, projEndDate, weekNum);
 
                                 return (
                                     <button

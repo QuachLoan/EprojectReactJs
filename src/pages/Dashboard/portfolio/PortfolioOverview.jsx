@@ -69,7 +69,7 @@ function PortfolioOverview({ state, reload }) {
             )}
 
             <div className="analytics-grid">
-                <ChartCard id="portfolio-progress" title="Project progress" subtitle="Completed tasks / all tasks (status from the board)" icon={<Activity className="icon" />}>
+                <ChartCard id="portfolio-progress" title="Project progress" icon={<Activity className="icon" />}>
                     {view.progress.length === 0 ? (
                         <p className="chart-note">No project data available.</p>
                     ) : (
@@ -84,7 +84,7 @@ function PortfolioOverview({ state, reload }) {
                                         <span className="progress-bar-fill" style={{ width: `${p.percent ?? 0}%` }} />
                                     </span>
                                     <span className="project-progress-value">
-                                        {p.percent === null ? "No tasks" : `${p.percent}% · ${p.completedPoints}/${p.points} pts`}
+                                        {p.percent === null ? "No tasks" : `${p.percent}% · ${p.completedPoints}/${p.points} est`}
                                     </span>
                                 </li>
                             ))}
@@ -93,7 +93,7 @@ function PortfolioOverview({ state, reload }) {
                 </ChartCard>
             </div>
 
-            <ChartCard id="portfolio-workload" title="Team workload" subtitle="Members and their tasks across your projects" icon={<UsersRound className="icon" />}>
+            <ChartCard id="portfolio-workload" title="Team workload" icon={<UsersRound className="icon" />}>
                 {view.workload.length === 0 ? (
                     <p className="chart-note">No member or assigned task yet.</p>
                 ) : (
@@ -105,8 +105,8 @@ function PortfolioOverview({ state, reload }) {
                                 <tr>
                                     <th scope="col">Person</th>
                                     <th scope="col">Role</th>
-                                    <th scope="col" className="is-num">Active</th>
-                                    <th scope="col" className="is-num">Active points</th>
+                                    <th scope="col" className="is-num">Task</th>
+                                    <th scope="col" className="is-num">Estimate time</th>
                                     <th scope="col" className="is-num">Completed</th>
                                     <th scope="col" className="is-num">Total</th>
                                 </tr>

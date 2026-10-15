@@ -401,9 +401,6 @@ export default function Projects() {
                         <div className="page-header">
                             <div>
                                 <h1>Projects</h1>
-                                <p className="page-subtitle">
-                                    All the boards your team is working on.
-                                </p>
                             </div>
 
                             {canCreateProject && (

@@ -564,10 +564,6 @@ export default function ProjectOverviewPage() {
                         <header className="timeline-toolbar">
                             <div className="timeline-heading">
                                 <h2 id="timeline-title" className="chart-card-title">Project Timeline</h2>
-                                <p className="chart-card-subtitle">
-                                    {timeline.currentWeek ? `Now: week ${timeline.currentWeek} of ${timeline.weeks.length}` : `Project not started — ${timeline.weeks.length} week(s) planned`}
-                                    {slippedCount > 0 && ` · ${slippedCount} unfinished task${slippedCount === 1 ? "" : "s"} past the planned week`}
-                                </p>
                             </div>
                             <div className="timeline-filters">
                                 {!membersFailed && (

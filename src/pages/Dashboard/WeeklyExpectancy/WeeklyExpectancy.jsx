@@ -167,8 +167,8 @@ function WeeklyExpectancy({ projectId, projectName, projectStartDate, refreshTok
             <>
                 <ChartStats items={[
                     { label: "Project week", value: `Week ${displayWeek}` },
-                    summary?.planEntry && { label: "Planned to date", value: `${summary.planEntry.expectancy} pts` },
-                    summary?.latestReal && { label: "Done to date", value: `${summary.latestReal.realProgress} pts` },
+                    summary?.planEntry && { label: "Planned to date", value: `${summary.planEntry.expectancy} est` },
+                    summary?.latestReal && { label: "Done to date", value: `${summary.latestReal.realProgress} est` },
                 ]} />
 
                 <ChartLegend series={SERIES} />
@@ -240,10 +240,6 @@ function WeeklyExpectancy({ projectId, projectName, projectStartDate, refreshTok
                     ))}
                     </tbody>
                 </table>
-                <p className="chart-note">
-                    Cumulative points planned by task week vs. points finished in the Done column.
-                    {summary?.pastPlan && ` The project is in week ${displayWeek}, after the last planned week (${data.maxProjectWeek}).`}
-                </p>
             </>
         );
     }
@@ -253,7 +249,6 @@ function WeeklyExpectancy({ projectId, projectName, projectStartDate, refreshTok
             id="expectancy"
             className="expectancy-card"
             title="Plan vs. Real Progress"
-            subtitle="Cumulative points: plan vs. done"
             icon={<TrendingUp className="icon" />}
         >
             <div className="expectancy-body" aria-busy={loading}>{body}</div>

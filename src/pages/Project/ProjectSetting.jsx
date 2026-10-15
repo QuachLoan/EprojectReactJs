@@ -730,9 +730,6 @@ export default function ProjectSetting() {
                                     <div className={`settings-section ${activeTab === 'members' ? 'active' : ''}`}>
                                         <div style={{ marginBottom: 'var(--space-4)' }}>
                                             <h2 style={{ fontSize: '18px', fontWeight: 700 }}>Project Members</h2>
-                                            <p style={{ fontSize: '13px', color: 'var(--text-muted, #64748b)', marginTop: '4px' }}>
-                                                Manage access and view member points for completed tasks per week.
-                                            </p>
                                         </div>
 
                                         {/* Tool bar */}
@@ -750,7 +747,6 @@ export default function ProjectSetting() {
                                                 </div>
 
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#475569' }}>Point:</span>
                                                     <select
                                                         className="select"
                                                         style={{ height: '38px', minWidth: '180px', fontWeight: 500 }}
@@ -795,7 +791,7 @@ export default function ProjectSetting() {
                                                 }}
                                             >
                                                 <span>Member</span>
-                                                <span>Point</span>
+                                                <span>Estimate time</span>
                                                 <span>Position</span>
                                                 <span>Status</span>
                                                 <span></span>
@@ -834,7 +830,7 @@ export default function ProjectSetting() {
 
                                                             <div>
                                                                 <span style={{ fontSize: '14px', fontWeight: 600, color: '#4f46e5' }}>
-                                                                    {weekPoints} pts
+                                                                    {weekPoints} est
                                                                 </span>
                                                             </div>
 

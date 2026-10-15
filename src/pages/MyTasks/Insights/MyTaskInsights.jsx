@@ -30,8 +30,8 @@ function MyTaskInsights({ tasks, getDueDate, searchQuery }) {
                     { label: "Tasks", value: <span className="my-insights-kpi"><ListTodo className="icon icon-sm" aria-hidden="true" />{stats.total}</span> },
                     { label: "Completed", value: <span className="my-insights-kpi is-done"><CircleCheck className="icon icon-sm" aria-hidden="true" />{stats.completed} · {stats.completionRate}%</span> },
                     { label: "Overdue", value: <span className={`my-insights-kpi${stats.overdue ? " is-danger" : ""}`}><TriangleAlert className="icon icon-sm" aria-hidden="true" />{stats.overdue}</span> },
-                    { label: "Due in 2 days", value: <span className={`my-insights-kpi${stats.dueSoon ? " is-warning" : ""}`}><AlarmClock className="icon icon-sm" aria-hidden="true" />{stats.dueSoon}</span> },
-                    { label: "Story points", value: <span className="my-insights-kpi"><Gauge className="icon icon-sm" aria-hidden="true" />{stats.points} pts</span> },
+                    { label: "Expiring", value: <span className={`my-insights-kpi${stats.dueSoon ? " is-warning" : ""}`}><AlarmClock className="icon icon-sm" aria-hidden="true" />{stats.dueSoon}</span> },
+                    { label: "Estimate time", value: <span className="my-insights-kpi"><Gauge className="icon icon-sm" aria-hidden="true" />{stats.points} est</span> },
                 ]}
             />
 
@@ -39,7 +39,7 @@ function MyTaskInsights({ tasks, getDueDate, searchQuery }) {
                 <ChartCard
                     id="my-status"
                     title="Tasks by status"
-                    subtitle={searchQuery ? `Tasks matching “${searchQuery}”` : "Completed = confirmed by the board (moved to Done)"}
+
                 >
                     <ul className="status-bars">
                         {stats.groups.map((g) => (
@@ -49,14 +49,14 @@ function MyTaskInsights({ tasks, getDueDate, searchQuery }) {
                                     <span className="status-bar-fill" style={{ width: `${(g.count / maxCount) * 100}%` }} />
                                 </span>
                                 <span className="status-bar-value">
-                                    <strong>{g.count}</strong> · {percent(g.count, stats.total)}% · {g.points} pts
+                                    <strong>{g.count}</strong> · {percent(g.count, stats.total)}% · {g.points} est
                                 </span>
                             </li>
                         ))}
                     </ul>
                 </ChartCard>
 
-                <ChartCard id="my-projects" title="Progress by project" subtitle="Completed / assigned to you">
+                <ChartCard id="my-projects" title="Progress by project" >
                     <ul className="project-progress-list">
                         {stats.projects.map((p) => (
                             <li key={p.id} className="project-progress-row">

@@ -15,15 +15,75 @@ const storedUserId = () => {
     }
 };
 
-// Helper calculate due date based on project start date and week
-const calculateDueDateByWeek = (startDateStr, weekNum = 1) => {
+// Helper tính ngày kết thúc thực tế của tuần (weekEnd) đồng bộ với ProjectBoard & MyTasks
+const calculateDueDateByWeek = (startDateStr, endDateStr, weekNum = 1) => {
     if (!startDateStr) return null;
-    const baseDate = new Date(startDateStr);
-    if (isNaN(baseDate.getTime())) return null;
-    const daysToAdd = (Math.max(1, Number(weekNum) || 1) * 7) - 1;
-    const dueDate = new Date(baseDate);
-    dueDate.setDate(dueDate.getDate() + daysToAdd);
-    return dueDate;
+    const start = new Date(startDateStr);
+    if (isNaN(start.getTime())) return null;
+
+    const currentWeek = Math.max(1, Number(weekNum) || 1);
+
+    const weekStart = new Date(start);
+    weekStart.setDate(start.getDate() + (currentWeek - 1) * 7);
+
+    let weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
+    if (endDateStr) {
+        const projEnd = new Date(endDateStr);
+        if (!isNaN(projEnd.getTime()) && weekEnd > projEnd) {
+            weekEnd = projEnd;
+        }
+    }
+
+    return weekEnd;
+};
+
+// Tính trạng thái task: 'Overdue', 'Expiring', 'On Track' chuẩn theo ProjectBoard.jsx
+const calculateTaskWeekAndStatus = (task, projectStartDate, projectEndDate, isDoneColumn = false) => {
+    const currentWeek = Number(task?.week) || 1;
+
+    if (!projectStartDate) {
+        return { displayWeek: currentWeek, status: 'On Track' };
+    }
+
+    if (isDoneColumn) {
+        return { displayWeek: currentWeek, status: 'On Track' };
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const start = new Date(projectStartDate);
+    start.setHours(0, 0, 0, 0);
+    if (isNaN(start.getTime())) {
+        return { displayWeek: currentWeek, status: 'On Track' };
+    }
+
+    const weekStart = new Date(start);
+    weekStart.setDate(start.getDate() + (currentWeek - 1) * 7);
+
+    let weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+
+    if (projectEndDate) {
+        const projEndObj = new Date(projectEndDate);
+        projEndObj.setHours(0, 0, 0, 0);
+        if (!isNaN(projEndObj.getTime()) && weekEnd > projEndObj) {
+            weekEnd = projEndObj;
+        }
+    }
+
+    const expiringStartDate = new Date(weekEnd);
+    expiringStartDate.setDate(weekEnd.getDate() - 1);
+
+    if (today > weekEnd) {
+        return { displayWeek: currentWeek, status: 'Overdue' };
+    } else if (today >= expiringStartDate) {
+        return { displayWeek: currentWeek, status: 'Expiring' };
+    }
+
+    return { displayWeek: currentWeek, status: 'On Track' };
 };
 
 // Page context shown on the left of the header, derived from the route only (no extra API call)
@@ -86,7 +146,7 @@ function Header({ onOpenSidebar, menuButtonRef, sidebarOpen = false }) {
                 }).filter(Boolean)
             ));
 
-            // 2. Fetch project details to get startDate
+            // 2. Fetch project details to get startDate and endDate/date/dueDate
             const projectMap = {};
             await Promise.all(uniqueProjIds.map(async (pId) => {
                 try {
@@ -102,37 +162,32 @@ function Header({ onOpenSidebar, menuButtonRef, sidebarOpen = false }) {
                 }
             }));
 
-            // 3. Filter expiring tasks
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-
+            // 3. Filter expiring tasks using calculateTaskWeekAndStatus
             const filtered = tasks.filter((task) => {
                 // Check status
                 const statusName = (typeof task.columnId === 'object'
                     ? (task.columnId?.name || task.columnId?.title || "")
                     : "").toLowerCase();
                 const isDone = statusName.includes('done') || statusName.includes('completed');
-                if (isDone) return false;
 
-                // Get startDate from populated object OR projectMap
+                // Get startDate & endDate from populated object OR projectMap
                 const projId = typeof task.projectId === 'object' ? (task.projectId?._id || task.projectId?.id) : task.projectId;
                 const projStartDate = (typeof task.projectId === 'object' && task.projectId?.startDate)
                     ? task.projectId?.startDate
                     : projectMap[projId]?.startDate;
 
-                // Calculate effective due date
-                const effectiveDueDate = task.dueDate || calculateDueDateByWeek(projStartDate, task.week || 1);
-                if (!effectiveDueDate) return false;
+                const projEndDate = (typeof task.projectId === 'object' && (task.projectId?.date || task.projectId?.dueDate || task.projectId?.endDate))
+                    ? (task.projectId?.date || task.projectId?.dueDate || task.projectId?.endDate)
+                    : (projectMap[projId]?.date || projectMap[projId]?.dueDate || projectMap[projId]?.endDate);
 
-                const dueDate = new Date(effectiveDueDate);
-                dueDate.setHours(0, 0, 0, 0);
+                // Tính trạng thái task chuẩn
+                const { status } = calculateTaskWeekAndStatus(task, projStartDate, projEndDate, isDone);
 
-                const diffTime = dueDate.getTime() - today.getTime();
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-                // Expiring condition: 0 to 2 days left
-                const expiring = diffDays >= 0 && diffDays <= 2;
-                if (expiring) task.notifKey = notificationKey(task._id || task.id, effectiveDueDate);
+                const expiring = status === 'Expiring';
+                if (expiring) {
+                    const effectiveDueDate = task.dueDate || calculateDueDateByWeek(projStartDate, projEndDate, task.week || 1);
+                    task.notifKey = notificationKey(task._id || task.id, effectiveDueDate);
+                }
                 return expiring;
             });
 
