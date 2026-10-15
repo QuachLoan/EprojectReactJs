@@ -26,9 +26,17 @@ import TaskDrawerFrame from "../../components/task/TaskDrawerFrame.jsx";
 import { DrawerSection, ChecklistSection, CommentsSection, ActivitySection, AssigneePicker, UserAvatar } from "../../components/task/TaskDrawerSections.jsx";
 import MyTaskInsights from "./Insights/MyTaskInsights.jsx";
 
-// --- HELPER FUNCTIONS (ĐỒNG BỘ VỚI PROJECTBOARD.JSX) ---
+// --- HELPER FUNCTIONS ---
 
-// Hàm tính ngày bắt đầu và kết thúc của Week `weekNum` (7 ngày/tuần) giống ProjectBoard
+// Chuẩn hóa một Date object / Date string về đúng đầu ngày (00:00:00) theo giờ địa phương
+const toStartOfDay = (dateInput) => {
+    if (!dateInput) return null;
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return null;
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+};
+
+// Hàm tính ngày bắt đầu và kết thúc của Week `weekNum` (7 ngày/tuần)
 const getWeekDateRange = (projectStartDate, projectEndDate, weekNum) => {
     if (!projectStartDate) return '';
     const start = new Date(projectStartDate);
@@ -77,27 +85,35 @@ const calculateDueDateByWeek = (startDateStr, endDateStr, weekNum = 1) => {
     return weekEnd;
 };
 
-// Tính trạng thái task: 'Overdue', 'Expiring', 'On Track' đúng như ProjectBoard.jsx
+// Tính trạng thái task: Cập nhật kiểm tra Overdue chuẩn xác cho dự án đã quá hạn
 const calculateTaskWeekAndStatus = (task, projectStartDate, projectEndDate, isDoneColumn = false) => {
     const currentWeek = Number(task?.week) || 1;
+
+    // Nếu đã hoàn thành thì luôn là On Track
+    if (isDoneColumn) {
+        return { displayWeek: currentWeek, status: 'On Track' };
+    }
+
+    const today = toStartOfDay(new Date());
+
+    // 1. Kiểm tra nếu Dự án có projectEndDate và projectEndDate đã qua so với hôm nay -> BẮT BUỘC Overdue
+    if (projectEndDate) {
+        const projEndObj = toStartOfDay(projectEndDate);
+        if (projEndObj && today > projEndObj) {
+            return { displayWeek: currentWeek, status: 'Overdue' };
+        }
+    }
 
     if (!projectStartDate) {
         return { displayWeek: currentWeek, status: 'On Track' };
     }
 
-    if (isDoneColumn) {
+    const start = toStartOfDay(projectStartDate);
+    if (!start) {
         return { displayWeek: currentWeek, status: 'On Track' };
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const start = new Date(projectStartDate);
-    start.setHours(0, 0, 0, 0);
-    if (isNaN(start.getTime())) {
-        return { displayWeek: currentWeek, status: 'On Track' };
-    }
-
+    // 2. Tính weekStart & weekEnd của tuần hiện tại của task
     const weekStart = new Date(start);
     weekStart.setDate(start.getDate() + (currentWeek - 1) * 7);
 
@@ -105,9 +121,8 @@ const calculateTaskWeekAndStatus = (task, projectStartDate, projectEndDate, isDo
     weekEnd.setDate(weekStart.getDate() + 6);
 
     if (projectEndDate) {
-        const projEndObj = new Date(projectEndDate);
-        projEndObj.setHours(0, 0, 0, 0);
-        if (!isNaN(projEndObj.getTime()) && weekEnd > projEndObj) {
+        const projEndObj = toStartOfDay(projectEndDate);
+        if (projEndObj && weekEnd > projEndObj) {
             weekEnd = projEndObj;
         }
     }
@@ -115,6 +130,7 @@ const calculateTaskWeekAndStatus = (task, projectStartDate, projectEndDate, isDo
     const expiringStartDate = new Date(weekEnd);
     expiringStartDate.setDate(weekEnd.getDate() - 1);
 
+    // 3. So sánh weekEnd với hôm nay
     if (today > weekEnd) {
         return { displayWeek: currentWeek, status: 'Overdue' };
     } else if (today >= expiringStartDate) {
@@ -129,11 +145,8 @@ const getRemainingDaysLabel = (startDateStr, endDateStr, weekNum = 1) => {
     const dueDate = calculateDueDateByWeek(startDateStr, endDateStr, weekNum);
     if (!dueDate) return "Not set";
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const targetDue = new Date(dueDate);
-    targetDue.setHours(0, 0, 0, 0);
+    const today = toStartOfDay(new Date());
+    const targetDue = toStartOfDay(dueDate);
 
     const diffTime = targetDue.getTime() - today.getTime();
     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
@@ -277,7 +290,6 @@ function TaskDrawer({
                 setProjectStartDate(pStartDate);
                 setProjectEndDate(pEndDate);
 
-                // Tính tổng số tuần của Project
                 if (pStartDate && pEndDate) {
                     const sObj = new Date(pStartDate);
                     const eObj = new Date(pEndDate);
@@ -956,6 +968,7 @@ function MyTasks() {
                 <div className="page-content-inner stack my-tasks-page">
                     <div>
                         <h1>My Tasks</h1>
+                        <p className="page-subtitle">Everything assigned to you across all projects.</p>
                     </div>
 
                     <div className="filter-bar my-tasks-filter">
